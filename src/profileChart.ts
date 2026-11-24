@@ -1,6 +1,9 @@
 // Längsprofil als SVG mit Hover-Kopplung zur Karte.
 
 import type { Analysis } from "./analysis";
+import type { NarrowKind, NarrowsResult } from "./narrows";
+
+const BAND: Record<NarrowKind, string> = { engstelle: "#ff9f1c", schlucht: "#8e44ad", klamm: "#555555" };
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -21,6 +24,7 @@ function niceStep(range: number, target: number) {
 export function renderProfile(
   container: HTMLElement,
   a: Analysis,
+  narrows: NarrowsResult | undefined,
   onHover: (d: number | null) => void,
 ): { highlight: (d: number | null) => void } {
   container.innerHTML = "";
@@ -50,6 +54,12 @@ export function renderProfile(
   }
   el("text", { x: W - m.r, y: H - 4, "text-anchor": "end", class: "axis-label" }, g).textContent = "km ab Einstieg";
   el("text", { x: 4, y: m.t + 2, "dominant-baseline": "hanging", class: "axis-label" }, g).textContent = "m ü. M.";
+
+  // Engstellen/Schluchten als Bänder am unteren Rand
+  for (const f of narrows?.features ?? []) {
+    el("rect", { x: x(f.d0), y: m.t + ih - 10, width: Math.max(3, x(f.d1) - x(f.d0)), height: 10, fill: BAND[f.kind], class: "narrow-mark" }, svg);
+    el("rect", { x: x(f.d0), y: m.t, width: Math.max(3, x(f.d1) - x(f.d0)), height: ih, fill: BAND[f.kind], class: "narrow-band" }, svg);
+  }
 
   // Hotspots
   for (const h of a.hotspots) {
@@ -86,7 +96,9 @@ export function renderProfile(
     const right = cx > m.l + iw * 0.6;
     tip.setAttribute("x", String(right ? cx - 6 : cx + 6));
     tip.setAttribute("text-anchor", right ? "end" : "start");
-    tip.textContent = `km ${(d / 1000).toFixed(2)} · ${Math.round(p.z)} m · ${seg.gradient.toFixed(1)} m/km`;
+    const sec = narrows?.sections.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
+    const width = sec?.width != null ? ` · Breite ~${sec.width} m` : narrows?.satellite ? " · Fluss im Bild nicht sichtbar" : "";
+    tip.textContent = `km ${(d / 1000).toFixed(2)} · ${Math.round(p.z)} m · ${seg.gradient.toFixed(1)} m/km${width}`;
     tip.setAttribute("visibility", "visible");
   };
   const hit = el("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent" }, svg);

@@ -38,3 +38,39 @@ describe("chainWays mit falsch digitalisierten Wegen", () => {
     expect(chainWays(ways, 1)).toHaveLength(3);
   });
 });
+
+import { overpass, OVERPASS_URLS } from "../src/osm";
+
+describe("overpass – gestaffelte Anfragen", () => {
+  const ok = (id: number) => new Response(JSON.stringify({ elements: [{ type: "way", id }] }), { status: 200 });
+
+  it("fragt nach Verzögerung den nächsten Server, wenn der erste hängt", async () => {
+    const calls: string[] = [];
+    const fetchFn = ((url: string, init: RequestInit) => {
+      calls.push(url);
+      if (url === OVERPASS_URLS[0])
+        return new Promise((_, rej) => init.signal?.addEventListener("abort", () => rej(Object.assign(new Error("abort"), { name: "AbortError" }))));
+      return Promise.resolve(ok(2));
+    }) as unknown as typeof fetch;
+    const t = Date.now();
+    const els = await overpass("q-haengt", fetchFn, 50);
+    expect(els[0].id).toBe(2);
+    expect(calls).toEqual([OVERPASS_URLS[0], OVERPASS_URLS[1]]);
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+
+  it("wechselt bei Fehler sofort und meldet, wenn alle scheitern", async () => {
+    let n = 0;
+    const failing = (() => { n++; return Promise.resolve(new Response("busy", { status: 429 })); }) as unknown as typeof fetch;
+    await expect(overpass("q-fehler", failing, 10_000)).rejects.toThrow(/nicht erreichbar/);
+    expect(n).toBe(OVERPASS_URLS.length);
+  });
+
+  it("speichert Ergebnisse zwischen", async () => {
+    let n = 0;
+    const f = (() => { n++; return Promise.resolve(ok(7)); }) as unknown as typeof fetch;
+    await overpass("q-cache", f);
+    await overpass("q-cache", f);
+    expect(n).toBe(1);
+  });
+});

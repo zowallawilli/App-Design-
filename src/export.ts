@@ -1,11 +1,12 @@
 // Export der Analyse als GPX (für GPS/Offline-Karten), CSV und GeoJSON.
 
 import type { Analysis } from "./analysis";
+import type { NarrowsResult } from "./narrows";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const km = (m: number) => (m / 1000).toFixed(2);
 
-export function toGpx(a: Analysis, name: string): string {
+export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult): string {
   const wpts = a.hotspots
     .map(
       (h, i) =>
@@ -15,6 +16,13 @@ export function toGpx(a: Analysis, name: string): string {
         `    <sym>Danger Area</sym>\n  </wpt>`,
     )
     .join("\n");
+  const nrWpts = (narrows?.features ?? [])
+    .map(
+      (f) =>
+        `  <wpt lat="${f.center[1].toFixed(6)}" lon="${f.center[0].toFixed(6)}">\n` +
+        `    <name>${esc(f.title)}</name>\n    <desc>${esc(f.detail)}</desc>\n    <sym>${f.kind === "engstelle" ? "Caution" : "Danger Area"}</sym>\n  </wpt>`,
+    )
+    .join("\n");
   const trkpts = a.profile
     .map((p) => `      <trkpt lat="${p.p[1].toFixed(6)}" lon="${p.p[0].toFixed(6)}"><ele>${p.z.toFixed(1)}</ele></trkpt>`)
     .join("\n");
@@ -22,6 +30,7 @@ export function toGpx(a: Analysis, name: string): string {
 <gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata><name>${esc(name)}</name></metadata>
 ${wpts}
+${nrWpts}
   <trk>
     <name>${esc(name)}</name>
     <trkseg>
@@ -42,7 +51,7 @@ export function toCsv(a: Analysis): string {
   return rows.join("\n") + "\n";
 }
 
-export function toGeoJson(a: Analysis, name: string): string {
+export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult): string {
   return JSON.stringify({
     type: "FeatureCollection",
     properties: { name, length_m: a.length, drop_m: a.drop, mean_gradient_m_per_km: a.meanGradient },
@@ -56,6 +65,11 @@ export function toGeoJson(a: Analysis, name: string): string {
         type: "Feature",
         properties: { kind: "hotspot", id: `H${i + 1}`, max_gradient: h.maxGradient, drop: h.drop, confined: h.confined, km_from: h.d0 / 1000, km_to: h.d1 / 1000 },
         geometry: { type: "Point", coordinates: h.center },
+      })),
+      ...(narrows?.features ?? []).map((f) => ({
+        type: "Feature",
+        properties: { kind: f.kind, title: f.title, detail: f.detail, km_from: f.d0 / 1000, km_to: f.d1 / 1000 },
+        geometry: { type: "LineString", coordinates: a.profile.filter((p) => p.d >= f.d0 && p.d <= f.d1).map((p) => p.p).concat(f.d1 - f.d0 < 30 ? [f.center, f.center] : []) },
       })),
     ],
   });

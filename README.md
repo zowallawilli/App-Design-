@@ -1,8 +1,10 @@
 # Packraft-Planer – Prototyp Phase 1
 
 Webanwendung zur **Gefälleanalyse von Flussabschnitten** für die Packrafting-Tourenplanung.
-Ein Abschnitt wird auf Satellitenbildern festgelegt. Die App berechnet aus einem weltweiten
-Höhenmodell das Längsprofil, das Gefälle je Abschnitt, die steilsten Stellen (Hotspots) und Talengen.
+Ein- und Ausstieg werden auf der Karte gesetzt, der Flusslauf dazwischen wird automatisch aus
+Sentinel-2-Satellitendaten, OpenStreetMap und dem Höhenmodell nachgezogen. Die App berechnet das
+Längsprofil, das Gefälle je Abschnitt, die steilsten Stellen (Hotspots) und Talengen – in Norwegen
+mit dem 1-m-Laserscanning-Höhenmodell von Kartverket, sonst mit einem weltweiten Höhenmodell.
 
 > ⚠️ Das Gefälle ist ein **Indikator**, keine Wildwasser-Bewertung. Siphons, Holz, Verblockung,
 > Wasserstand und Engstellen unterhalb der Auflösung des Höhenmodells (ca. 10–30 m) werden nicht erfasst.
@@ -20,24 +22,63 @@ npm test           # Unit-Tests
 npm run build      # statische Dateien in dist/ (auf jedem Webspace hostbar)
 ```
 
-Für das Prüfskript mit echten Höhendaten der Soča:
+Für das Prüfskript mit echten Daten der Soča (Flusslauf nachziehen und je Paddelabschnitt auswerten):
 
 ```bash
-npx tsx scripts/soca.mts
+NODE_USE_ENV_PROXY=1 npx tsx scripts/soca.mts
 ```
 
 ## Bedienung
 
 | Funktion | Beschreibung |
 |---|---|
-| **Referenzstrecke** | Soča (Slowenien): Na Logu–Kobarid, Oberlauf, Čezsoča–Kobarid |
+| **Referenzstrecke** | Soča-Abschnitte (Trenta, Velika Korita, Čezsoča–Srpenica, Srpenica–Trnovo, Trnovo–Kobarid) und Koritnica, jeweils mit Schwierigkeit laut Literatur |
+| **Ein-/Ausstieg** | Zwei Punkte anklicken → der Flusslauf dazwischen wird automatisch nachgezogen (siehe unten) |
 | **Fluss aus OSM** | Fluss anklicken → wird aus OpenStreetMap geladen und verkettet. Danach Ein- und Ausstieg anklicken. |
-| **Talweg aus DGM** | Ein- und Ausstieg anklicken → Fließweg wird direkt aus dem Höhenmodell abgeleitet (für Gebiete mit lückenhaften OSM-Daten, z. B. Zentralasien) |
 | **Zeichnen** | Strecke flussabwärts selbst klicken |
 | **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte |
 | **Hotspots** | Steilste Stellen, sortiert; Klick zoomt hin |
 | **Export** | GPX (Track + Hotspots als Wegpunkte, z. B. für GPS/Offline-Karten), CSV, GeoJSON |
 | **Hintergrund** | Esri-Satellitenbild, Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände |
+
+## Flusslauf automatisch nachziehen (Modus „Ein-/Ausstieg“)
+
+Zwischen Ein- und Ausstieg wird der **kostengünstigste Weg** (Dijkstra) über ein Raster gesucht.
+Die Kosten je Zelle kombinieren drei Quellen:
+
+| Quelle | Wirkung |
+|---|---|
+| **Sentinel-2** (10 m, wolkenarme Sommerszene der letzten 3 Jahre) | Wasser (NDWI > 0) und unbewachsenes Flussbett – Kies, Fels, Wildwasser (NDVI < 0,4) – sind billig, dichter Wald teurer. Liegt der Ausschnitt über einer Kachelgrenze, werden mehrere Szenen kombiniert. |
+| **OpenStreetMap** | Kartierte Gewässerlinien werden ins Raster eingebrannt (der Fluss am Ein-/Ausstieg stark, Nebenbäche schwach). |
+| **Höhenmodell** | Zellen weit über dem lokalen Talboden und bergauf fließen kosten extra. Wo Satellit oder OSM eindeutig ein Gewässer zeigen, wird dem Höhenmodell weniger vertraut – in engen Schluchten ist es oft um 20–80 m verschoben. |
+
+Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann Mäander abschneiden. Lange Strecken
+werden erst grob gesucht und dann in 6-km-Stücken fein nachgezogen. Verlässt der Fluss den
+Ausschnitt (großer Bogen), wird der Ausschnitt vergrößert.
+
+## Engstellen, Schluchten und verdeckte Klammen
+
+Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen gesucht
+(abschaltbar unter „Analyse-Parameter“):
+
+| Zeichen | Hinweis | Verfahren |
+|---|---|---|
+| **E** (orange) | **Engstelle** | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
+| **S** (violett) | **Schlucht** | Talquerschnitt alle 50 m aus dem Höhenmodell: Talbreite 5 m und 20 m über dem Wasserspiegel und Tiefe (Anstieg innerhalb 250 m, schwächere Seite). Schlucht, wenn das Tal 20 m über Wasser ≤ 90 m breit und ≥ 30 m tief ist (Kartverket 1 m), bzw. ≤ 140 m / ≥ 60 m mit dem groben globalen Modell. |
+| **K** (schwarz) | **Mögliche Klamm** | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
+
+Schlucht- und Klamm-Hinweise, die weniger als 1 km auseinanderliegen, werden zu einer
+**Schluchtstrecke** zusammengefasst – helle Felswände sehen im Satellitenbild wie Flussbett aus,
+die Einzelhinweise liegen dann oft am Anfang und Ende der eigentlichen Klamm.
+
+**Geprüft an:** Koritnica (Kluže-Schlucht laut Wikipedia/OpenCanyon bei 46,360–46,362° N liegt in
+der gemeldeten Strecke), Soča (Trnovo-Schlucht/„Katarakt“ als Schlucht erkannt), Sjoa
+(Åsengjuvet: Fluss im Bild verdeckt, mit Kartverket 25–40 m breit 5 m über Wasser → Schlucht-/Klammstrecke).
+Die schmale Velika-Korita-Klamm (wenige Meter breit, 15 m tief) ist zu klein für das globale
+Höhenmodell und wird nicht erkannt. Ein Slowenien-Laserscan (1 m) würde das ändern.
+
+Im Längsprofil zeigen farbige Bänder die Hinweise; der Mauszeiger zeigt die gemessene Flussbreite.
+GPX- und GeoJSON-Export enthalten die Hinweise als Wegpunkte bzw. Linien.
 
 ## Wie die Analyse funktioniert
 
@@ -71,33 +112,48 @@ Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit ei
 
 | Daten | Quelle | Hinweis |
 |---|---|---|
-| Höhen | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium) | weltweit; SRTM, EU-DEM, nationale DGMs; Auflösung regional 3–90 m |
-| Gewässer | OpenStreetMap über Overpass API | © OSM-Mitwirkende, ODbL |
+| Höhen Norwegen | [Kartverket, Nasjonal høydemodell DTM](https://www.geonorge.no/) über WCS | Laserscanning, 1 m; CC BY 4.0; in EPSG:3857-Kacheln abgefragt. Bei Störung automatisch globales Modell |
+| Höhen weltweit | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium) | SRTM, EU-DEM, nationale DGMs; Auflösung regional 3–90 m |
+| Satellitendaten | [Sentinel-2 L2A](https://registry.opendata.aws/sentinel-2-l2a-cogs/) (ESA Copernicus) über den STAC-Katalog von Element 84 | Bänder Grün, Rot, NIR; nur das benötigte Fenster wird gelesen (Cloud-Optimized GeoTIFF) |
+| Gewässer | OpenStreetMap über Overpass API (3 Server, gestaffelt) | © OSM-Mitwirkende, ODbL |
 | Ortssuche | Nominatim | Nutzungsbedingungen beachten (sparsame Nutzung) |
 | Satellitenbild | Esri World Imagery | nur Anzeige, keine automatisierte Auswertung |
 | Satellitenbild | Sentinel-2 cloudless 2023 (EOX) | CC BY-NC-SA 4.0 |
 | Topo | OpenTopoMap | CC-BY-SA |
 
-## Ergebnis Referenzfluss Soča (Talweg aus DGM, Zoom 12/13)
+## Abgleich Soča: Gefälle vs. Literatur
 
-| Strecke | Länge | Höhen | Ø Gefälle |
-|---|---|---|---|
-| Na Logu – Kobarid | 36,6 km | 607 → 227 m | 10,4 m/km |
-| Oberlauf Na Logu – Čezsoča | 18,3 km | 607 → 374 m | 12,7 m/km |
-| Čezsoča – Kobarid | 18,4 km | 372 → 225 m | 8,0 m/km |
+Flusslauf mit Sentinel-2 nachgezogen (65 % der Linie auf Wasser/Kiesbett, Raster 6,6 m),
+Gefälle aus dem globalen Höhenmodell, 250-m-Abschnitte (`scripts/soca.mts`):
 
-Die steilsten Stellen liegen im Trenta-Tal, beim Dorf Soča und zwischen Srpenica und Kobarid.
-Schmale Klammen wie die Velika Korita sind schmaler als ein Pixel des Höhenmodells und werden deshalb nicht als Talenge erkannt.
+| Abschnitt | Länge | Ø Gefälle | steilste 250 m | Literatur |
+|---|---|---|---|---|
+| Na Logu – Soča (Dorf) | 9,9 km | 13,0 m/km | 73 m/km | WW I–II, steinig (wenig Wasser) |
+| Soča (Dorf) – Čezsoča | 9,6 km | 11,0 m/km | 74 m/km (km 10,3 ≈ Velika Korita) | WW II–IV, Velika Korita nur Experten |
+| Čezsoča – Žaga | 7,6 km | 5,8 m/km | 19 m/km | WW I–II (Anfängerstrecke) |
+| Žaga – Srpenica | 1,6 km | 1,4 m/km | 4 m/km | WW I–II |
+| Srpenica – Trnovo | 5,4 km | 6,9 m/km | 39 m/km | WW II–III+, Hochwasser IV |
+| Trnovo – Kobarid | 5,1 km | 13,5 m/km | 54 m/km, Talenge | Katarakt WW IV–V+, Otona–Kobarid III–IV |
+| Koritnica ab Kluže-Schlucht – Mündung | 5,2 km | 16,2 m/km | 69 m/km am Schluchtausgang | WW III/IV |
+
+**Erkenntnisse:** Die Reihenfolge stimmt. Die schwersten Abschnitte (Velika Korita, Trnovo-Schlucht)
+haben die steilsten Stellen, die Anfängerstrecke das geringste Gefälle. Das **mittlere Gefälle allein
+unterschätzt** wasserreiche Abschnitte mit einzelnen Stufen (Srpenica–Trnovo: 6,9 m/km, aber WW III+);
+aussagekräftiger sind die steilsten 250 m und die Talenge. Im Oberlauf (Trenta) überschätzt das
+Gefälle die Schwierigkeit, weil dort wenig Wasser fließt – hier fehlt die Abflussinformation (Phase 2).
 
 ## Projektstruktur
 
 ```
 src/
   geo.ts           Geometrie (Distanzen, Abtastung, Snapping)
-  dem.ts           Höhenkacheln laden/dekodieren, bilineare Interpolation
+  dem.ts           Höhenkacheln (global + Kartverket), Zwischenspeicher, Schutzschalter
   analysis.ts      Profil, Glättung, Abschnitte, Hotspots, Talenge
-  flow.ts          Talweg aus Höhenmodell (Priority-Flood + D8)
-  osm.ts           Overpass-Abfragen, Verkettung von Flusswegen, Ortssuche
+  route.ts         Flusslauf zwischen Ein-/Ausstieg nachziehen (Kostenraster + Dijkstra)
+  sentinel.ts      Sentinel-2-Szenensuche (STAC), NDWI/NDVI je Rasterzelle bzw. Punkt
+  narrows.ts       Engstellen (Flussbreite), Schluchten (Talquerschnitt), verdeckte Klammen
+  flow.ts          Höhenraster laden, Min-Heap, Pixel ↔ Koordinate
+  osm.ts           Overpass-Abfragen (gestaffelt, Cache), Verkettung von Flusswegen, Ortssuche
   profileChart.ts  Längsprofil (SVG)
   export.ts        GPX/CSV/GeoJSON
   presets.ts       Referenzstrecken
@@ -111,8 +167,9 @@ scripts/           Prüfskript mit echten Höhendaten
 - **Phase 2 – Abfluss & Zeitreihen:** Pegel anbinden (NVE Norwegen, SMHI Schweden, SYKE Finnland,
   ARSO Slowenien, BAFU) sowie GloFAS-Modellabfluss für Gebiete ohne Pegel. Sentinel-2-Szenen mit
   dem Abfluss am Aufnahmetag verknüpfen und per Schieberegler vergleichen.
-- **Höhenmodelle Skandinavien:** Kartverket DTM 1/10 m (Norwegen) und Lantmäteriet (Schweden) für
-  deutlich genauere Profile.
+- **Höhenmodelle Skandinavien:** Lantmäteriet (Schweden) und Maanmittauslaitos (Finnland) analog zu Kartverket.
+- **Engstellen verfeinern:** OSM-Wasserflächen für exakte Breiten, Laserscan-Modelle für Slowenien,
+  Schweiz, Österreich; Strömungsleistung (Gefälle × Abfluss ÷ Breite) mit Abflussdaten.
 - **Phase 3 – Eigene Notizen & offline:** Stromschnellen markieren, Schwierigkeit, Fotos, Pegel bei
   der Befahrung, Umtragestellen. Offline-Nutzung als PWA.
 - **Phase 4 – Modell:** Schwierigkeitsschätzung aus Gefälle, Abfluss, Talenge und Weißwasser-Anteil,
