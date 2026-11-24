@@ -70,7 +70,8 @@ export async function waysNear(p: LngLat, radius = 250): Promise<OsmWay[]> {
  * sonst über den Namen im Umkreis.
  */
 export async function riverWays(seed: OsmWay, p: LngLat, searchRadius = 60000): Promise<OsmWay[]> {
-  const rel = `[out:json][timeout:60];way(${seed.id});rel(bw)["type"~"^(waterway|route)$"]->.r;way(r.r)["waterway"~"${WATERWAYS}"];out body geom;`;
+  // Bei großen Flüssen (z. B. Glomma, Donau) nur den Umkreis laden, sonst dauert die Abfrage sehr lange.
+  const rel = `[out:json][timeout:60];way(${seed.id});rel(bw)["type"~"^(waterway|route)$"]->.r;way(r.r)["waterway"~"${WATERWAYS}"](around:${searchRadius},${p[1]},${p[0]});out body geom;`;
   let ways = toWays(await overpass(rel));
   if (ways.length === 0 && seed.tags.name) {
     const name = seed.tags.name.replace(/"/g, '\\"');
@@ -103,26 +104,37 @@ export function chainWays(ways: OsmWay[], seedId: number): LngLat[] {
     w.coords.length;
   const pick = (c: OsmWay[] | undefined, used: Set<number>) =>
     (c ?? []).filter((w) => !used.has(w.id)).sort((a, b) => score(b) - score(a))[0];
+  // Gleichnamige Wege, die versehentlich gegen die Fließrichtung digitalisiert sind, werden umgedreht angehängt.
+  const flip = (w: OsmWay): OsmWay => ({ ...w, nodes: [...w.nodes].reverse(), coords: [...w.coords].reverse() });
+  const sameRiver = (w: OsmWay) => !!seed.tags.name && w.tags.name === seed.tags.name;
 
   const used = new Set([seed.id]);
   let coords = [...seed.coords];
   // flussabwärts
-  let tail = seed;
+  let tailNode = seed.nodes[seed.nodes.length - 1];
   for (;;) {
-    const next = pick(startsAt.get(tail.nodes[tail.nodes.length - 1]), used);
+    let next = pick(startsAt.get(tailNode), used);
+    if (!next) {
+      const rev = pick(endsAt.get(tailNode)?.filter(sameRiver), used);
+      if (rev) next = flip(rev);
+    }
     if (!next) break;
     used.add(next.id);
     coords = coords.concat(next.coords.slice(1));
-    tail = next;
+    tailNode = next.nodes[next.nodes.length - 1];
   }
   // flussaufwärts
-  let head = seed;
+  let headNode = seed.nodes[0];
   for (;;) {
-    const prev = pick(endsAt.get(head.nodes[0]), used);
+    let prev = pick(endsAt.get(headNode), used);
+    if (!prev) {
+      const rev = pick(startsAt.get(headNode)?.filter(sameRiver), used);
+      if (rev) prev = flip(rev);
+    }
     if (!prev) break;
     used.add(prev.id);
     coords = prev.coords.slice(0, -1).concat(coords);
-    head = prev;
+    headNode = prev.nodes[0];
   }
   return coords;
 }
