@@ -3,6 +3,7 @@
 
 import proj4 from "proj4";
 import type { Grid } from "./flow";
+import type { LngLat } from "./geo";
 
 export const STAC_SEARCH = "https://earth-search.aws.element84.com/v1/search";
 
@@ -75,9 +76,11 @@ export async function findScenes(bbox: [number, number, number, number], fetchFn
   const area = (b: number[]) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
   const cover = (sc: Scene) =>
     area([Math.max(sc.bbox[0], bbox[0]), Math.max(sc.bbox[1], bbox[1]), Math.min(sc.bbox[2], bbox[2]), Math.min(sc.bbox[3], bbox[3])]) / area(bbox);
-  // wolkenärmste Szenen zuerst, bei Gleichstand die mit größerer Abdeckung, dann die neueste
-  candidates.sort((a, b) => a.cloud - b.cloud || cover(b) - cover(a) || b.date.localeCompare(a.date));
-  const first = candidates.reduce((best, c) => (cover(c) > cover(best) + 0.05 && c.cloud < 3 ? c : best), candidates[0]);
+  // Hochsommer (Juni–August) zuerst – hoher Sonnenstand, kurze Schatten in engen Tälern;
+  // dann wolkenärmste, größere Abdeckung, neueste
+  const summer = (sc: Scene) => ([6, 7, 8].includes(Number(sc.date.slice(5, 7))) ? 0 : 1);
+  candidates.sort((a, b) => summer(a) - summer(b) || a.cloud - b.cloud || cover(b) - cover(a) || b.date.localeCompare(a.date));
+  const first = candidates.reduce((best, c) => (summer(c) === summer(best) && cover(c) > cover(best) + 0.05 && c.cloud < 3 ? c : best), candidates[0]);
   const chosen = [first];
   if (cover(first) < 0.999) {
     // weitere Kacheln: andere MGRS-Kachel, möglichst selber Tag
@@ -117,11 +120,22 @@ export interface Indices {
  * NDWI und NDVI für jede Rasterzelle (NaN = keine Daten). Die Szene wird nur im
  * benötigten Fenster gelesen (Cloud-Optimized GeoTIFF, HTTP-Range-Requests).
  */
+type GeoImage = Awaited<ReturnType<Awaited<ReturnType<typeof import("geotiff")["fromUrl"]>>["getImage"]>>;
+const imageCache = new Map<string, Promise<GeoImage>>();
+/** COG öffnen (Kopfdaten nur einmal je Band laden). */
+function openImage(url: string): Promise<GeoImage> {
+  let p = imageCache.get(url);
+  if (!p) {
+    p = import("geotiff").then(async ({ fromUrl }) => (await fromUrl(url)).getImage());
+    p.catch(() => imageCache.delete(url));
+    imageCache.set(url, p);
+  }
+  return p;
+}
+
 export async function indicesForGrid(g: Grid, scene: Scene): Promise<Indices> {
-  const { fromUrl } = await import("geotiff");
   const fwd = proj4("EPSG:4326", utmDef(scene.epsg));
-  const [gt, rt, nt] = await Promise.all([fromUrl(scene.green), fromUrl(scene.red), fromUrl(scene.nir)]);
-  const [gi, ri, ni] = await Promise.all([gt.getImage(), rt.getImage(), nt.getImage()]);
+  const [gi, ri, ni] = await Promise.all([openImage(scene.green), openImage(scene.red), openImage(scene.nir)]);
   const [ox, oy] = gi.getOrigin();
   const [rx, ry] = gi.getResolution(); // ry negativ
 
@@ -180,4 +194,53 @@ export async function sentinelWater(g: Grid): Promise<(Indices & { label: string
       }
   const dates = [...new Set(scenes.map((sc) => sc.date))];
   return { ...out, label: dates.join(", ") };
+}
+
+/**
+ * NDWI/NDVI an beliebigen Punkten (z. B. Querprofile entlang des Flusses).
+ * Die Punkte sollten räumlich geordnet sein; sie werden in Blöcken gelesen,
+ * damit nur kleine Fenster der Szene geladen werden.
+ */
+export async function sentinelPoints(points: LngLat[], blockSize = 3000): Promise<(Indices & { label: string }) | null> {
+  if (points.length === 0) return null;
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const [x, y] of points) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  const scenes = await findScenes([w, s, e, n]);
+  if (scenes.length === 0) return null;
+  const ndwi = new Float32Array(points.length).fill(NaN);
+  const ndvi = new Float32Array(points.length).fill(NaN);
+  for (const sc of scenes) {
+    const fwd = proj4("EPSG:4326", utmDef(sc.epsg));
+    const [gi, ri, ni] = await Promise.all([openImage(sc.green), openImage(sc.red), openImage(sc.nir)]);
+    const [ox, oy] = gi.getOrigin();
+    const [rx, ry] = gi.getResolution();
+    const W = gi.getWidth(), H = gi.getHeight();
+    for (let b0 = 0; b0 < points.length; b0 += blockSize) {
+      const idx: number[] = [];
+      const utm: [number, number][] = [];
+      for (let i = b0; i < Math.min(points.length, b0 + blockSize); i++) {
+        if (!Number.isNaN(ndwi[i])) continue; // schon aus einer anderen Szene
+        idx.push(i);
+        utm.push(fwd.forward(points[i]) as [number, number]);
+      }
+      if (idx.length === 0) continue;
+      let minE = Infinity, maxE = -Infinity, minN = Infinity, maxN = -Infinity;
+      for (const [x, y] of utm) { minE = Math.min(minE, x); maxE = Math.max(maxE, x); minN = Math.min(minN, y); maxN = Math.max(maxN, y); }
+      const c0 = Math.max(0, Math.floor((minE - ox) / rx)), c1 = Math.min(W, Math.floor((maxE - ox) / rx) + 1);
+      const r0 = Math.max(0, Math.floor((maxN - oy) / ry)), r1 = Math.min(H, Math.floor((minN - oy) / ry) + 1);
+      if (c1 <= c0 || r1 <= r0) continue;
+      const window = [c0, r0, c1, r1];
+      const [[gb], [rb], [nb]] = (await Promise.all([gi, ri, ni].map((im) => im.readRasters({ window })))) as unknown as [ArrayLike<number>][];
+      const ww = c1 - c0;
+      utm.forEach(([x, y], k) => {
+        const c = Math.floor((x - ox) / rx) - c0, r = Math.floor((y - oy) / ry) - r0;
+        if (c < 0 || r < 0 || c >= ww || r >= r1 - r0) return;
+        const gv = gb[r * ww + c], rv = rb[r * ww + c], nv = nb[r * ww + c];
+        if (gv === 0 && nv === 0) return;
+        ndwi[idx[k]] = (gv - nv) / (gv + nv + 1e-6);
+        ndvi[idx[k]] = (nv - rv) / (nv + rv + 1e-6);
+      });
+    }
+  }
+  return { ndwi, ndvi, label: [...new Set(scenes.map((sc) => sc.date))].join(", ") };
 }

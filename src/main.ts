@@ -10,7 +10,8 @@ import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
 import { traceRiver } from "./route";
-import { sentinelWater } from "./sentinel";
+import { sentinelPoints, sentinelWater } from "./sentinel";
+import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -58,6 +59,7 @@ const style: StyleSpecification = {
       attribution: "Höhen: AWS Terrain Tiles (SRTM, EU-DEM u. a.)",
     },
     river: { type: "geojson", data: empty },
+    narrows: { type: "geojson", data: empty },
     section: { type: "geojson", data: empty },
     draft: { type: "geojson", data: empty },
     cursor: { type: "geojson", data: empty },
@@ -75,6 +77,14 @@ const style: StyleSpecification = {
     {
       id: "section-confined", type: "line", source: "section", filter: ["==", ["get", "confined"], true],
       paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [1.5, 1.5], "line-offset": 7 },
+    },
+    {
+      id: "narrows-casing", type: "line", source: "narrows", layout: { "line-cap": "round" },
+      paint: { "line-color": "#ffffff", "line-width": 6, "line-offset": -9, "line-opacity": 0.9 },
+    },
+    {
+      id: "narrows", type: "line", source: "narrows", layout: { "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-width": 4, "line-offset": -9 },
     },
     { id: "draft-line", type: "line", source: "draft", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#ffd166", "line-width": 3, "line-dasharray": [2, 1] } },
     { id: "draft-pts", type: "circle", source: "draft", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 4, "circle-color": "#ffd166", "circle-stroke-color": "#000", "circle-stroke-width": 1 } },
@@ -118,7 +128,14 @@ let riverLine: LngLat[] | null = null;
 let riverName = "";
 let putIn: LngLat | null = null;
 let drawPts: LngLat[] = [];
-let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string } | null = null;
+let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult } | null = null;
+
+/** Darstellung der Engstellen-Typen */
+export const NARROW_STYLE: Record<NarrowKind, { color: string; letter: string; label: string }> = {
+  engstelle: { color: "#ff9f1c", letter: "E", label: "Engstelle (Flussbreite, Sentinel-2)" },
+  schlucht: { color: "#8e44ad", letter: "S", label: "Schlucht (Talquerschnitt, Höhenmodell)" },
+  klamm: { color: "#111111", letter: "K", label: "Mögliche Klamm (Fluss im Satellitenbild verdeckt, steile Hänge)" },
+};
 let lastSection: { line: LngLat[]; name: string; source: string; literature?: string } | null = null;
 let markers: maplibregl.Marker[] = [];
 let chart: { highlight: (d: number | null) => void } | null = null;
@@ -180,6 +197,7 @@ function resetAll() {
   clearMarkers();
   src("river").setData(empty);
   src("section").setData(empty);
+  src("narrows").setData(empty);
   src("draft").setData(empty);
   src("cursor").setData(empty);
   $("results").hidden = true;
@@ -255,6 +273,21 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
         : "");
     current = { analysis: a, name, source, dem, literature };
     showResults();
+    if ($<HTMLInputElement>("opt-narrows").checked) {
+      // Querprofile: mit Kartverket fein (3 m), sonst 10 m
+      const fine = kv > 0 && gl === 0;
+      const th = fine ? GORGE_FINE : GORGE_GLOBAL;
+      const qs = fine ? new ElevationSampler(compositeTileLoader(demSource()), 15) : sampler;
+      const nr = await analyzeNarrows(a.profile, {
+        elevations: (p, cb) => qs.elevations(p, cb),
+        satellite: $<HTMLInputElement>("opt-s2").checked ? sentinelPoints : undefined,
+        ...th,
+        onProgress: (m) => id === runId && setStatus(m),
+      });
+      if (id !== runId) return false;
+      current.narrows = nr;
+      showResults();
+    }
     const notes = [note, a.reversed ? "Fließrichtung wurde anhand der Höhen umgedreht." : ""].filter(Boolean);
     setStatus(notes.length ? `Hinweis: ${notes.join(" ")}` : "");
     return true;
@@ -293,6 +326,45 @@ function showResults() {
     markers.push(new maplibregl.Marker({ element: el }).setLngLat(h.center).addTo(map));
   });
 
+  // Engstellen, Schluchten, Klammen
+  const nr = current.narrows;
+  src("narrows").setData({
+    type: "FeatureCollection",
+    features: (nr?.features ?? []).map((f) => ({
+      type: "Feature",
+      properties: { color: NARROW_STYLE[f.kind].color, kind: f.kind },
+      geometry: { type: "LineString", coordinates: a.profile.filter((p) => p.d >= f.d0 - 30 && p.d <= f.d1 + 30).map((p) => p.p) },
+    })),
+  });
+  nr?.features.forEach((f, i) => {
+    const st = NARROW_STYLE[f.kind];
+    const el = document.createElement("button");
+    el.className = "nr-marker";
+    el.style.cssText = `background:${st.color};color:#fff;font:700 11px system-ui;width:24px;height:24px;border-radius:5px;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer;transform:rotate(45deg)`;
+    el.innerHTML = `<span style="display:inline-block;transform:rotate(-45deg)">${st.letter}</span>`;
+    el.title = `${f.title} – ${f.detail}`;
+    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusNarrow(i); });
+    markers.push(new maplibregl.Marker({ element: el }).setLngLat(f.center).addTo(map));
+  });
+  const nrList = $("narrows-list");
+  nrList.innerHTML = "";
+  if (!nr) nrList.innerHTML = `<li class="hint">${$<HTMLInputElement>("opt-narrows").checked ? "Wird berechnet …" : "Ausgeschaltet (Analyse-Parameter)."}</li>`;
+  else if (nr.features.length === 0) nrList.innerHTML = `<li class="hint">Keine Engstellen, Schluchten oder verdeckten Abschnitte gefunden.</li>`;
+  nr?.features.forEach((f, i) => {
+    const st = NARROW_STYLE[f.kind];
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.innerHTML = `<span class="id" style="color:${st.color === "#111111" ? "var(--fg)" : st.color}">${st.letter}</span><span>${f.title}</span><span class="meta">${f.detail}</span>`;
+    b.addEventListener("click", () => focusNarrow(i));
+    li.appendChild(b);
+    nrList.appendChild(li);
+  });
+  const widths = nr?.sections.map((x) => x.width).filter((x): x is number => x !== null) ?? [];
+  $("narrows-meta").textContent = nr
+    ? `${nr.satellite ? `Sentinel-2 ${nr.satellite}: Flussbett in ${Math.round((widths.length / nr.sections.length) * 100)} % der Querprofile sichtbar, typisch ~${widths.length ? [...widths].sort((x, y) => x - y)[Math.floor(widths.length / 2)] : "–"} m breit. ` : "Ohne Sentinel-2: nur Talquerschnitte. "}` +
+      `Talquerschnitte alle 50 m, Abtastung ${nr.demStep} m${nr.demStep > 5 ? " (globales Höhenmodell – schmale Klammen nur über das Satellitenbild erkennbar)" : " (Kartverket 1 m)"}.`
+    : "";
+
   $("res-title").textContent = name;
   const stats: [string, string][] = [
     ...(current.literature ? ([["Literatur", current.literature]] as [string, string][]) : []),
@@ -305,6 +377,7 @@ function showResults() {
     ["Steilster Abschnitt", `${a.maxSegmentGradient.toFixed(1)} m/km`],
     ["Hotspots", `${a.hotspots.length}`],
     ["Talenge", a.confinedLength > 0 ? fmtKm(a.confinedLength) : "–"],
+    ...(nr ? ([["Engstellen/Schluchten", nr.features.length ? (["engstelle", "schlucht", "klamm"] as NarrowKind[]).map((k) => `${nr.features.filter((f) => f.kind === k).length} ${NARROW_STYLE[k].letter}`).join(" · ") : "–"]] as [string, string][]) : []),
   ];
   $("stats").innerHTML = stats.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 
@@ -343,11 +416,18 @@ function showResults() {
 function drawChart() {
   if (!current || $("profile-wrap").hidden) return;
   const a = current.analysis;
-  chart = renderProfile($("profile"), a, (d) => {
+  chart = renderProfile($("profile"), a, current.narrows, (d) => {
     if (d === null) return src("cursor").setData(empty);
     const p = a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
     src("cursor").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p.p } });
   });
+}
+
+function focusNarrow(i: number) {
+  const f = current?.narrows?.features[i];
+  if (!f) return;
+  map.flyTo({ center: f.center, zoom: Math.max(map.getZoom(), 15.5), duration: 900 });
+  chart?.highlight((f.d0 + f.d1) / 2);
 }
 
 function focusHotspot(i: number) {
@@ -361,7 +441,7 @@ function focusHotspot(i: number) {
 new ResizeObserver(() => drawChart()).observe($("profile-wrap"));
 
 // Parameter geändert → neu rechnen
-["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf"].forEach((id) =>
+["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf", "opt-narrows"].forEach((id) =>
   $(id).addEventListener("change", () => {
     if (lastSection && !busy) void runAnalysis(lastSection.line, lastSection.name, lastSection.source, "", lastSection.literature);
   }),
@@ -584,6 +664,6 @@ const fileBase = () =>
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strecke";
-$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name), "application/gpx+xml"));
+$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name, current.narrows), "application/gpx+xml"));
 $("exp-csv").addEventListener("click", () => current && download(`${fileBase()}.csv`, toCsv(current.analysis), "text/csv"));
-$("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name), "application/geo+json"));
+$("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name, current.narrows), "application/geo+json"));

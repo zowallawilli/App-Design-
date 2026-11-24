@@ -90,6 +90,8 @@
           <span class="lbl" style="margin-top:10px">Flusslauf nachziehen (Modus Ein-/Ausstieg)</span>
           <label class="check"><input type="checkbox" id="opt-s2" checked /> Sentinel-2-Satellitenbild (Wasser &amp; Kiesbett)</label>
           <label class="check"><input type="checkbox" id="opt-osm" checked /> OpenStreetMap-Gewässer</label>
+          <span class="lbl" style="margin-top:10px">Engstellen &amp; Schluchten</span>
+          <label class="check"><input type="checkbox" id="opt-narrows" checked /> Flussbreite, Talquerschnitte und verdeckte Klammen analysieren</label>
           <p class="hint">Das Höhenmodell wird immer genutzt. Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann in engen Schluchten Kurven abschneiden.</p>
         </details>
 
@@ -100,6 +102,14 @@
           <dl class="stats" id="stats"></dl>
           <h3>Gefälleklassen</h3>
           <ul id="classes" class="classes"></ul>
+          <h3>Engstellen &amp; Schluchten</h3>
+          <ul class="legend">
+            <li><span class="dia" style="background:#ff9f1c">E</span> Engstelle – Flussbett deutlich schmaler als sonst (Sentinel-2)</li>
+            <li><span class="dia" style="background:#8e44ad">S</span> Schlucht – Tal 20 m über Wasser schmal und tief (Höhenmodell)</li>
+            <li><span class="dia" style="background:#111">K</span> Mögliche Klamm – Fluss im Satellitenbild verdeckt, beidseitig steil</li>
+          </ul>
+          <ol id="narrows-list" class="hotspots"></ol>
+          <p id="narrows-meta" class="hint"></p>
           <h3>Hotspots <span class="hint">(steilste Stellen)</span></h3>
           <ol id="hotspots" class="hotspots"></ol>
           <div class="row exports">

@@ -125,3 +125,6 @@ body.busy #map { cursor: progress; }
 .check { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 0.9rem; }
 details .lbl { font-size: 0.9rem; }
 .credits { display: block; margin-top: 6px; opacity: 0.8; }
+.legend { list-style: none; padding: 0; margin: 0 0 6px; display: flex; flex-direction: column; gap: 3px; font-size: 0.82rem; color: var(--muted); }
+.legend .dia { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; color: #fff; font-weight: 700; font-size: 10px; margin-right: 6px; border: 1px solid #fff; }
+.profile-svg .narrow-band { opacity: 0.22; }

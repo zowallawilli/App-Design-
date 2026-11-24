@@ -56,6 +56,30 @@ Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann Mäander abschneiden
 werden erst grob gesucht und dann in 6-km-Stücken fein nachgezogen. Verlässt der Fluss den
 Ausschnitt (großer Bogen), wird der Ausschnitt vergrößert.
 
+## Engstellen, Schluchten und verdeckte Klammen
+
+Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen gesucht
+(abschaltbar unter „Analyse-Parameter“):
+
+| Zeichen | Hinweis | Verfahren |
+|---|---|---|
+| **E** (orange) | **Engstelle** | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
+| **S** (violett) | **Schlucht** | Talquerschnitt alle 50 m aus dem Höhenmodell: Talbreite 5 m und 20 m über dem Wasserspiegel und Tiefe (Anstieg innerhalb 250 m, schwächere Seite). Schlucht, wenn das Tal 20 m über Wasser ≤ 90 m breit und ≥ 30 m tief ist (Kartverket 1 m), bzw. ≤ 140 m / ≥ 60 m mit dem groben globalen Modell. |
+| **K** (schwarz) | **Mögliche Klamm** | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
+
+Schlucht- und Klamm-Hinweise, die weniger als 1 km auseinanderliegen, werden zu einer
+**Schluchtstrecke** zusammengefasst – helle Felswände sehen im Satellitenbild wie Flussbett aus,
+die Einzelhinweise liegen dann oft am Anfang und Ende der eigentlichen Klamm.
+
+**Geprüft an:** Koritnica (Kluže-Schlucht laut Wikipedia/OpenCanyon bei 46,360–46,362° N liegt in
+der gemeldeten Strecke), Soča (Trnovo-Schlucht/„Katarakt“ als Schlucht erkannt), Sjoa
+(Åsengjuvet: Fluss im Bild verdeckt, mit Kartverket 25–40 m breit 5 m über Wasser → Schlucht-/Klammstrecke).
+Die schmale Velika-Korita-Klamm (wenige Meter breit, 15 m tief) ist zu klein für das globale
+Höhenmodell und wird nicht erkannt. Ein Slowenien-Laserscan (1 m) würde das ändern.
+
+Im Längsprofil zeigen farbige Bänder die Hinweise; der Mauszeiger zeigt die gemessene Flussbreite.
+GPX- und GeoJSON-Export enthalten die Hinweise als Wegpunkte bzw. Linien.
+
 ## Wie die Analyse funktioniert
 
 1. **Abtastung** der Flusslinie alle 25 m.
@@ -110,7 +134,7 @@ Gefälle aus dem globalen Höhenmodell, 250-m-Abschnitte (`scripts/soca.mts`):
 | Žaga – Srpenica | 1,6 km | 1,4 m/km | 4 m/km | WW I–II |
 | Srpenica – Trnovo | 5,4 km | 6,9 m/km | 39 m/km | WW II–III+, Hochwasser IV |
 | Trnovo – Kobarid | 5,1 km | 13,5 m/km | 54 m/km, Talenge | Katarakt WW IV–V+, Otona–Kobarid III–IV |
-| Koritnica Kluže – Mündung | 3,6 km | 16,7 m/km | 36 m/km (2 Hotspots) | WW III/IV |
+| Koritnica ab Kluže-Schlucht – Mündung | 5,2 km | 16,2 m/km | 69 m/km am Schluchtausgang | WW III/IV |
 
 **Erkenntnisse:** Die Reihenfolge stimmt. Die schwersten Abschnitte (Velika Korita, Trnovo-Schlucht)
 haben die steilsten Stellen, die Anfängerstrecke das geringste Gefälle. Das **mittlere Gefälle allein
@@ -126,7 +150,8 @@ src/
   dem.ts           Höhenkacheln (global + Kartverket), Zwischenspeicher, Schutzschalter
   analysis.ts      Profil, Glättung, Abschnitte, Hotspots, Talenge
   route.ts         Flusslauf zwischen Ein-/Ausstieg nachziehen (Kostenraster + Dijkstra)
-  sentinel.ts      Sentinel-2-Szenensuche (STAC), NDWI/NDVI je Rasterzelle
+  sentinel.ts      Sentinel-2-Szenensuche (STAC), NDWI/NDVI je Rasterzelle bzw. Punkt
+  narrows.ts       Engstellen (Flussbreite), Schluchten (Talquerschnitt), verdeckte Klammen
   flow.ts          Höhenraster laden, Min-Heap, Pixel ↔ Koordinate
   osm.ts           Overpass-Abfragen (gestaffelt, Cache), Verkettung von Flusswegen, Ortssuche
   profileChart.ts  Längsprofil (SVG)
@@ -143,8 +168,8 @@ scripts/           Prüfskript mit echten Höhendaten
   ARSO Slowenien, BAFU) sowie GloFAS-Modellabfluss für Gebiete ohne Pegel. Sentinel-2-Szenen mit
   dem Abfluss am Aufnahmetag verknüpfen und per Schieberegler vergleichen.
 - **Höhenmodelle Skandinavien:** Lantmäteriet (Schweden) und Maanmittauslaitos (Finnland) analog zu Kartverket.
-- **Engstellen:** Flussbreite aus Sentinel-2 bzw. OSM-Wasserflächen messen, Talquerschnitte aus dem
-  1-m-Modell (Schluchtbreite, Tiefe), Kombination mit Gefälle.
+- **Engstellen verfeinern:** OSM-Wasserflächen für exakte Breiten, Laserscan-Modelle für Slowenien,
+  Schweiz, Österreich; Strömungsleistung (Gefälle × Abfluss ÷ Breite) mit Abflussdaten.
 - **Phase 3 – Eigene Notizen & offline:** Stromschnellen markieren, Schwierigkeit, Fotos, Pegel bei
   der Befahrung, Umtragestellen. Offline-Nutzung als PWA.
 - **Phase 4 – Modell:** Schwierigkeitsschätzung aus Gefälle, Abfluss, Talenge und Weißwasser-Anteil,

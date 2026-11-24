@@ -87,10 +87,10 @@ export const PRESETS: Preset[] = [
   {
     id: "koritnica",
     name: "Koritnica · Kluže – Mündung",
-    description: "Einstieg unterhalb der Kluže-Schlucht (die Schlucht selbst ist nicht befahrbar: wenige Meter breit, 70 m tief).",
+    description: "Einstieg am Ende der Kluže-Schlucht (die Schlucht selbst ist nicht befahrbar: wenige Meter breit, 70 m tief).",
     literature: "WW III/IV",
     seed: [13.575, 46.336],
-    putIn: [13.5815, 46.349],
+    putIn: [13.5906, 46.3598],
     takeOut: [13.5694, 46.3242],
     zoom: 14,
   },
