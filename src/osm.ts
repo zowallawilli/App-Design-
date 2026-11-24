@@ -4,8 +4,12 @@ import { locateOnLine, type LngLat } from "./geo";
 
 export const OVERPASS_URLS = [
   "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ];
+
+/** Nach dieser Zeit ohne Antwort wird parallel der nächste Server gefragt (ms). */
+export const HEDGE_DELAY = 3500;
 
 export interface OsmWay {
   id: number;
@@ -28,22 +32,55 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
-async function overpass(query: string): Promise<OverpassElement[]> {
-  let lastErr: unknown;
-  for (const url of OVERPASS_URLS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        body: new URLSearchParams({ data: query }),
-      });
-      if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-      const json = await res.json();
-      return json.elements as OverpassElement[];
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error("Overpass nicht erreichbar");
+const cache = new Map<string, Promise<OverpassElement[]>>();
+
+/**
+ * Overpass-Abfrage mit gestaffelten Anfragen: Antwortet der erste Server nicht
+ * innerhalb von HEDGE_DELAY (oder mit Fehler), wird der nächste gefragt; die erste
+ * gültige Antwort gewinnt, die übrigen Anfragen werden abgebrochen.
+ * Ergebnisse werden für die Sitzung zwischengespeichert.
+ */
+export function overpass(query: string, fetchFn: typeof fetch = fetch, hedgeDelay = HEDGE_DELAY): Promise<OverpassElement[]> {
+  const hit = cache.get(query);
+  if (hit) return hit;
+  const p = new Promise<OverpassElement[]>((resolve, reject) => {
+    const controllers: AbortController[] = [];
+    let next = 0, failed = 0, settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const errors: string[] = [];
+    const launch = () => {
+      if (settled || next >= OVERPASS_URLS.length) return;
+      const url = OVERPASS_URLS[next++];
+      const ctrl = new AbortController();
+      controllers.push(ctrl);
+      clearTimeout(timer);
+      timer = setTimeout(launch, hedgeDelay);
+      fetchFn(url, { method: "POST", body: new URLSearchParams({ data: query }), signal: ctrl.signal })
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const json = (await res.json()) as { elements: OverpassElement[]; remark?: string };
+          if (json.remark && /runtime error|timed out/i.test(json.remark)) throw new Error(json.remark);
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          controllers.forEach((c) => c !== ctrl && c.abort());
+          resolve(json.elements);
+        })
+        .catch((e: Error) => {
+          if (settled || e.name === "AbortError") return;
+          errors.push(`${new URL(url).host}: ${e.message}`);
+          if (++failed === OVERPASS_URLS.length) {
+            settled = true;
+            clearTimeout(timer);
+            reject(new Error(`OpenStreetMap nicht erreichbar (${errors.join("; ")})`));
+          } else launch(); // sofort den nächsten Server fragen
+        });
+    };
+    launch();
+  });
+  cache.set(query, p);
+  p.catch(() => cache.delete(query));
+  return p;
 }
 
 function toWays(elements: OverpassElement[]): OsmWay[] {
@@ -59,27 +96,27 @@ function toWays(elements: OverpassElement[]): OsmWay[] {
 
 const WATERWAYS = "^(river|stream|canal)$";
 
-/** Gewässerabschnitte in der Nähe eines Punktes. */
-export async function waysNear(p: LngLat, radius = 250): Promise<OsmWay[]> {
-  const q = `[out:json][timeout:25];way(around:${radius},${p[1]},${p[0]})["waterway"~"${WATERWAYS}"];out body geom;`;
-  return toWays(await overpass(q));
-}
+/** Suchradius um den Klickpunkt für den restlichen Fluss (m). */
+export const RIVER_RADIUS = 25000;
 
 /**
- * Alle Wege desselben Flusses: bevorzugt über die Waterway-Relation,
- * sonst über den Namen im Umkreis.
+ * Eine einzige Abfrage: Gewässer am Klickpunkt plus alle Wege ihrer Waterway-Relation
+ * im Umkreis. `qt` sortiert nicht – spart Serverzeit.
  */
-export async function riverWays(seed: OsmWay, p: LngLat, searchRadius = 60000): Promise<OsmWay[]> {
-  // Bei großen Flüssen (z. B. Glomma, Donau) nur den Umkreis laden, sonst dauert die Abfrage sehr lange.
-  const rel = `[out:json][timeout:60];way(${seed.id});rel(bw)["type"~"^(waterway|route)$"]->.r;way(r.r)["waterway"~"${WATERWAYS}"](around:${searchRadius},${p[1]},${p[0]});out body geom;`;
-  let ways = toWays(await overpass(rel));
-  if (ways.length === 0 && seed.tags.name) {
-    const name = seed.tags.name.replace(/"/g, '\\"');
-    const q = `[out:json][timeout:60];way(around:${searchRadius},${p[1]},${p[0]})["waterway"~"${WATERWAYS}"]["name"="${name}"];out body geom;`;
-    ways = toWays(await overpass(q));
-  }
-  if (!ways.some((w) => w.id === seed.id)) ways.push(seed);
-  return ways;
+export function clickQuery(p: LngLat, radius = 250, riverRadius = RIVER_RADIUS): string {
+  const w = `["waterway"~"${WATERWAYS}"]`;
+  return (
+    `[out:json][timeout:30];way(around:${radius},${p[1]},${p[0]})${w}->.near;` +
+    `rel(bw.near)["type"~"^(waterway|route)$"]->.r;` +
+    `(way(r.r)${w}(around:${riverRadius},${p[1]},${p[0]});.near;);out body geom qt;`
+  );
+}
+
+/** Wege gleichen Namens im Umkreis (nur nötig, wenn der Fluss keine Relation hat). */
+export async function waysByName(name: string, p: LngLat, radius = RIVER_RADIUS): Promise<OsmWay[]> {
+  const n = name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const q = `[out:json][timeout:30];way(around:${radius},${p[1]},${p[0]})["waterway"~"${WATERWAYS}"]["name"="${n}"];out body geom qt;`;
+  return toWays(await overpass(q));
 }
 
 /**
@@ -141,13 +178,20 @@ export function chainWays(ways: OsmWay[], seedId: number): LngLat[] {
 
 /** Fluss unter einem Klickpunkt laden. */
 export async function loadRiverAt(p: LngLat): Promise<RiverLine> {
-  const near = await waysNear(p);
+  let ways = toWays(await overpass(clickQuery(p)));
+  const near = ways.filter((w) => locateOnLine(w.coords, p).offset <= 300);
   if (near.length === 0) throw new Error("Kein Gewässer in der Nähe gefunden (OSM). Näher heranzoomen oder Strecke selbst zeichnen.");
   const ranked = near
     .map((w) => ({ w, off: locateOnLine(w.coords, p).offset, river: w.tags.waterway === "river" ? 0 : 1 }))
     .sort((a, b) => a.off + a.river * 50 - (b.off + b.river * 50));
   const seed = ranked[0].w;
-  const ways = await riverWays(seed, p);
+  // Ohne Waterway-Relation kamen nur die Wege am Klickpunkt – dann über den Namen nachladen
+  const sameName = ways.filter((w) => seed.tags.name && w.tags.name === seed.tags.name);
+  if (seed.tags.name && sameName.length <= near.filter((w) => w.tags.name === seed.tags.name).length) {
+    const more = await waysByName(seed.tags.name, p);
+    const ids = new Set(ways.map((w) => w.id));
+    ways = ways.concat(more.filter((w) => !ids.has(w.id)));
+  }
   return { name: seed.tags.name ?? "(unbenanntes Gewässer)", wayIds: ways.map((w) => w.id), coords: chainWays(ways, seed.id) };
 }
 
@@ -158,4 +202,13 @@ export async function geocode(q: string): Promise<{ name: string; p: LngLat }[]>
   if (!res.ok) throw new Error(`Suche fehlgeschlagen (HTTP ${res.status})`);
   const json = (await res.json()) as { display_name: string; lon: string; lat: string }[];
   return json.map((r) => ({ name: r.display_name, p: [Number(r.lon), Number(r.lat)] }));
+}
+
+/** Alle Gewässerlinien in einem Ausschnitt [W, S, O, N] – für das automatische Nachziehen. */
+export async function waterwaysInBbox(bbox: [number, number, number, number]): Promise<{ name?: string; coords: LngLat[] }[]> {
+  const q = `[out:json][timeout:25];way["waterway"~"${WATERWAYS}"](${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]});out tags geom qt;`;
+  const els = await overpass(q);
+  return els
+    .filter((e) => e.type === "way" && e.geometry)
+    .map((e) => ({ name: e.tags?.name, coords: e.geometry!.map((g) => [g.lon, g.lat] as LngLat) }));
 }

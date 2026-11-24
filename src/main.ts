@@ -3,13 +3,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 
 import { analyzeRiver, type Analysis } from "./analysis";
-import { ElevationSampler, TERRARIUM_URL } from "./dem";
+import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nearNorway, TERRARIUM_URL, type DemSource } from "./dem";
 import { download, toCsv, toGeoJson, toGpx } from "./export";
-import { deriveThalweg } from "./flow";
 import { lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
-import { geocode, loadRiverAt } from "./osm";
+import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
+import { traceRiver } from "./route";
+import { sentinelWater } from "./sentinel";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -111,14 +112,14 @@ $<HTMLInputElement>("terrain").addEventListener("change", (e) => {
 });
 
 // ---------- Zustand ----------
-type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "thalweg-in" | "thalweg-out" | "draw";
+type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "route-in" | "route-out" | "draw";
 let mode: Mode = "idle";
 let riverLine: LngLat[] | null = null;
 let riverName = "";
 let putIn: LngLat | null = null;
 let drawPts: LngLat[] = [];
-let current: { analysis: Analysis; name: string; source: string } | null = null;
-let lastSection: { line: LngLat[]; name: string; source: string } | null = null;
+let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string } | null = null;
+let lastSection: { line: LngLat[]; name: string; source: string; literature?: string } | null = null;
 let markers: maplibregl.Marker[] = [];
 let chart: { highlight: (d: number | null) => void } | null = null;
 /** Jeder neue Vorgang erhöht den Zähler; ältere Ergebnisse werden verworfen. */
@@ -137,15 +138,15 @@ const MODE_HELP: Record<Mode, string> = {
   "osm-river": "Klicke auf einen Fluss in der Karte, um ihn aus OpenStreetMap zu laden.",
   "osm-in": "Klicke auf den Einstieg (wird auf die Flusslinie gesetzt).",
   "osm-out": "Klicke auf den Ausstieg (flussabwärts).",
-  "thalweg-in": "Klicke auf den Einstieg am Fluss.",
-  "thalweg-out": "Klicke auf den Ausstieg – der Talweg wird aus dem Höhenmodell abgeleitet.",
+  "route-in": "Klicke auf den Einstieg am Fluss.",
+  "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
   draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
 };
 
 function setMode(m: Mode) {
   mode = m;
   $("mode-help").textContent = MODE_HELP[m];
-  const group = m.startsWith("osm") ? "osm" : m.startsWith("thalweg") ? "thalweg" : m === "draw" ? "draw" : "";
+  const group = m.startsWith("osm") ? "osm" : m.startsWith("route") ? "route" : m === "draw" ? "draw" : "";
   document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === group));
   $("finish-draw").hidden = m !== "draw";
   $("undo-draw").hidden = m !== "draw";
@@ -194,6 +195,31 @@ function fitLine(line: LngLat[]) {
 }
 
 // ---------- Analyse ----------
+const demSource = () => $<HTMLSelectElement>("opt-dem").value as DemSource;
+
+/** Zoomstufe der Höhenabfrage: Norwegen (Kartverket, 1 m) eine Stufe feiner als global. */
+function analysisZoom(line: LngLat[]): number {
+  const norway = demSource() === "auto" && nearNorway(line[0]);
+  return (norway ? 14 : 13) + Number($<HTMLSelectElement>("opt-res").value);
+}
+
+/** Flusslauf zwischen zwei Punkten nachziehen (Satellit + OSM + Höhenmodell). */
+async function traceSection(from: LngLat, to: LngLat) {
+  const res = Number($<HTMLSelectElement>("opt-res").value);
+  const r = await traceRiver(from, to, {
+    loader: compositeTileLoader(demSource()),
+    water: $<HTMLInputElement>("opt-s2").checked ? sentinelWater : undefined,
+    waterways: $<HTMLInputElement>("opt-osm").checked ? waterwaysInBbox : undefined,
+    maxCells: res < 0 ? 1_500_000 : res > 0 ? 5_000_000 : 3_000_000,
+    onProgress: (m) => setStatus(m),
+  });
+  const pct = (v: number) => `${Math.round(v * 100)} %`;
+  const parts = r.sources.filter((s) => !s.startsWith("Höhenmodell"));
+  const source = parts.length
+    ? `${r.sources.join(" + ")}${r.shareOsm > 0 ? ` · ${pct(r.shareOsm)} auf OSM` : ""}${r.shareWater > 0 ? ` · ${pct(r.shareWater)} auf Wasser/Kiesbett` : ""}`
+    : `${r.sources[0]} – nur Talboden, Kurven evtl. abgeschnitten`;
+  return { line: r.line, source };
+}
 function opts() {
   return {
     segmentLength: Number($<HTMLSelectElement>("opt-seg").value),
@@ -203,9 +229,9 @@ function opts() {
 }
 
 /** Führt die Analyse aus. Liefert true bei Erfolg. `note` wird nach Abschluss als Hinweis angezeigt. */
-async function runAnalysis(line: LngLat[], name: string, source: string, note = ""): Promise<boolean> {
+async function runAnalysis(line: LngLat[], name: string, source: string, note = "", literature?: string): Promise<boolean> {
   const id = ++runId;
-  lastSection = { line, name, source };
+  lastSection = { line, name, source, literature };
   if (line.length < 2 || lineLength(line) < 100) {
     setStatus("Strecke zu kurz (mindestens 100 m).", true);
     return false;
@@ -214,12 +240,20 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
     setStatus("Strecke über 200 km – bitte kürzeren Abschnitt wählen.", true);
     return false;
   }
-  const sampler = new ElevationSampler(undefined, Number($<HTMLSelectElement>("opt-zoom").value));
+  const sampler = new ElevationSampler(compositeTileLoader(demSource()), analysisZoom(line));
+  const before = { ...demStats };
   setBusy(true);
   try {
     const a = await analyzeRiver(line, (p, cb) => sampler.elevations(p, cb), opts(), (m) => id === runId && setStatus(m));
     if (id !== runId) return false; // inzwischen neuer Vorgang gestartet
-    current = { analysis: a, name, source };
+    const kv = demStats.kartverket - before.kartverket, gl = demStats.global - before.global;
+    const err = demStats.kartverketErrors - before.kartverketErrors;
+    const dem =
+      (kv > 0 && gl === 0 ? "Kartverket DTM (1 m)" : kv > 0 ? "Kartverket + global" : "global (SRTM/EU-DEM u. a.)") +
+      (err > 0 || (kv === 0 && demSource() === "auto" && nearNorway(line[0]) && kartverketBreaker.lastError)
+        ? ` – Kartverket ${kv > 0 ? "teilweise " : ""}nicht erreichbar (${kartverketBreaker.lastError || "Fehler"})`
+        : "");
+    current = { analysis: a, name, source, dem, literature };
     showResults();
     const notes = [note, a.reversed ? "Fließrichtung wurde anhand der Höhen umgedreht." : ""].filter(Boolean);
     setStatus(notes.length ? `Hinweis: ${notes.join(" ")}` : "");
@@ -261,7 +295,9 @@ function showResults() {
 
   $("res-title").textContent = name;
   const stats: [string, string][] = [
-    ["Quelle", source],
+    ...(current.literature ? ([["Literatur", current.literature]] as [string, string][]) : []),
+    ["Flusslinie", source],
+    ["Höhenmodell", current.dem],
     ["Länge", fmtKm(a.length)],
     ["Höhe", `${a.zStart.toFixed(0)} → ${a.zEnd.toFixed(0)} m`],
     ["Höhenverlust", `${a.drop.toFixed(0)} m`],
@@ -325,9 +361,9 @@ function focusHotspot(i: number) {
 new ResizeObserver(() => drawChart()).observe($("profile-wrap"));
 
 // Parameter geändert → neu rechnen
-["opt-seg", "opt-hot", "opt-zoom", "opt-conf"].forEach((id) =>
+["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf"].forEach((id) =>
   $(id).addEventListener("change", () => {
-    if (lastSection && !busy) void runAnalysis(lastSection.line, lastSection.name, lastSection.source);
+    if (lastSection && !busy) void runAnalysis(lastSection.line, lastSection.name, lastSection.source, "", lastSection.literature);
   }),
 );
 
@@ -354,7 +390,7 @@ document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) =>
   b.addEventListener("click", () => {
     resetAll();
     const m = b.dataset.mode;
-    setMode(m === "osm" ? "osm-river" : m === "thalweg" ? "thalweg-in" : "draw");
+    setMode(m === "osm" ? "osm-river" : m === "route" ? "route-in" : "draw");
   }),
 );
 $("reset").addEventListener("click", () => { resetAll(); setMode("idle"); });
@@ -447,35 +483,35 @@ map.on("click", async (e) => {
       }
       break;
     }
-    case "thalweg-in":
+    case "route-in":
       putIn = p;
       clearMarkers();
       endpointMarker(p, "Einstieg", "#2a9d8f");
-      setMode("thalweg-out");
+      setMode("route-out");
       break;
-    case "thalweg-out": {
-      if (!putIn) return setMode("thalweg-in");
+    case "route-out": {
+      if (!putIn) return setMode("route-in");
       const from = putIn;
       const id = ++runId;
       setMode("idle");
       endpointMarker(p, "Ausstieg", "#264653");
       setBusy(true);
-      let line: LngLat[];
+      let sec: { line: LngLat[]; source: string };
       try {
-        line = await deriveThalweg(from, p, undefined, (m) => setStatus(m));
+        sec = await traceSection(from, p);
       } catch (err) {
         setBusy(false);
         if (id !== runId) return;
         clearMarkers();
         putIn = null;
-        setMode("thalweg-in");
+        setMode("route-in");
         setStatus(`${(err as Error).message} Bitte Einstieg neu wählen.`, true);
         return;
       }
       setBusy(false);
       if (id !== runId) return;
-      src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
-      await runAnalysis(line, "Talweg (aus Höhenmodell)", "Höhenmodell (Talweg + Gefälle)");
+      src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
+      await runAnalysis(sec.line, "Eigene Strecke", sec.source);
       break;
     }
     case "draw":
@@ -488,7 +524,10 @@ map.on("click", async (e) => {
 // ---------- Referenzstrecken ----------
 const presetSel = $<HTMLSelectElement>("preset");
 presetSel.innerHTML = PRESETS.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
-const showPresetDesc = () => ($("preset-desc").textContent = PRESETS.find((p) => p.id === presetSel.value)?.description ?? "");
+const showPresetDesc = () => {
+  const pr = PRESETS.find((p) => p.id === presetSel.value);
+  $("preset-desc").textContent = pr ? `${pr.description}${pr.literature ? ` Literatur: ${pr.literature}.` : ""}` : "";
+};
 presetSel.addEventListener("change", showPresetDesc);
 showPresetDesc();
 
@@ -501,32 +540,16 @@ $("load-preset").addEventListener("click", async () => {
   const id = runId;
   map.flyTo({ center: pr.seed, zoom: pr.zoom });
   setBusy(true);
-  let osmOk = false;
   try {
-    await loadOsmRiver(pr.seed);
-    osmOk = true;
-  } catch (e) {
-    if (id !== runId) return setBusy(false);
-    setStatus(`OSM nicht verfügbar (${(e as Error).message}) – leite Talweg aus dem Höhenmodell ab …`);
-  }
-  if (osmOk) {
-    setBusy(false);
-    // Ein-/Ausstieg auf die OSM-Linie setzen und nur den Abschnitt zeigen
-    const sec = sliceLine(riverLine!, locateOnLine(riverLine!, pr.putIn).d, locateOnLine(riverLine!, pr.takeOut).d);
-    fitLine(sec);
-    await analyzeOsmSection(pr.putIn, pr.takeOut, pr.name);
-    return;
-  }
-  try {
-    const line = await deriveThalweg(pr.putIn, pr.takeOut, undefined, (m) => setStatus(m));
+    const sec = await traceSection(pr.putIn, pr.takeOut);
     setBusy(false);
     if (id !== runId) return;
-    src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
-    fitLine(line);
-    await runAnalysis(line, pr.name, "Höhenmodell (Talweg + Gefälle)", "OpenStreetMap war nicht erreichbar – Talweg aus dem Höhenmodell abgeleitet.");
-  } catch (e2) {
+    src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
+    fitLine(sec.line);
+    await runAnalysis(sec.line, pr.name, sec.source, "", pr.literature);
+  } catch (e) {
     setBusy(false);
-    if (id === runId) setStatus(`Laden fehlgeschlagen: ${(e2 as Error).message}`, true);
+    if (id === runId) setStatus(`Laden fehlgeschlagen: ${(e as Error).message}`, true);
   }
 });
 

@@ -122,3 +122,6 @@ button:disabled { opacity: 0.5; cursor: default; }
   #profile-wrap { height: 190px; }
 }
 body.busy #map { cursor: progress; }
+.check { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 0.9rem; }
+details .lbl { font-size: 0.9rem; }
+.credits { display: block; margin-top: 6px; opacity: 0.8; }

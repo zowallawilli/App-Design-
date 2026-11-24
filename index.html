@@ -36,7 +36,7 @@
           <span class="lbl">Eigene Strecke festlegen</span>
           <div class="modes" role="group" aria-label="Modus">
             <button data-mode="osm" title="Gewässer aus OpenStreetMap laden, dann Ein- und Ausstieg anklicken">Fluss aus OSM</button>
-            <button data-mode="thalweg" title="Ein- und Ausstieg anklicken – der Talweg wird aus dem Höhenmodell abgeleitet">Talweg aus DGM</button>
+            <button data-mode="route" title="Ein- und Ausstieg anklicken – der Flusslauf dazwischen wird aus Satellitenbild, OSM und Höhenmodell nachgezogen">Ein-/Ausstieg</button>
             <button data-mode="draw" title="Strecke flussabwärts Punkt für Punkt zeichnen">Zeichnen</button>
           </div>
           <p id="mode-help" class="hint">Wähle einen Modus oder lade die Referenzstrecke.</p>
@@ -66,10 +66,16 @@
               </select>
             </label>
             <label>Höhenmodell
-              <select id="opt-zoom">
-                <option value="12">Zoom 12 (schnell)</option>
-                <option value="13" selected>Zoom 13</option>
-                <option value="14">Zoom 14 (fein)</option>
+              <select id="opt-dem">
+                <option value="auto" selected>Automatisch (Norwegen: Kartverket 1 m)</option>
+                <option value="global">Nur global (AWS Terrain Tiles)</option>
+              </select>
+            </label>
+            <label>Auflösung
+              <select id="opt-res">
+                <option value="-1">grob (schnell)</option>
+                <option value="0" selected>Standard</option>
+                <option value="1">fein</option>
               </select>
             </label>
             <label>Talenge ab
@@ -81,6 +87,10 @@
             </label>
           </div>
           <p class="hint">Talenge = beidseitig mindestens so viel Anstieg innerhalb von 100 m quer zum Fluss (Hinweis auf Schlucht, schwieriges Umtragen).</p>
+          <span class="lbl" style="margin-top:10px">Flusslauf nachziehen (Modus Ein-/Ausstieg)</span>
+          <label class="check"><input type="checkbox" id="opt-s2" checked /> Sentinel-2-Satellitenbild (Wasser &amp; Kiesbett)</label>
+          <label class="check"><input type="checkbox" id="opt-osm" checked /> OpenStreetMap-Gewässer</label>
+          <p class="hint">Das Höhenmodell wird immer genutzt. Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann in engen Schluchten Kurven abschneiden.</p>
         </details>
 
         <p id="status" class="status" role="status"></p>
@@ -102,6 +112,7 @@
         <footer class="disclaimer">
           Das Gefälle ist ein <strong>Indikator</strong>, keine Schwierigkeitsbewertung. Siphons, Holz, Verblockung,
           Wasserstand und Engstellen unter der Auflösung des Höhenmodells (ca. 10–30 m) sind nicht erfasst. Vor Ort besichtigen.
+          <br /><span class="credits">Daten: © Kartverket (CC BY 4.0), Copernicus Sentinel-2 (ESA), © OpenStreetMap-Mitwirkende, AWS Terrain Tiles.</span>
         </footer>
       </aside>
 
