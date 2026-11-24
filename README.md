@@ -56,6 +56,26 @@ Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann Mäander abschneiden
 werden erst grob gesucht und dann in 6-km-Stücken fein nachgezogen. Verlässt der Fluss den
 Ausschnitt (großer Bogen), wird der Ausschnitt vergrößert.
 
+## Hochauflösendes Luftbild, Aufnahmedatum und Abfluss am Aufnahmetag
+
+Der Hintergrund „Luftbild“ (Esri World Imagery) ist je nach Region **0,25–1 m** aufgelöst – in
+Slowenien das GURS-Orthofoto 2023 (25 cm), an der Sjoa Vantor/Maxar „Vivid“ (50 cm). Die App fragt
+dazu den Esri-Metadatendienst ab und zeigt **Quelle, Aufnahmedatum und Auflösung** an (oben in der
+Karte für die Kartenmitte, im Ergebnis je Streckenabschnitt).
+
+Für jedes Aufnahmedatum wird der **Abfluss an diesem Tag** aus dem Copernicus-Hochwassermodell
+GloFAS (Open-Meteo Flood API, Tageswerte seit 1984, Raster ~5 km) ermittelt und mit allen Jahren zur
+gleichen Jahreszeit verglichen (sehr niedrig … sehr hoch). Daneben steht der heutige Modellabfluss:
+„Heute fließt etwa 1,2× so viel wie am Aufnahmetag“. So lässt sich einschätzen, wie die im Luftbild
+sichtbaren Stufen und Blöcke beim aktuellen Pegel vor Ort aussehen. Links führen zu den offiziellen
+Pegeln (NVE, ARSO, SMHI, BAFU, eHYD).
+
+**Stellen im Luftbild ansehen:** Mit ◀ ▶ springt die Karte nacheinander zu allen markierten Stellen
+(Hotspots, Schluchten) und zoomt so weit ins Luftbild, dass Blöcke und Stufen erkennbar sind.
+
+Grenzen: GloFAS ist ein Modell; für kleine Flüsse (< ~500 km² Einzugsgebiet) und nahe Mündungen
+kann der gewählte Rasterpunkt am falschen Fluss liegen (er wird auf der Karte blau angezeigt).
+
 ## Engstellen, Schluchten und verdeckte Klammen
 
 Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen gesucht
@@ -63,7 +83,7 @@ Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen ges
 
 | Zeichen | Hinweis | Verfahren |
 |---|---|---|
-| **E** (orange) | **Engstelle** | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
+| **E** (orange) | **Engstelle** (optional, standardmäßig aus) | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
 | **S** (violett) | **Schlucht** | Talquerschnitt alle 50 m aus dem Höhenmodell: Talbreite 5 m und 20 m über dem Wasserspiegel und Tiefe (Anstieg innerhalb 250 m, schwächere Seite). Schlucht, wenn das Tal 20 m über Wasser ≤ 90 m breit und ≥ 30 m tief ist (Kartverket 1 m), bzw. ≤ 140 m / ≥ 60 m mit dem groben globalen Modell. |
 | **K** (schwarz) | **Mögliche Klamm** | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
 
@@ -121,6 +141,22 @@ Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit ei
 | Satellitenbild | Sentinel-2 cloudless 2023 (EOX) | CC BY-NC-SA 4.0 |
 | Topo | OpenTopoMap | CC-BY-SA |
 
+## Abgleich Sjoa (Norwegen): Gefälle und Schluchten vs. Literatur
+
+Ganze Sjoa von Ridderspranget bis zur Mündung nachgezogen (38 km, 58 % auf Wasser/Kies), Abschnitte
+nach Rafting-Anbietern, globales Höhenmodell (Kartverket war während des Tests nicht erreichbar):
+
+| Abschnitt | Länge | Ø Gefälle | Schlucht-/Klamm-Hinweise | Literatur |
+|---|---|---|---|---|
+| Ridderspranget – Åsengjuvet-Einstieg | 7,5 km | 17,5 m/km | Steilstellen am Einstieg (48 m/km), Schluchtstrecke km 1,4–2,9 | WW 5 bei Ridderspranget (drei Fälle) |
+| Åsengjuvet | 12,8 km | 11,7 m/km | **Schluchtstrecke über 7,2 km** | WW 3–4 (+), 12 km durchgehend |
+| Playrun (Heidal) | 13,9 km | 10,6 m/km | eine Strecke von 1,1 km, ein verdeckter Abschnitt | WW 2–3 |
+| Åmot – Mündung | 3,7 km | 11,0 m/km | **Schluchtstrecke 1,8 km** | WW 4, bei Hochwasser fast 5 |
+
+**Erkenntnis:** Åsengjuvet (WW 3–4) und Playrun (WW 2–3) haben fast dasselbe Gefälle – unterscheidbar
+werden sie erst durch die Schlucht-Erkennung. Die schmale Klamm von Ridderspranget selbst ist für das
+globale Modell zu klein; mit dem Kartverket-Modell (1 m) wird sie besser sichtbar.
+
 ## Abgleich Soča: Gefälle vs. Literatur
 
 Flusslauf mit Sentinel-2 nachgezogen (65 % der Linie auf Wasser/Kiesbett, Raster 6,6 m),
@@ -168,6 +204,13 @@ scripts/           Prüfskript mit echten Höhendaten
   ARSO Slowenien, BAFU) sowie GloFAS-Modellabfluss für Gebiete ohne Pegel. Sentinel-2-Szenen mit
   dem Abfluss am Aufnahmetag verknüpfen und per Schieberegler vergleichen.
 - **Höhenmodelle Skandinavien:** Lantmäteriet (Schweden) und Maanmittauslaitos (Finnland) analog zu Kartverket.
+- **Blöcke und Weißwasser automatisch erkennen:** Ein Prototyp auf dem slowenischen 25-cm-Orthofoto
+  zeigt: Schwälle und Blöcke sind im Bild klar sichtbar, eine einfache Farbregel trifft Weißwasser
+  aber nur teilweise und verwechselt helle Kiesbänke. Verlässlich wird es mit einem trainierten
+  Bilderkennungsmodell (eigene markierte Stellen als Trainingsdaten). Voraussetzungen: ein kleiner
+  Server (der Bilddienst erlaubt keinen Pixelzugriff aus dem Browser) und Bilder, deren Lizenz die
+  Auswertung erlaubt (offen z. B. Slowenien, Schweiz, Österreich; Norge i bilder und Esri nur zur
+  Anzeige).
 - **Engstellen verfeinern:** OSM-Wasserflächen für exakte Breiten, Laserscan-Modelle für Slowenien,
   Schweiz, Österreich; Strömungsleistung (Gefälle × Abfluss ÷ Breite) mit Abflussdaten.
 - **Phase 3 – Eigene Notizen & offline:** Stromschnellen markieren, Schwierigkeit, Fotos, Pegel bei

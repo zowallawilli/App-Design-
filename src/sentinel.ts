@@ -31,7 +31,21 @@ interface StacFeature {
  * die zusammen den Ausschnitt abdecken. Liegt der Ausschnitt über einer
  * Kachelgrenze, werden mehrere Szenen kombiniert (bevorzugt vom selben Tag).
  */
-export async function findScenes(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<Scene[]> {
+/** Bereits gesuchte Ausschnitte – liegt ein neuer Ausschnitt darin, werden dieselben Szenen genutzt. */
+const sceneCache: { bbox: [number, number, number, number]; scenes: Promise<Scene[]> }[] = [];
+
+export function findScenes(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<Scene[]> {
+  const hit = sceneCache.find((c) => c.bbox[0] <= bbox[0] && c.bbox[1] <= bbox[1] && c.bbox[2] >= bbox[2] && c.bbox[3] >= bbox[3]);
+  if (hit) return hit.scenes;
+  const scenes = searchScenes(bbox, fetchFn);
+  const entry = { bbox, scenes };
+  sceneCache.push(entry);
+  if (sceneCache.length > 20) sceneCache.shift();
+  scenes.catch(() => sceneCache.splice(sceneCache.indexOf(entry), 1));
+  return scenes;
+}
+
+async function searchScenes(bbox: [number, number, number, number], fetchFn: typeof fetch): Promise<Scene[]> {
   const now = new Date();
   const from = new Date(now.getFullYear() - 3, 0, 1).toISOString();
   const res = await fetchFn(STAC_SEARCH, {
@@ -133,6 +147,24 @@ function openImage(url: string): Promise<GeoImage> {
   return p;
 }
 
+type Bands = [ArrayLike<number>, ArrayLike<number>, ArrayLike<number>];
+/** Bereits gelesene Bildfenster je Szene (Grün, Rot, NIR) – Teilstücke lesen daraus statt erneut zu laden. */
+const windowCache = new Map<string, { win: number[]; bands: Promise<Bands> }[]>();
+
+/** Liest ein Fenster [c0, r0, c1, r1] der drei Bänder; nutzt ein umfassendes, bereits gelesenes Fenster. */
+async function readBands(scene: Scene, images: GeoImage[], win: number[]): Promise<{ win: number[]; bands: Bands }> {
+  const list = windowCache.get(scene.id) ?? [];
+  const hit = list.find((c) => c.win[0] <= win[0] && c.win[1] <= win[1] && c.win[2] >= win[2] && c.win[3] >= win[3]);
+  if (hit) return { win: hit.win, bands: await hit.bands };
+  const bands = Promise.all(images.map(async (im) => ((await im.readRasters({ window: win })) as unknown as [ArrayLike<number>])[0])) as Promise<Bands>;
+  const entry = { win, bands };
+  list.push(entry);
+  if (list.length > 6) list.shift();
+  windowCache.set(scene.id, list);
+  bands.catch(() => list.splice(list.indexOf(entry), 1));
+  return { win, bands: await bands };
+}
+
 export async function indicesForGrid(g: Grid, scene: Scene): Promise<Indices> {
   const fwd = proj4("EPSG:4326", utmDef(scene.epsg));
   const [gi, ri, ni] = await Promise.all([openImage(scene.green), openImage(scene.red), openImage(scene.nir)]);
@@ -156,9 +188,8 @@ export async function indicesForGrid(g: Grid, scene: Scene): Promise<Indices> {
   const ndwi = new Float32Array(g.w * g.h).fill(NaN);
   const ndvi = new Float32Array(g.w * g.h).fill(NaN);
   if (c1 <= c0 || r1 <= r0) return { ndwi, ndvi };
-  const window = [c0, r0, c1, r1];
-  const [[gb], [rb], [nb]] = (await Promise.all([gi, ri, ni].map((im) => im.readRasters({ window })))) as unknown as [ArrayLike<number>][];
-  const ww = c1 - c0;
+  const { win, bands: [gb, rb, nb] } = await readBands(scene, [gi, ri, ni], [c0, r0, c1, r1]);
+  const ww = win[2] - win[0], wh = win[3] - win[1];
   for (let y = 0; y < g.h; y++) {
     const fy = y / step, j = Math.min(lh - 2, Math.floor(fy)), ty = fy - j;
     for (let x = 0; x < g.w; x++) {
@@ -166,8 +197,8 @@ export async function indicesForGrid(g: Grid, scene: Scene): Promise<Indices> {
       const k = j * lw + i;
       const e = (ux[k] * (1 - tx) + ux[k + 1] * tx) * (1 - ty) + (ux[k + lw] * (1 - tx) + ux[k + lw + 1] * tx) * ty;
       const nn = (uy[k] * (1 - tx) + uy[k + 1] * tx) * (1 - ty) + (uy[k + lw] * (1 - tx) + uy[k + lw + 1] * tx) * ty;
-      const c = Math.floor((e - ox) / rx) - c0, r = Math.floor((nn - oy) / ry) - r0;
-      if (c < 0 || r < 0 || c >= ww || r >= r1 - r0) continue;
+      const c = Math.floor((e - ox) / rx) - win[0], r = Math.floor((nn - oy) / ry) - win[1];
+      if (c < 0 || r < 0 || c >= ww || r >= wh) continue;
       const gv = gb[r * ww + c], rv = rb[r * ww + c], nv = nb[r * ww + c];
       if (gv === 0 && nv === 0) continue; // NoData
       ndwi[y * g.w + x] = (gv - nv) / (gv + nv + 1e-6);
@@ -229,12 +260,11 @@ export async function sentinelPoints(points: LngLat[], blockSize = 3000): Promis
       const c0 = Math.max(0, Math.floor((minE - ox) / rx)), c1 = Math.min(W, Math.floor((maxE - ox) / rx) + 1);
       const r0 = Math.max(0, Math.floor((maxN - oy) / ry)), r1 = Math.min(H, Math.floor((minN - oy) / ry) + 1);
       if (c1 <= c0 || r1 <= r0) continue;
-      const window = [c0, r0, c1, r1];
-      const [[gb], [rb], [nb]] = (await Promise.all([gi, ri, ni].map((im) => im.readRasters({ window })))) as unknown as [ArrayLike<number>][];
-      const ww = c1 - c0;
+      const { win, bands: [gb, rb, nb] } = await readBands(sc, [gi, ri, ni], [c0, r0, c1, r1]);
+      const ww = win[2] - win[0], wh = win[3] - win[1];
       utm.forEach(([x, y], k) => {
-        const c = Math.floor((x - ox) / rx) - c0, r = Math.floor((y - oy) / ry) - r0;
-        if (c < 0 || r < 0 || c >= ww || r >= r1 - r0) return;
+        const c = Math.floor((x - ox) / rx) - win[0], r = Math.floor((y - oy) / ry) - win[1];
+        if (c < 0 || r < 0 || c >= ww || r >= wh) return;
         const gv = gb[r * ww + c], rv = rb[r * ww + c], nv = nb[r * ww + c];
         if (gv === 0 && nv === 0) return;
         ndwi[idx[k]] = (gv - nv) / (gv + nv + 1e-6);

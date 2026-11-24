@@ -145,7 +145,7 @@ const isNoData = (v: number) => !Number.isFinite(v) || v < -500 || v > 9000;
 /** Höchstens so viele gleichzeitige Anfragen an Kartverket (der Dienst drosselt sonst mit HTTP 503). */
 export const KARTVERKET_CONCURRENCY = 3;
 /** Zeitlimit je Kachel (ms) */
-export const KARTVERKET_TIMEOUT = 15000;
+export const KARTVERKET_TIMEOUT = 8000;
 
 let active = 0;
 const waiting: (() => void)[] = [];
