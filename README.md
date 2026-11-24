@@ -7,7 +7,11 @@ Höhenmodell das Längsprofil, das Gefälle je Abschnitt, die steilsten Stellen 
 > ⚠️ Das Gefälle ist ein **Indikator**, keine Wildwasser-Bewertung. Siphons, Holz, Verblockung,
 > Wasserstand und Engstellen unterhalb der Auflösung des Höhenmodells (ca. 10–30 m) werden nicht erfasst.
 
-## Starten
+## Online nutzen
+
+**https://zowallawilli.github.io/App-Design-/** – wird bei jeder Änderung auf `main` automatisch neu gebaut (`.github/workflows/deploy.yml`).
+
+## Lokal starten
 
 ```bash
 npm install
