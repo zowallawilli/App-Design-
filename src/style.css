@@ -121,3 +121,4 @@ button:disabled { opacity: 0.5; cursor: default; }
   #main { height: 70vh; flex: none; }
   #profile-wrap { height: 190px; }
 }
+body.busy #map { cursor: progress; }

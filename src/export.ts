@@ -66,6 +66,12 @@ export function download(filename: string, content: string, mime: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.style.display = "none";
+  // Safari und Firefox übernehmen den Dateinamen nur, wenn der Link im Dokument hängt
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 1000);
 }

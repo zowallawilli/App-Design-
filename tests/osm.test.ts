@@ -26,3 +26,15 @@ describe("chainWays", () => {
     expect(chainWays(ways, 1).length).toBe(3);
   });
 });
+
+describe("chainWays mit falsch digitalisierten Wegen", () => {
+  it("hängt gleichnamige, umgekehrt gezeichnete Wege richtig an", () => {
+    const ways = [way(1, [1, 2, 3]), way(2, [5, 4, 3]), way(3, [5, 6])];
+    const line = chainWays(ways, 1);
+    expect(line.map((c) => Math.round((c[0] - 13) * 1000))).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+  it("dreht keine fremden Gewässer um", () => {
+    const ways = [way(1, [1, 2, 3]), way(2, [5, 4, 3], "Bach", "stream")];
+    expect(chainWays(ways, 1)).toHaveLength(3);
+  });
+});

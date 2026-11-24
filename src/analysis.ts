@@ -190,9 +190,14 @@ export async function analyzeRiver(
   onProgress?.("Höhendaten laden …");
   let z = await elevations(buildQuery(samples), (a, b) => onProgress?.(`Höhendaten ${Math.round((a / b) * 100)} %`));
 
-  // Fließrichtung prüfen: Start muss höher liegen als Ende
+  // Fließrichtung prüfen: Start muss höher liegen als Ende. Median der ersten/letzten
+  // Talboden-Werte statt eines Einzelpixels, damit Rauschen die Richtung nicht kippt.
   let reversed = false;
-  const head = z[0], tail = z[(samples.length - 1) * perSample];
+  const floorAt = (i: number) => Math.min(...z.slice(i * perSample, i * perSample + 1 + o.floorOffsets.length * 2));
+  const endN = Math.max(1, Math.min(10, Math.floor(samples.length / 5)));
+  const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
+  const head = median(Array.from({ length: endN }, (_, i) => floorAt(i)));
+  const tail = median(Array.from({ length: endN }, (_, i) => floorAt(samples.length - 1 - i)));
   if (head < tail) {
     reversed = true;
     samples = resample([...line].reverse(), o.step);
@@ -226,7 +231,11 @@ export async function analyzeRiver(
     const d1 = (length * (k + 1)) / nSeg;
     const z0 = interpZ(profile, d0), z1 = interpZ(profile, d1);
     const gradient = ((z0 - z1) / (d1 - d0)) * 1000;
-    const coords = profile.filter((p) => p.d >= d0 - 1e-6 && p.d <= d1 + 1e-6).map((p) => p.p);
+    // Stützpunkte des Abschnitts plus je einen Nachbarn, damit auf der Karte keine Lücken entstehen
+    const i0 = Math.max(0, profile.findIndex((p) => p.d >= d0 - 1e-6) - (k > 0 ? 1 : 0));
+    let i1 = profile.findIndex((p) => p.d > d1 + 1e-6);
+    if (i1 < 0) i1 = profile.length;
+    const coords = profile.slice(i0, i1).map((p) => p.p);
     segments.push({ index: k, d0, d1, z0, z1, gradient, cls: classify(gradient), confined: confinedAt(d0, d1), coords });
   }
 

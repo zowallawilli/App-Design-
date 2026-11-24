@@ -93,6 +93,8 @@ map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-
 map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
 map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), "top-right");
 const src = (id: string) => map.getSource(id) as GeoJSONSource;
+// für automatisierte Tests im Entwicklungsmodus
+if (import.meta.env.DEV) (window as unknown as { __map: maplibregl.Map }).__map = map;
 
 document.querySelectorAll<HTMLButtonElement>("#basemap button").forEach((b) =>
   b.addEventListener("click", () => {
@@ -116,8 +118,19 @@ let riverName = "";
 let putIn: LngLat | null = null;
 let drawPts: LngLat[] = [];
 let current: { analysis: Analysis; name: string; source: string } | null = null;
+let lastSection: { line: LngLat[]; name: string; source: string } | null = null;
 let markers: maplibregl.Marker[] = [];
 let chart: { highlight: (d: number | null) => void } | null = null;
+/** Jeder neue Vorgang erhöht den Zähler; ältere Ergebnisse werden verworfen. */
+let runId = 0;
+let busy = false;
+
+function setBusy(b: boolean) {
+  busy = b;
+  document.querySelectorAll<HTMLButtonElement>("#load-preset, .modes button, #finish-draw, #undo-draw").forEach((x) => (x.disabled = b));
+  document.querySelectorAll<HTMLSelectElement>("#panel details select").forEach((x) => (x.disabled = b));
+  document.body.classList.toggle("busy", b);
+}
 
 const MODE_HELP: Record<Mode, string> = {
   idle: "Wähle einen Modus oder lade die Referenzstrecke.",
@@ -126,7 +139,7 @@ const MODE_HELP: Record<Mode, string> = {
   "osm-out": "Klicke auf den Ausstieg (flussabwärts).",
   "thalweg-in": "Klicke auf den Einstieg am Fluss.",
   "thalweg-out": "Klicke auf den Ausstieg – der Talweg wird aus dem Höhenmodell abgeleitet.",
-  draw: "Klicke flussabwärts Punkte entlang des Flusses. Danach „Zeichnen beenden“.",
+  draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
 };
 
 function setMode(m: Mode) {
@@ -135,6 +148,10 @@ function setMode(m: Mode) {
   const group = m.startsWith("osm") ? "osm" : m.startsWith("thalweg") ? "thalweg" : m === "draw" ? "draw" : "";
   document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === group));
   $("finish-draw").hidden = m !== "draw";
+  $("undo-draw").hidden = m !== "draw";
+  // Doppelklick beendet im Zeichenmodus die Linie statt zu zoomen
+  if (m === "draw") map.doubleClickZoom.disable();
+  else map.doubleClickZoom.enable();
   map.getCanvas().style.cursor = m === "idle" ? "" : "crosshair";
 }
 
@@ -153,6 +170,8 @@ function endpointMarker(p: LngLat, label: string, color: string) {
 }
 
 function resetAll() {
+  runId++;
+  lastSection = null;
   riverLine = null;
   putIn = null;
   drawPts = [];
@@ -183,22 +202,33 @@ function opts() {
   };
 }
 
-let lastSection: { line: LngLat[]; name: string; source: string } | null = null;
-
-async function runAnalysis(line: LngLat[], name: string, source: string) {
+/** Führt die Analyse aus. Liefert true bei Erfolg. `note` wird nach Abschluss als Hinweis angezeigt. */
+async function runAnalysis(line: LngLat[], name: string, source: string, note = ""): Promise<boolean> {
+  const id = ++runId;
   lastSection = { line, name, source };
+  if (line.length < 2 || lineLength(line) < 100) {
+    setStatus("Strecke zu kurz (mindestens 100 m).", true);
+    return false;
+  }
   if (lineLength(line) > 200_000) {
     setStatus("Strecke über 200 km – bitte kürzeren Abschnitt wählen.", true);
-    return;
+    return false;
   }
   const sampler = new ElevationSampler(undefined, Number($<HTMLSelectElement>("opt-zoom").value));
+  setBusy(true);
   try {
-    const a = await analyzeRiver(line, (p, cb) => sampler.elevations(p, cb), opts(), (m) => setStatus(m));
+    const a = await analyzeRiver(line, (p, cb) => sampler.elevations(p, cb), opts(), (m) => id === runId && setStatus(m));
+    if (id !== runId) return false; // inzwischen neuer Vorgang gestartet
     current = { analysis: a, name, source };
     showResults();
-    setStatus(a.reversed ? "Hinweis: Fließrichtung wurde anhand der Höhen umgedreht." : "");
+    const notes = [note, a.reversed ? "Fließrichtung wurde anhand der Höhen umgedreht." : ""].filter(Boolean);
+    setStatus(notes.length ? `Hinweis: ${notes.join(" ")}` : "");
+    return true;
   } catch (e) {
-    setStatus(`Analyse fehlgeschlagen: ${(e as Error).message}`, true);
+    if (id === runId) setStatus(`Analyse fehlgeschlagen: ${(e as Error).message}`, true);
+    return false;
+  } finally {
+    if (id === runId) setBusy(false);
   }
 }
 
@@ -296,7 +326,9 @@ new ResizeObserver(() => drawChart()).observe($("profile-wrap"));
 
 // Parameter geändert → neu rechnen
 ["opt-seg", "opt-hot", "opt-zoom", "opt-conf"].forEach((id) =>
-  $(id).addEventListener("change", () => lastSection && runAnalysis(lastSection.line, lastSection.name, lastSection.source)),
+  $(id).addEventListener("change", () => {
+    if (lastSection && !busy) void runAnalysis(lastSection.line, lastSection.name, lastSection.source);
+  }),
 );
 
 // Popup für Abschnitte
@@ -333,12 +365,34 @@ function updateDraft() {
   src("draft").setData({ type: "FeatureCollection", features });
 }
 
-$("finish-draw").addEventListener("click", async () => {
-  if (drawPts.length < 2) return setStatus("Mindestens zwei Punkte zeichnen.", true);
-  const line = [...drawPts];
+async function finishDraw() {
+  // doppelte Punkte (z. B. durch Doppelklick) entfernen
+  const line = drawPts.filter((p, i) => i === 0 || p[0] !== drawPts[i - 1][0] || p[1] !== drawPts[i - 1][1]);
+  if (line.length < 2) return setStatus("Mindestens zwei Punkte zeichnen.", true);
   setMode("idle");
+  drawPts = [];
   src("draft").setData(empty);
   await runAnalysis(line, "Gezeichnete Strecke", "Eigene Linie + Höhenmodell");
+}
+$("finish-draw").addEventListener("click", () => void finishDraw());
+$("undo-draw").addEventListener("click", () => {
+  drawPts.pop();
+  updateDraft();
+});
+map.on("dblclick", (e) => {
+  if (mode !== "draw") return;
+  e.preventDefault();
+  void finishDraw();
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.target as HTMLElement).closest("input, select, textarea")) return;
+  if (e.key === "Escape" && mode !== "idle" && !busy) {
+    resetAll();
+    setMode("idle");
+  } else if (e.key === "Backspace" && mode === "draw") {
+    drawPts.pop();
+    updateDraft();
+  }
 });
 
 async function loadOsmRiver(p: LngLat) {
@@ -351,60 +405,83 @@ async function loadOsmRiver(p: LngLat) {
   return r;
 }
 
-async function analyzeOsmSection(a: LngLat, b: LngLat) {
-  if (!riverLine) return;
+async function analyzeOsmSection(a: LngLat, b: LngLat, name = riverName): Promise<boolean> {
+  if (!riverLine) return false;
   const la = locateOnLine(riverLine, a), lb = locateOnLine(riverLine, b);
-  if (la.offset > 1500 || lb.offset > 1500) setStatus("Hinweis: Ein- oder Ausstieg liegt weit von der Flusslinie entfernt.", true);
+  const far = Math.max(la.offset, lb.offset);
+  const note = far > 1000 ? `Ein- oder Ausstieg liegt ${(far / 1000).toFixed(1)} km neben der Flusslinie und wurde auf den Fluss gesetzt.` : "";
   let section = sliceLine(riverLine, la.d, lb.d);
   if (la.d > lb.d) section = section.reverse();
-  await runAnalysis(section, riverName, "OpenStreetMap + Höhenmodell");
+  return runAnalysis(section, name, "OpenStreetMap + Höhenmodell", note);
 }
 
 map.on("click", async (e) => {
+  if (busy) return;
   const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
-  try {
-    switch (mode) {
-      case "osm-river":
-        setMode("idle");
+  switch (mode) {
+    case "osm-river":
+      setBusy(true);
+      try {
         await loadOsmRiver(p);
         setMode("osm-in");
-        break;
-      case "osm-in": {
-        if (!riverLine) return;
-        putIn = locateOnLine(riverLine, p).point;
-        endpointMarker(putIn, "Einstieg", "#2a9d8f");
+      } catch (err) {
+        setStatus(`${(err as Error).message} Erneut auf den Fluss klicken oder anderen Modus wählen.`, true);
+      } finally {
+        setBusy(false);
+      }
+      break;
+    case "osm-in":
+      if (!riverLine) return setMode("osm-river");
+      putIn = locateOnLine(riverLine, p).point;
+      endpointMarker(putIn, "Einstieg", "#2a9d8f");
+      setMode("osm-out");
+      break;
+    case "osm-out": {
+      if (!riverLine || !putIn) return setMode("osm-in");
+      const from = putIn;
+      if (locateOnLine(riverLine, p).d === locateOnLine(riverLine, from).d) return setStatus("Ausstieg muss vom Einstieg verschieden sein.", true);
+      setMode("idle");
+      if (!(await analyzeOsmSection(from, p)) && !current) {
+        // fehlgeschlagen → Ausstieg erneut wählen
         setMode("osm-out");
-        break;
       }
-      case "osm-out": {
-        if (!riverLine || !putIn) return;
-        setMode("idle");
-        await analyzeOsmSection(putIn, p);
-        break;
-      }
-      case "thalweg-in":
-        putIn = p;
-        endpointMarker(p, "Einstieg", "#2a9d8f");
-        setMode("thalweg-out");
-        break;
-      case "thalweg-out": {
-        if (!putIn) return;
-        const from = putIn;
-        setMode("idle");
-        endpointMarker(p, "Ausstieg", "#264653");
-        const line = await deriveThalweg(from, p, undefined, (m) => setStatus(m));
-        src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
-        await runAnalysis(line, "Talweg (aus Höhenmodell)", "Höhenmodell (Talweg + Gefälle)");
-        break;
-      }
-      case "draw":
-        drawPts.push(p);
-        updateDraft();
-        break;
+      break;
     }
-  } catch (err) {
-    setStatus((err as Error).message, true);
-    if (mode === "idle" && !current) setMode("idle");
+    case "thalweg-in":
+      putIn = p;
+      clearMarkers();
+      endpointMarker(p, "Einstieg", "#2a9d8f");
+      setMode("thalweg-out");
+      break;
+    case "thalweg-out": {
+      if (!putIn) return setMode("thalweg-in");
+      const from = putIn;
+      const id = ++runId;
+      setMode("idle");
+      endpointMarker(p, "Ausstieg", "#264653");
+      setBusy(true);
+      let line: LngLat[];
+      try {
+        line = await deriveThalweg(from, p, undefined, (m) => setStatus(m));
+      } catch (err) {
+        setBusy(false);
+        if (id !== runId) return;
+        clearMarkers();
+        putIn = null;
+        setMode("thalweg-in");
+        setStatus(`${(err as Error).message} Bitte Einstieg neu wählen.`, true);
+        return;
+      }
+      setBusy(false);
+      if (id !== runId) return;
+      src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
+      await runAnalysis(line, "Talweg (aus Höhenmodell)", "Höhenmodell (Talweg + Gefälle)");
+      break;
+    }
+    case "draw":
+      drawPts.push(p);
+      updateDraft();
+      break;
   }
 });
 
@@ -418,26 +495,38 @@ showPresetDesc();
 $("load-preset").addEventListener("click", async () => {
   const pr = PRESETS.find((p) => p.id === presetSel.value);
   if (!pr) return;
+  if (busy) return;
   resetAll();
   setMode("idle");
+  const id = runId;
   map.flyTo({ center: pr.seed, zoom: pr.zoom });
+  setBusy(true);
+  let osmOk = false;
   try {
     await loadOsmRiver(pr.seed);
-    fitLine(riverLine!);
-    await analyzeOsmSection(pr.putIn, pr.takeOut);
-    if (current) current.name = pr.name;
-    showResults();
+    osmOk = true;
   } catch (e) {
+    if (id !== runId) return setBusy(false);
     setStatus(`OSM nicht verfügbar (${(e as Error).message}) – leite Talweg aus dem Höhenmodell ab …`);
-    try {
-      const line = await deriveThalweg(pr.putIn, pr.takeOut, undefined, (m) => setStatus(m));
-      src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
-      fitLine(line);
-      await runAnalysis(line, pr.name, "Höhenmodell (Talweg + Gefälle)");
-      if (current) setStatus("OpenStreetMap war nicht erreichbar – Talweg aus dem Höhenmodell abgeleitet.");
-    } catch (e2) {
-      setStatus(`Laden fehlgeschlagen: ${(e2 as Error).message}`, true);
-    }
+  }
+  if (osmOk) {
+    setBusy(false);
+    // Ein-/Ausstieg auf die OSM-Linie setzen und nur den Abschnitt zeigen
+    const sec = sliceLine(riverLine!, locateOnLine(riverLine!, pr.putIn).d, locateOnLine(riverLine!, pr.takeOut).d);
+    fitLine(sec);
+    await analyzeOsmSection(pr.putIn, pr.takeOut, pr.name);
+    return;
+  }
+  try {
+    const line = await deriveThalweg(pr.putIn, pr.takeOut, undefined, (m) => setStatus(m));
+    setBusy(false);
+    if (id !== runId) return;
+    src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
+    fitLine(line);
+    await runAnalysis(line, pr.name, "Höhenmodell (Talweg + Gefälle)", "OpenStreetMap war nicht erreichbar – Talweg aus dem Höhenmodell abgeleitet.");
+  } catch (e2) {
+    setBusy(false);
+    if (id === runId) setStatus(`Laden fehlgeschlagen: ${(e2 as Error).message}`, true);
   }
 });
 
@@ -455,6 +544,7 @@ $("search-form").addEventListener("submit", async (e) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
       b.textContent = r.name;
+      b.type = "button";
       b.addEventListener("click", () => { map.flyTo({ center: r.p, zoom: 12 }); list.innerHTML = ""; });
       li.appendChild(b);
       list.appendChild(li);
@@ -465,7 +555,12 @@ $("search-form").addEventListener("submit", async (e) => {
 });
 
 // ---------- Export ----------
-const fileBase = () => (current?.name ?? "strecke").toLowerCase().replace(/[^a-z0-9äöüčšž]+/gi, "-").replace(/^-|-$/g, "");
+// Nur ASCII im Dateinamen: Browser verwerfen Namen mit Sonderzeichen (z. B. „č“) teilweise
+const fileBase = () =>
+  (current?.name ?? "strecke")
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strecke";
 $("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name), "application/gpx+xml"));
 $("exp-csv").addEventListener("click", () => current && download(`${fileBase()}.csv`, toCsv(current.analysis), "text/csv"));
 $("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name), "application/geo+json"));

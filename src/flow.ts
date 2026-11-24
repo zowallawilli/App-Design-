@@ -175,8 +175,8 @@ export async function deriveThalweg(from: LngLat, to: LngLat, loader?: TileLoade
     if (last.missM < 400) break;
     margin *= 1.8;
   }
-  if (!last || last.line.length < 2) throw new Error("Talweg konnte nicht abgeleitet werden");
-  if (last.missM >= 400)
-    throw new Error(`Der Abfluss vom Einstieg erreicht den Ausstieg nicht (nächster Abstand ${(last.missM / 1000).toFixed(1)} km). Liegt der Ausstieg flussabwärts?`);
+  if (!last) throw new Error("Talweg konnte nicht abgeleitet werden.");
+  if (last.missM >= 400 || last.line.length < 2)
+    throw new Error(`Der Abfluss vom Einstieg erreicht den Ausstieg nicht (nächster Abstand ${(last.missM / 1000).toFixed(1)} km). Liegt der Ausstieg flussabwärts und am selben Fluss?`);
   return last.line;
 }
