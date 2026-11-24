@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Packraft-Planer</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M2 20c4-3 8 3 12 0s8 3 12 0 4 0 4 0v6H2z' fill='%232b83ba'/><path d='M8 16h16l-3 3H11z' fill='%23f46d43'/></svg>" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="panel">
+        <header>
+          <h1>Packraft-Planer</h1>
+          <p class="sub">Gefälleanalyse von Flussabschnitten · Prototyp Phase 1</p>
+        </header>
+
+        <section>
+          <label class="lbl" for="search">Ort suchen</label>
+          <form id="search-form" class="row">
+            <input id="search" type="search" placeholder="z. B. Bovec, Sjoa, Driva …" autocomplete="off" />
+            <button type="submit">Suchen</button>
+          </form>
+          <ul id="search-results" class="results"></ul>
+        </section>
+
+        <section>
+          <label class="lbl" for="preset">Referenzstrecke</label>
+          <div class="row">
+            <select id="preset"></select>
+            <button id="load-preset">Laden</button>
+          </div>
+          <p id="preset-desc" class="hint"></p>
+        </section>
+
+        <section>
+          <span class="lbl">Eigene Strecke festlegen</span>
+          <div class="modes" role="group" aria-label="Modus">
+            <button data-mode="osm" title="Gewässer aus OpenStreetMap laden, dann Ein- und Ausstieg anklicken">Fluss aus OSM</button>
+            <button data-mode="thalweg" title="Ein- und Ausstieg anklicken – der Talweg wird aus dem Höhenmodell abgeleitet">Talweg aus DGM</button>
+            <button data-mode="draw" title="Strecke flussabwärts Punkt für Punkt zeichnen">Zeichnen</button>
+          </div>
+          <p id="mode-help" class="hint">Wähle einen Modus oder lade die Referenzstrecke.</p>
+          <div class="row">
+            <button id="finish-draw" hidden>Zeichnen beenden</button>
+            <button id="reset" class="ghost">Zurücksetzen</button>
+          </div>
+        </section>
+
+        <details>
+          <summary>Analyse-Parameter</summary>
+          <div class="grid2">
+            <label>Abschnittslänge
+              <select id="opt-seg">
+                <option value="250">250 m</option>
+                <option value="500" selected>500 m</option>
+                <option value="1000">1 km</option>
+              </select>
+            </label>
+            <label>Hotspot ab
+              <select id="opt-hot">
+                <option value="20">20 m/km</option>
+                <option value="30" selected>30 m/km</option>
+                <option value="45">45 m/km</option>
+                <option value="60">60 m/km</option>
+              </select>
+            </label>
+            <label>Höhenmodell
+              <select id="opt-zoom">
+                <option value="12">Zoom 12 (schnell)</option>
+                <option value="13" selected>Zoom 13</option>
+                <option value="14">Zoom 14 (fein)</option>
+              </select>
+            </label>
+            <label>Talenge ab
+              <select id="opt-conf">
+                <option value="15">15 m Hang</option>
+                <option value="20" selected>20 m Hang</option>
+                <option value="35">35 m Hang</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint">Talenge = beidseitig mindestens so viel Anstieg innerhalb von 100 m quer zum Fluss (Hinweis auf Schlucht, schwieriges Umtragen).</p>
+        </details>
+
+        <p id="status" class="status" role="status"></p>
+
+        <section id="results" hidden>
+          <h2 id="res-title"></h2>
+          <dl class="stats" id="stats"></dl>
+          <h3>Gefälleklassen</h3>
+          <ul id="classes" class="classes"></ul>
+          <h3>Hotspots <span class="hint">(steilste Stellen)</span></h3>
+          <ol id="hotspots" class="hotspots"></ol>
+          <div class="row exports">
+            <button id="exp-gpx">GPX</button>
+            <button id="exp-csv">CSV</button>
+            <button id="exp-geojson">GeoJSON</button>
+          </div>
+        </section>
+
+        <footer class="disclaimer">
+          Das Gefälle ist ein <strong>Indikator</strong>, keine Schwierigkeitsbewertung. Siphons, Holz, Verblockung,
+          Wasserstand und Engstellen unter der Auflösung des Höhenmodells (ca. 10–30 m) sind nicht erfasst. Vor Ort besichtigen.
+        </footer>
+      </aside>
+
+      <main id="main">
+        <div id="map"></div>
+        <div id="basemap" class="basemap" role="group" aria-label="Kartenhintergrund">
+          <button data-base="esri" class="on">Satellit</button>
+          <button data-base="s2">Sentinel-2</button>
+          <button data-base="topo">Topo</button>
+          <label><input type="checkbox" id="terrain" /> 3D</label>
+        </div>
+        <div id="profile-wrap" hidden>
+          <div id="profile"></div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
