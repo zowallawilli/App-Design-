@@ -1,0 +1,24 @@
+{
+  "name": "packraft-planer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Prototyp: Gefälleanalyse von Flussabschnitten für die Packrafting-Tourenplanung",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "maplibre-gl": "5.6.0"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.19.4",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  }
+}
