@@ -318,7 +318,7 @@ schärfer als das Esri-Luftbild, gut für die Wellenmessung.
 | Soča, Srpenica – Trnovo | GURS 21.08.2023 | keine verorteten Einzelstellen in offenen Quellen | – | 7 (Stichprobe: Weißwasser im Blockwerk vor Trnovo bestätigt) |
 | Koritnica, Kluže – Mündung | GURS 21.08.2023 | dto. | – | 3 (unterer Abschnitt, Blockstrecken) |
 | Inn, Imster Schlucht | basemap.at 07.09.2023 | Rohrbrückenschwall, Memminger Walze (Lage nicht belegt) | – | 6 |
-| Salzach, Taxenbach – Lend | basemap.at 2025 | 6 im Luftbild sichtbare Schwälle | **3/6** (Querband km 4,2–4,4, km 6,8, km 7,6; vorher 0/6) | 1 (km 0,1) – nicht erkannt: km 3,2 (Brückenschatten), 3,6 (Blockstrecke mit wenig Schaum), 5,6–6,0 (schwächer) |
+| Salzach, Taxenbach – Lend | basemap.at 2025 | 6 im Luftbild sichtbare Schwälle | **3/6** (Querband km 4,2–4,4, km 6,8, km 7,6; vorher 0/6). In der App (Linie mit Sentinel-2, am Querband ~7 m versetzt) 2/6 – das Querband bleibt knapp unter Anteil/Fläche | 1 (km 0,1) – nicht erkannt: km 3,2 (Brückenschatten), 3,6 (Blockstrecke mit wenig Schaum), 5,6–6,0 (schwächer) |
 | Sjoa | – | – | – | keine offene Bildquelle |
 
 Erkenntnisse: Mit reiner Helligkeit wäre helles ruhiges Wasser (Soča über Kalkgrund, milchiger Inn)

@@ -1,0 +1,10 @@
+import jpeg from "jpeg-js";
+import { readFileSync } from "node:fs";
+import { orthoSourceFor, sampleStrip, whitewaterProfile } from "../src/whitewater";
+import { locateOnLine } from "../src/geo";
+const line = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const strip = await sampleStrip(line, orthoSourceFor(line)!, async (b) => { const d = jpeg.decode(new Uint8Array(b), { useTArray: true, formatAsRGBA: true }); return { data: d.data, width: d.width, height: d.height }; });
+const prof = whitewaterProfile(strip);
+const a = locateOnLine(line, [13.0075, 47.3056]), b = locateOnLine(line, [13.01001, 47.30656]);
+console.log("Querband d", a.d.toFixed(0), b.d.toFixed(0), "Versatz", a.offset.toFixed(0), b.offset.toFixed(0));
+console.log(prof.bins.filter((x) => x.d >= a.d - 60 && x.d <= b.d + 60).map((x) => `${x.d}:${x.density.toFixed(1)}/${Math.round(x.smooth * 100)}%/${x.width ?? "-"}`).join(" "));
