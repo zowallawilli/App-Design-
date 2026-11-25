@@ -7,7 +7,7 @@ import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nea
 import { download, toCsv, toGeoJson, toGpx } from "./export";
 import { haversine, lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
 import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
-import { waterInBbox } from "./vectorWater";
+import { glacierAreaNear, waterInBbox } from "./vectorWater";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
 import { traceRiver } from "./route";
@@ -15,8 +15,8 @@ import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
 import { officialGauges, riverCell, seriesFor } from "./discharge";
-import { assess, captureNote, samplePoints, weatherBefore, type Conditions } from "./weather";
-import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type GaugeMatch } from "./gauges";
+import { assess, captureNote, isGlacial, samplePoints, weatherBefore, type Conditions, type Glacier } from "./weather";
+import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type Gauge, type GaugeMatch, type Reading } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 
 // ---------- DOM ----------
@@ -169,6 +169,7 @@ interface FlowInfo {
   gauge: GaugeMatch | null;
   /** Hinweise aus Wetter und Jahreszeit je Tag (Aufnahmetage und heute) */
   conditions: Map<string, Conditions>;
+  glacier?: Glacier;
   today: string;
   gaugeErrors: string[];
   error?: string;
@@ -550,11 +551,15 @@ async function loadFlowInfo(a: Analysis, id: number) {
     const dates = [...new Set(imagery.map((im) => im.date))];
     const today = new Date().toISOString().slice(0, 10);
     const wpts = samplePoints(line);
-    const [{ match: gauge, errors: gaugeErrors }, conds] = await Promise.all([
+    const [{ match: gauge, errors: gaugeErrors }, windows, iceKm2] = await Promise.all([
       matchGauge(line, series, dates).catch((e) => ({ match: null, errors: [String(e)] })),
-      Promise.all([...dates, today].map(async (d) => [d, assess(d, line[0], await weatherBefore(wpts, d).catch(() => null))] as const)),
+      Promise.all([...dates, today].map(async (d) => [d, await weatherBefore(wpts, d).catch(() => null)] as const)),
+      glacierAreaNear(line[0], 20).catch(() => undefined),
     ]);
-    info = { imagery, gauge, gaugeErrors, conditions: new Map(conds), today };
+    // Gletschereinfluss: Stammdaten des Pegels (Tirol: vergletscherter Anteil), sonst Gletscher im Umkreis
+    const pct = gauge?.gauge.glacierPct ?? gauge?.others.find((o) => o.glacierPct !== undefined)?.glacierPct;
+    const glacier: Glacier = pct !== undefined ? { pct } : { areaKm2: iceKm2 };
+    info = { imagery, gauge, gaugeErrors, conditions: new Map(windows.map(([d, w]) => [d, assess(d, line[0], w, glacier)])), today, glacier };
   } catch (e) {
     info = { imagery: [], gauge: null, gaugeErrors: [], conditions: new Map(), today: new Date().toISOString().slice(0, 10), error: (e as Error).message };
   }
@@ -626,6 +631,27 @@ $("q-src").addEventListener("change", () => {
 });
 $("q-own").addEventListener("change", () => current && showResults());
 
+/** Stand eines Pegelwerts (Ortszeit) und ob er veraltet ist (> 26 h) */
+function stamp(time: string) {
+  const t = Date.parse(time);
+  if (!Number.isFinite(t)) return { text: time, stale: false };
+  const d = new Date(t);
+  const text = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}. ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return { text, stale: Date.now() - t > 26 * 3600e3 };
+}
+
+/** Aktueller Pegelwert als Text: Abfluss, sonst Wasserstand in cm; veraltete Werte markiert */
+function valueText(g: Gauge, r: Reading | null, withTime = false): string {
+  const fmt = (q: number) => (q >= 10 ? q.toFixed(0) : q.toFixed(1)).replace(".", ",");
+  const st = (time: string) => {
+    const s = stamp(time);
+    return s.stale ? ` <span class="stale">veraltet, Stand ${s.text}</span>` : withTime ? ` <span class="hint">(${s.text})</span>` : "";
+  };
+  if (r) return `${g.estimate ? "≈ " : ""}<b>${fmt(r.q)} m³/s</b>${st(r.time)}`;
+  if (g.levelCm) return `<b>${fmt(g.levelCm.cm)} cm</b> <span class="hint">Wasserstand, kein Abfluss veröffentlicht</span>${st(g.levelCm.time)}`;
+  return `<span class="hint">kein aktueller Wert</span>`;
+}
+
 function renderFlowInfo() {
   const el = $("flow-info");
   const f = current?.flow;
@@ -672,9 +698,7 @@ function renderFlowInfo() {
   const today = day(
     `Heute ${fmtDate(f.today)}`,
     "",
-    gm?.latest
-      ? `${est ? "≈ " : ""}<b>${fmtQ(gm.latest.q)} m³/s</b>${estHint} <span class="hint">(${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""})</span>`
-      : `<span class="hint">${gm ? "kein aktueller Wert" : "kein Pegel"}</span>`,
+    gm ? `${valueText(gm.gauge, gm.latest, true)}${gm.latest ? estHint : ""}` : `<span class="hint">kein Pegel</span>`,
     f.today,
   );
   // Verhältnis heute ÷ Aufnahmetag nur aus gemessenen Werten
@@ -687,8 +711,9 @@ function renderFlowInfo() {
   const cal = gm
     ? `<p class="hint"><b>Offizieller Pegel:</b> <a href="${gm.gauge.url}" target="_blank" rel="noopener">${esc(gm.gauge.name)}</a>${gm.gauge.river ? ` (${esc(gm.gauge.river)})` : ""} · ${PROVIDER_LABEL[gm.gauge.provider]} · ${gm.gauge.distanceKm < 0.1 ? "an der Strecke" : `${gm.gauge.distanceKm.toFixed(1).replace(".", ",")} km von der Linie`}` +
       `${gm.gauge.note ? ` · ${esc(gm.gauge.note)}` : ""}.` +
+      (gm.unverified ? ` <span class="stale">Flusszuordnung ungeprüft (Vergleichsdaten nicht abrufbar) – Gewässername prüfen.</span>` : "") +
       (!gm.latest ? " Dieser Pegel veröffentlicht keinen Abfluss (nur die Wasserstandsklasse) – für die Wucht-Bewertung bitte einen eigenen Wert eintragen." : "") +
-      `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o) => `<a href="${o.url}" target="_blank" rel="noopener">${esc(o.name)}</a>`).join(", ")}.` : ""}</p>`
+      `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o, i) => `<a href="${o.url}" target="_blank" rel="noopener">${esc(o.name)}</a>${o.river && o.river !== gm.gauge.river ? ` (${esc(o.river)})` : ""} ${valueText(o, gm.othersLatest[i])}`).join(", ")}.` : ""}</p>`
     : `<p class="hint">Kein offizieller Pegel mit Abfluss an dieser Strecke gefunden${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " – für Norwegen bitte den kostenlosen NVE-Schlüssel unter „Analyse-Parameter“ eintragen" : ""}. Der Wasserstand lässt sich dann nur grob aus Wetter und Jahreszeit einschätzen (Spalte „Hinweise“).</p>`;
   const links = (gm ? [] : officialGauges(current.analysis.profile[0].p))
     .map((g) => `<a href="${g.url}" target="_blank" rel="noopener">${g.label}</a>`)
@@ -701,7 +726,7 @@ function renderFlowInfo() {
     cal +
     `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen („≈“ = aus Nachbarpegeln geschätzt). ` +
     `Hinweise: Regen, Schneefall und Schneehöhe der zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit der Region – eine Tendenz, keine Abflussmessung. ` +
-    `Aufnahmedatum laut Esri; es gilt für den jeweiligen Bildteil (Befliegungen sind Mosaike aus mehreren Flugtagen), eine Uhrzeit wird nicht veröffentlicht.` +
+    `${f.glacier && isGlacial(f.glacier) ? `Gletscherfluss: ${f.glacier.pct !== undefined ? `${fmtQ(f.glacier.pct)} % des Einzugsgebiets vergletschert (Pegel-Stammdaten)` : `~${Math.round(f.glacier.areaKm2 ?? 0)} km² Gletscher im Umkreis von 20 km`}.` : ""}` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p>`;
   src("gauge").setData({
     type: "FeatureCollection",

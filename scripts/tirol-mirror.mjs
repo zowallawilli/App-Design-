@@ -43,6 +43,10 @@ export function reduceTirol(raw) {
         area: typeof s.CATCHMENT_NATURAL_SIZE === "number" ? s.CATCHMENT_NATURAL_SIZE : null,
         km: typeof s.Flusskilometer === "number" ? s.Flusskilometer : null,
         alt: typeof s.altitude === "number" ? s.altitude : null,
+        // vergletscherter Anteil des Einzugsgebiets (%), Wasserstand (cm) für Pegel ohne Abfluss
+        glacier: typeof s.Vergletscherung === "number" ? s.Vergletscherung : null,
+        w: typeof w?.v === "number" ? Number(w.v.toFixed(1)) : null,
+        wTime: typeof w?.v === "number" ? iso(w.dt) : null,
         q: now ? now.v : null,
         time: now ? iso(now.dt) : null,
         dayMean: dm ? dm.v : null,

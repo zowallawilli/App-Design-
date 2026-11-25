@@ -26,6 +26,8 @@ Ausführliche Doku (Datenquellen, Verfahren, Referenzvergleiche): `README.md`.
 - **Nur offizielle/dokumentierte Schnittstellen** (z. B. nicht sildre-api.nve.no).
 - Gefälle ist ein **Indikator**, keine Schwierigkeitsbewertung – in Texten so formulieren.
 
+Aktueller Arbeitsauftrag mit allen Nutzeranforderungen zu Pegeln/Wetter: `docs/ANFORDERUNGEN-PEGEL.md`.
+
 ## Technik
 Vite + TypeScript + MapLibre GL, vitest, Playwright (vorinstalliert, `require('playwright')`).
 Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
@@ -66,7 +68,9 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - **Sanna (AT)** Einstieg [10.4910, 47.1176] → Landeck [10.5630, 47.1436]: Pegel Landeck Bruggen
   (~5 m³/s im Nov.), GloFAS ~10× zu hoch.
 - **Inn, Imster Schlucht (AT)** [10.7450, 47.2164] → [10.8976, 47.2642] (Screenshot-Zoom 12.2):
-  Pegel Imst/Magerbach veröffentlichen nur die Wasserstandsklasse, kein Q; Modell (~76 m³/s) vermutlich zu hoch.
+  Pegel Imst/Magerbach veröffentlichen öffentlich nur die Wasserstandsklasse; RiverApp zeigt Magerbach 25.11. ~74 m³/s,
+  190 cm (eigener Datenzugang). App-Schätzung Magerbach 64–75 m³/s (Schwall).
+- **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
 ## Offene Punkte / Ideen
 - Verblockung („Schiefes S“, „Pianser Schwall“ an der Sanna) ist mit Gefälle/Höhenmodell nicht

@@ -86,6 +86,25 @@ Nachbarpegeln geschätzt, siehe unten) und, wo kein Pegelwert vorliegt, **Hinwei
 
 Mit Pegel-Historie steht zusätzlich „Heute fließt laut Pegel etwa 1,2× so viel wie am Aufnahmetag“.
 
+**Gletscherflüsse:** Ist das Einzugsgebiet vergletschert (Tirol: Anteil laut Pegel-Stammdaten, z. B. Ötztaler Ache
+bei Tumpen 9,3 %; sonst ≥ 5 km² Gletscher im Umkreis von 20 km laut OpenStreetMap), gilt Juli/August als
+Hochwasserzeit (Juni/September schwächer). Zusätzlich zählt die Temperatur auf ~3000 m (aus dem Wetterraster mit
+−0,65 °C/100 m): warm → starke Gletscherschmelze, Kälteeinbruch → Schmelze gebremst; Trockenheit senkt einen
+Gletscherfluss im Sommer nicht.
+
+**Wasserstand statt Abfluss:** Gibt ein Pegel keinen Abfluss, aber einen Wasserstand heraus, zeigt die App die cm.
+Für Imst und Magerbach veröffentlicht das öffentliche Tiroler Portal weder Abfluss noch cm (nur die Klasse).
+
+**Mehrere Pegel an der Strecke** werden alle mit aktuellem Wert gezeigt (z. B. Imster Schlucht: Imst und Magerbach),
+veraltete Werte (> 26 h) rot markiert. Fehlen die Vergleichsdaten zur Flusszuordnung, weist die App darauf hin.
+
+**RiverApp (geprüft 25.11.2026):** RiverApp importiert die Pegeldaten von den Behörden (für Tirol vom
+Hydrographischen Dienst) und speichert sie selbst – daher die mehrjährige Historie (Premium-Funktion). Für
+Magerbach zeigt RiverApp Abfluss und Wasserstand, die das öffentliche Portal hydro.tirol.gv.at nicht herausgibt;
+RiverApp hat dafür offenbar einen eigenen Datenzugang. Eine offene Schnittstelle bietet RiverApp nicht. Abgleich:
+RiverApp Magerbach ~74 m³/s / 190 cm, App-Schätzung Magerbach 64–75 m³/s je nach Tageszeit (Schwallbetrieb).
+Für mehr Tiroler Messwerte wäre eine Anfrage beim Hydrographischen Dienst Tirol (Open-Data-Freigabe) der Weg.
+
 **Warum keine Modellzahl mehr?** Früher zeigte die App den Abfluss des Copernicus-Modells GloFAS (5-km-Raster).
 Abgleich am 25.11.2026: An 223 Pegeln (Tirol, Südtirol, Slowenien) lag das Modell nur bei 13 % innerhalb ±30 %,
 bei 44 % mehr als fünffach daneben (kleine Flüsse < 5 m³/s: 63 %). In Zeitreihen über 1–2 Jahre an 25 Pegeln

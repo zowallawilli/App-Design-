@@ -94,53 +94,71 @@ const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / Math.max(1, v.lengt
 const sumLast = (v: number[], n: number) => v.slice(-n).reduce((a, b) => a + b, 0);
 const mm = (v: number) => `${Math.round(v)} mm`;
 
+/** Gletschereinfluss: Anteil vergletschert laut Pegel-Stammdaten (%) bzw. Gletscherfläche im Umkreis (km²) */
+export interface Glacier {
+  pct?: number;
+  areaKm2?: number;
+}
+/** Gletscherfluss? (≥ 2 % vergletschert laut Pegel, sonst ≥ 5 km² Gletscher im Umkreis von 20 km) */
+export const isGlacial = (g?: Glacier | null) => !!g && ((g.pct ?? 0) >= 2 || (g.pct === undefined && (g.areaKm2 ?? 0) >= 5));
+
 /** Übliche Jahreszeit der Region (Erfahrungswerte, keine Daten des Tages) */
-export function seasonHint(p: LngLat, date: string): Hint | null {
+export function seasonHint(p: LngLat, date: string, glacial = false): Hint | null {
   const [lon, lat] = p;
   const mo = Number(date.slice(5, 7));
   const iceland = lat > 63 && lat < 67 && lon > -25 && lon < -13;
   const nordic = !iceland && lat >= 58;
   const alps = lat > 43.5 && lat < 48.6 && lon > 5 && lon < 17;
+  // Gletscherflüsse: Hochwasser im Sommer durch Eisschmelze, abends am höchsten
+  if (glacial) {
+    const peak = iceland || nordic ? mo >= 6 && mo <= 8 : mo >= 6 && mo <= 9;
+    if (peak) return { text: "Gletscherfluss im Sommer: viel Schmelzwasser, abends am meisten.", effect: mo === 7 || mo === 8 ? 2 : 1 };
+  }
   if (iceland) {
-    if (mo >= 6 && mo <= 8) return { text: "Hochsommer in Island: Gletscherflüsse führen von Juni bis August am meisten Wasser, nachmittags und abends mehr als morgens.", effect: 1 };
-    if (mo === 5) return { text: "Mai in Island: Schneeschmelze, die Flüsse steigen.", effect: 1 };
-    if (mo >= 11 || mo <= 3) return { text: "Winter in Island: Niederschlag bleibt meist als Schnee/Eis liegen – eher wenig Wasser (Tauwetter-Ausnahmen).", effect: -1 };
+    if (mo >= 6 && mo <= 8) return { text: "Sommer in Island: Gletscherflüsse führen viel Wasser.", effect: 1 };
+    if (mo === 5) return { text: "Mai in Island: Schneeschmelze.", effect: 1 };
+    if (mo >= 11 || mo <= 3) return { text: "Winter in Island: meist wenig Wasser.", effect: -1 };
     return null;
   }
   if (nordic) {
-    if (mo === 5 || mo === 6) return { text: "Mai/Juni im Norden: Schneeschmelze (Frühjahrshochwasser, „vårflom“) – die Flüsse führen erfahrungsgemäß am meisten Wasser.", effect: 2 };
-    if (mo === 7) return { text: "Juli im Norden: Die Schneeschmelze klingt ab, in hohen Lagen und Gletscherflüssen noch viel Wasser.", effect: 1 };
-    if (mo >= 8 && mo <= 10) return { text: "Spätsommer/Herbst im Norden: Wasserstand hängt vor allem vom Regen ab.", effect: 0 };
-    return { text: "Winter im Norden: Niederschlag als Schnee, Flüsse teils vereist – üblicherweise Niedrigwasser.", effect: -1 };
+    if (mo === 5 || mo === 6) return { text: "Mai/Juni im Norden: Schneeschmelze („vårflom“), meist Hochwasserzeit.", effect: 2 };
+    if (mo === 7) return { text: "Juli im Norden: Schneeschmelze klingt ab.", effect: 1 };
+    if (mo >= 8 && mo <= 10) return { text: "Spätsommer/Herbst im Norden: Wasserstand hängt vom Regen ab.", effect: 0 };
+    return { text: "Winter im Norden: meist Niedrigwasser, teils vereist.", effect: -1 };
   }
   if (alps) {
-    if (mo === 3) return { text: "März in den Alpen: Die Schneeschmelze beginnt in tieferen Lagen; hoch oben liegt noch Schnee.", effect: 0 };
-    if (mo >= 4 && mo <= 6) return { text: "April bis Juni in den Alpen: Schneeschmelze – die Flüsse führen erfahrungsgemäß deutlich mehr Wasser, oft mit Tagesgang (nachmittags/abends mehr).", effect: 1 };
-    if (mo === 7 || mo === 8) return { text: "Hochsommer in den Alpen: Gletscherbäche führen viel Wasser (nachmittags am meisten), sonst entscheiden Gewitter und Regen.", effect: 0 };
-    if (mo === 9) return { text: "September in den Alpen: Die Gletscherschmelze klingt ab, der Grundabfluss sinkt; nach Starkregen steigen die Flüsse schnell.", effect: 0 };
-    if (mo >= 10 && mo <= 11) return { text: "Herbst in den Alpen: meist niedriger Grundabfluss; nach Starkregen steigen die Flüsse schnell.", effect: 0 };
-    return { text: "Winter in den Alpen: Niederschlag fällt oben als Schnee – üblicherweise Niedrigwasser.", effect: -1 };
+    if (mo === 3) return { text: "März in den Alpen: Schneeschmelze beginnt unten.", effect: 0 };
+    if (mo >= 4 && mo <= 6) return { text: "April–Juni in den Alpen: Schneeschmelze, meist mehr Wasser.", effect: 1 };
+    if (mo === 7 || mo === 8) return { text: "Hochsommer in den Alpen: Wasserstand hängt von Gewittern und Regen ab.", effect: 0 };
+    if (mo >= 9 && mo <= 11) return { text: "Herbst in den Alpen: meist niedriger Grundabfluss.", effect: 0 };
+    return { text: "Winter in den Alpen: meist Niedrigwasser.", effect: -1 };
   }
   if (lat > 45 && lat < 55) {
-    if (mo === 12 || mo <= 3) return { text: "Winter/Frühjahr im Mittelgebirge: Regen und Schneeschmelze – meist die wasserreichste Zeit.", effect: 1 };
-    if (mo >= 7 && mo <= 10) return { text: "Sommer/Herbst im Mittelgebirge: meist die wasserärmste Zeit, außer nach Starkregen.", effect: -1 };
+    if (mo === 12 || mo <= 3) return { text: "Winter/Frühjahr im Mittelgebirge: meist die wasserreichste Zeit.", effect: 1 };
+    if (mo >= 7 && mo <= 10) return { text: "Sommer/Herbst im Mittelgebirge: meist die wasserärmste Zeit.", effect: -1 };
   }
   return null;
 }
 
+/** Temperatur auf `h` m aus der Gitterpunkt-Temperatur (−0,65 °C je 100 m) */
+const tempAt = (t: number, elevation: number, h: number) => t - 0.0065 * (h - elevation);
+
 /** Hinweise aus dem Wetter der Tage vor `date` (ohne Jahreszeit) */
-export function weatherHints(w: WeatherWindow): Hint[] {
+export function weatherHints(w: WeatherWindow, date = w.time[w.time.length - 1] ?? "", glacial = false): Hint[] {
   const hints: Hint[] = [];
   const n = w.time.length;
   if (!n || !w.points.length) return hints;
+  const mo = Number(date.slice(5, 7));
   const rain = w.time.map((_, i) => mean(w.points.map((p) => p.rain[i])));
   const r3 = sumLast(rain, 3), r7 = sumLast(rain, 7), r14 = sumLast(rain, 14);
   const r3max = Math.max(...w.points.map((p) => sumLast(p.rain, 3)));
   const temp5 = mean(w.points.map((p) => mean(p.temp.slice(-5))));
+  const t2000 = mean(w.points.map((p) => tempAt(mean(p.temp.slice(-5)), p.elevation, 2000)));
+  const t3000 = mean(w.points.map((p) => tempAt(mean(p.temp.slice(-5)), p.elevation, 3000)));
   const snowfall7 = mean(w.points.map((p) => sumLast(p.snowfall, 7)));
   // Schneeschmelze: Schneedecke an einem Punkt in einer Woche deutlich geschrumpft bei Plusgraden
   const melt = w.points
-    .map((p) => ({ from: p.snow[Math.max(0, n - 8)], to: p.snow[n - 1], t: mean(p.temp.slice(-5)), el: p.elevation }))
+    .map((p) => ({ from: p.snow[Math.max(0, n - 8)], to: p.snow[n - 1], t: mean(p.temp.slice(-5)) }))
     .filter((x) => x.from >= 0.1 && x.to <= x.from * 0.75 && x.t > 0)
     .sort((a, b) => b.from - b.to - (a.from - a.to))[0];
   // Starkregen früher im Zeitraum (4–13 Tage vorher): Fluss kann noch erhöht sein
@@ -149,39 +167,37 @@ export function weatherHints(w: WeatherWindow): Hint[] {
     const s3 = rain[e] + rain[e - 1] + rain[e - 2];
     if (s3 >= 50 && (!heavyEarlier || s3 > heavyEarlier.sum)) heavyEarlier = { ago: n - 1 - e, sum: s3 };
   }
-  const snowNow = Math.max(...w.points.map((p) => p.snow[n - 1]));
+  const deg = (v: number) => `${Math.round(v)} °C`;
 
-  if (r3 >= 30 || r3max >= 50)
-    hints.push({ text: `Kräftiger Regen in den drei Tagen davor (Ø ~${mm(r3)} im Umkreis, örtlich bis ~${mm(r3max)}) – der Fluss führte vermutlich deutlich mehr Wasser als üblich.`, effect: 2 });
-  else if (heavyEarlier) hints.push({ text: `Starkregen ${heavyEarlier.ago} Tage vor der Aufnahme (~${mm(heavyEarlier.sum)} in 3 Tagen) – der Fluss kann noch erhöht gewesen sein (Wasser geht zurück).`, effect: 1 });
-  else if (r7 >= 40) hints.push({ text: `Nasse Woche davor (~${mm(r7)} Regen in 7 Tagen) – eher erhöhter Wasserstand.`, effect: 1 });
-  else if (r3 >= 12) hints.push({ text: `Etwas Regen in den Tagen davor (~${mm(r3)} in 3 Tagen) – kleinere Flüsse können leicht erhöht sein.`, effect: 0 });
-  if (melt)
-    hints.push({
-      text: `Schneeschmelze im Gange: Die Schneedecke im Umkreis (~${Math.round(melt.el)} m) schrumpfte in einer Woche von ~${Math.round(melt.from * 100)} auf ~${Math.round(melt.to * 100)} cm bei Plusgraden – erhöht den Abfluss, meist mit Tagesgang.`,
-      effect: melt.from - melt.to >= 0.3 ? 2 : 1,
-    });
-  if (snowfall7 >= 10 && temp5 < 1)
-    hints.push({ text: `Niederschlag fiel als Schnee (~${Math.round(snowfall7)} cm in 7 Tagen) bei Frost – erhöht den Abfluss erst bei Tauwetter.`, effect: 0 });
-  if (r14 < 8 && !melt)
-    hints.push({ text: `Fast trocken in den zwei Wochen davor (~${mm(r14)} Regen)${snowNow > 0.05 ? ", Schnee taut nicht" : ""} – eher niedriger Wasserstand.`, effect: -1 });
-  if (!hints.length) hints.push({ text: `Wetter davor unauffällig (~${mm(r7)} Regen in 7 Tagen, keine Schneeschmelze erkennbar).`, effect: 0 });
+  if (r3 >= 30 || r3max >= 50) hints.push({ text: `Kräftiger Regen in den 3 Tagen davor (~${mm(r3)}, örtlich ~${mm(r3max)}).`, effect: 2 });
+  else if (heavyEarlier) hints.push({ text: `Starkregen ${heavyEarlier.ago} Tage davor (~${mm(heavyEarlier.sum)}) – evtl. noch erhöht.`, effect: 1 });
+  else if (r7 >= 40) hints.push({ text: `Nasse Woche davor (~${mm(r7)} Regen).`, effect: 1 });
+  else if (r3 >= 12) hints.push({ text: `Etwas Regen in den Tagen davor (~${mm(r3)}).`, effect: 0 });
+  if (melt) hints.push({ text: `Schneeschmelze: Schneedecke schrumpfte von ~${Math.round(melt.from * 100)} auf ~${Math.round(melt.to * 100)} cm.`, effect: melt.from - melt.to >= 0.3 ? 2 : 1 });
+  // Tauwetter im Gebirge im Frühjahr (Schnee liegt dort, auch wenn das grobe Wetterraster keinen zeigt)
+  const thaw = !melt && mo >= 3 && mo <= 6 && t2000 > 2 && !glacial;
+  if (thaw) hints.push({ text: `Tauwetter bis ~2000 m (~${deg(t2000)}) – Schneeschmelze wahrscheinlich.`, effect: 1 });
+  // Gletscher: Hitze bzw. Kälte im Hochgebirge steuert die Eisschmelze
+  if (glacial && mo >= 5 && mo <= 9) {
+    if (t3000 >= 3) hints.push({ text: `Warm im Hochgebirge (~${deg(t3000)} auf 3000 m) – starke Gletscherschmelze.`, effect: 1 });
+    else if (t3000 <= -2) hints.push({ text: `Kalt im Hochgebirge (~${deg(t3000)} auf 3000 m) – Gletscherschmelze gebremst.`, effect: -1 });
+  }
+  if (snowfall7 >= 10 && temp5 < 1) hints.push({ text: `Neuschnee bei Frost (~${Math.round(snowfall7)} cm) – wirkt erst bei Tauwetter.`, effect: 0 });
+  if (r14 < 8 && !melt && !thaw && !(glacial && t3000 >= 3)) hints.push({ text: `Zwei Wochen fast trocken (~${mm(r14)}).`, effect: -1 });
+  if (!hints.length) hints.push({ text: `Wetter davor unauffällig (~${mm(r7)} Regen in 7 Tagen).`, effect: 0 });
   return hints;
 }
 
-export function assess(date: string, p: LngLat, w: WeatherWindow | null): Conditions {
-  const season = seasonHint(p, date);
-  const hints = [...(w ? weatherHints(w) : []), ...(season ? [season] : [])];
-  // Wetter des Tages zählt voll, die Jahreszeit nur als Grundlage
+export function assess(date: string, p: LngLat, w: WeatherWindow | null, glacier?: Glacier | null): Conditions {
+  const glacial = isGlacial(glacier);
+  const season = seasonHint(p, date, glacial);
+  const hints = [...(w ? weatherHints(w, date, glacial) : []), ...(season ? [season] : [])];
   const score = hints.reduce((a, h) => a + h.effect, 0);
   const tendency = score >= 3 ? "eher hoch" : score >= 1 ? "eher erhöht" : score <= -1 ? "eher niedrig" : "unauffällig";
   return { date, hints, tendency, weather: !!w };
 }
 
-/** Wie wurde das Bild aufgenommen? Uhrzeit veröffentlicht Esri nicht – nur Erfahrungswerte. */
+/** Bildart kurz (Uhrzeit veröffentlicht Esri nicht; das Datum genügt für den Wetterbezug) */
 export function captureNote(provider: string, name: string): string {
-  const s = `${provider} ${name}`;
-  if (/maxar|vantor|digitalglobe|worldview|geoeye|airbus|pl[eé]iades|spot|cnes/i.test(s))
-    return "Satellitenbild – Uhrzeit nicht veröffentlicht, meist vormittags (~10–12 Uhr Ortszeit).";
-  return "Orthofoto (Befliegung) – Uhrzeit nicht veröffentlicht, meist Vormittag bis früher Nachmittag.";
+  return /maxar|vantor|digitalglobe|worldview|geoeye|airbus|pl[eé]iades|spot|cnes/i.test(`${provider} ${name}`) ? "Satellitenbild" : "Orthofoto";
 }

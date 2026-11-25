@@ -37,6 +37,10 @@ export interface Gauge {
   note?: string;
   /** Abfluss nicht gemessen, sondern aus Nachbarpegeln geschätzt */
   estimate?: Estimate;
+  /** Wasserstand (cm) – vor allem für Pegel ohne veröffentlichten Abfluss */
+  levelCm?: { cm: number; time: string };
+  /** vergletscherter Anteil des Einzugsgebiets (%) laut Pegel-Stammdaten */
+  glacierPct?: number;
   /** virtueller Pegel: gewichtete Summe dieser Pegel (Gewichte in estimate.terms) */
   parts?: Gauge[];
 }
@@ -300,10 +304,11 @@ const arso: ProviderImpl = {
     const doc = await arsoXml(f);
     if (!doc) return [];
     return [...doc.querySelectorAll("postaja")]
-      .filter((p) => p.querySelector("pretok")?.textContent)
+      .filter((p) => p.querySelector("pretok")?.textContent || p.querySelector("vodostaj")?.textContent)
       .map((p) => {
         const t = (sel: string) => p.querySelector(sel)?.textContent?.trim() ?? "";
         const vv = t("prvi_vv_pretok");
+        const cm = Number(t("vodostaj"));
         return {
           provider: "ARSO" as const,
           id: p.getAttribute("sifra") ?? "",
@@ -312,7 +317,8 @@ const arso: ProviderImpl = {
           lat: Number(p.getAttribute("wgs84_sirina")),
           lon: Number(p.getAttribute("wgs84_dolzina")),
           url: "https://www.arso.gov.si/vode/podatki/",
-          note: [t("pretok_znacilni"), vv ? `1. Hochwasserstufe ab ${vv} m³/s` : ""].filter(Boolean).join(" · "),
+          note: [t("pretok") ? "" : "kein Abfluss veröffentlicht", t("pretok_znacilni"), vv ? `1. Hochwasserstufe ab ${vv} m³/s` : ""].filter(Boolean).join(" · "),
+          levelCm: t("vodostaj") && cm > 0 ? { cm, time: t("datum").replace(" ", "T") } : undefined,
         };
       });
   },
@@ -341,6 +347,7 @@ export const tirolArchiveUrl = (id: string) => `${MIRROR_BASE}/tirol-archiv/${id
 interface TirolStation {
   id: string; name: string; river: string | null; lat: number; lon: number;
   area?: number | null; km?: number | null; alt?: number | null;
+  glacier?: number | null; w?: number | null; wTime?: string | null;
   q: number | null; time: string | null; dayMean: number | null;
   nnq: number | null; nqt: number | null; hhq: number | null; level: string | null;
 }
@@ -387,6 +394,8 @@ const tirol: ProviderImpl = {
         lat: s.lat,
         lon: s.lon,
         url: "https://hydro.tirol.gv.at/",
+        levelCm: s.w !== null && s.w !== undefined && s.wTime ? { cm: s.w, time: s.wTime } : undefined,
+        glacierPct: s.glacier ?? undefined,
         estimate: est ?? undefined,
         note: [
           s.q === null ? (est ? `kein Abfluss veröffentlicht – ${est.label}` : "kein Abfluss veröffentlicht") : "",
@@ -667,6 +676,10 @@ export interface GaugeMatch {
   onDates: Map<string, number>;
   /** weitere Pegel an der Strecke (zur Auswahl/Info) */
   others: NearGauge[];
+  /** Zuordnung zum Fluss ungeprüft: mehrere Pegel an verschiedenen Gewässern, aber keine Vergleichsdaten */
+  unverified: boolean;
+  /** aktuelle Werte der weiteren Pegel (gleiche Reihenfolge wie others) */
+  othersLatest: (Reading | null)[];
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -737,6 +750,7 @@ export async function matchGauge(
   const best = cands[0];
   if (best.score >= 10 && model) return { match: null, errors: [...errors, `Pegel ${best.g.name} passt nicht zum Fluss (andere Wassermenge)`] };
   // gemessene Werte an den gewünschten Tagen (nur Anbieter mit Historie)
+  const others = gauges.filter((g) => g !== best.g).slice(0, 4);
   const onDates = new Map<string, number>();
   if ((best.g.parts ?? [best.g]).every((p) => hasHistory(p.provider)))
     for (const d of [...new Set(dates)]) {
@@ -751,7 +765,9 @@ export async function matchGauge(
       factor: best.r === null || best.r >= 0.6 ? best.factor : null,
       correlation: best.r,
       onDates,
-      others: gauges.filter((g) => g !== best.g).slice(0, 4),
+      others,
+      unverified: !model && new Set(gauges.slice(0, 4).map((g) => (g.river ?? "").toLowerCase())).size > 1,
+      othersLatest: await Promise.all(others.map((g) => latestReading(g, fetchFn).catch(() => null))),
     },
     errors,
   };

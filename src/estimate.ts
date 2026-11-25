@@ -110,7 +110,7 @@ export function estimateFromNeighbours(target: EstStation, all: EstStation[], ma
   if (upEst && downEst && upQ < 0.5 * downQ)
     return {
       ...downEst,
-      note: `Die Pegel oberhalb ergeben nur ~${fmt(upQ)} m³/s – vermutlich Restwasserstrecke (Kraftwerksausleitung) oberhalb; deshalb aus dem Pegel unterhalb geschätzt (~${fmt(downQ)} m³/s).`,
+      note: `Die Pegel oberhalb ergeben nur ~${fmt(upQ)} m³/s – vermutlich Restwasserstrecke (Kraftwerksausleitung) oberhalb; deshalb aus dem Pegel unterhalb geschätzt (~${fmt(downQ)} m³/s). Momentwert: Bei Schwallbetrieb der Kraftwerke schwankt er über den Tag.`,
     };
   if (upEst) return downEst ? { ...upEst, note: `Gegenprobe aus Pegel unterhalb: ~${fmt(downQ)} m³/s.` } : upEst;
   return downEst;
