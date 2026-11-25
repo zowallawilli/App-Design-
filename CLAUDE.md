@@ -14,6 +14,8 @@ Ausführliche Doku (Datenquellen, Verfahren, Referenzvergleiche): `README.md`.
 3. Ergebnisse, die der Nutzer abgleichen will, als Screenshots schicken
    (`tests/e2e/screenshot.cjs`, Kopfkommentar zeigt den Aufruf).
 4. Kontingent schonen: Arbeit bündeln, lange Testläufe nur wenn nötig.
+5. Koordinaten in Antworten immer als direkt klickbaren Google-Maps-Link ausgeben, z. B.
+   [47.13441, 10.51223](https://www.google.com/maps/search/?api=1&query=47.13441,10.51223) (Breite, Länge).
 
 ## Feste Vorgaben
 - **Keine Kosten:** kein eigener Server, keine kostenpflichtigen APIs. Statische App auf GitHub
