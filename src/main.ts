@@ -582,10 +582,14 @@ function ratingQ(): { q: number | null; label: string } {
   const k = f.gauge?.factor ?? 1;
   const tag = f.gauge?.factor ? ` (geeicht an Pegel ${f.gauge.gauge.name})` : " (Modell)";
   // „heute“ und „Pegel“: gemessener Wert hat Vorrang vor dem Modell
-  if ((src === "gauge" || src === "today") && f.gauge?.latest) return { q: f.gauge.latest.q, label: `heute gemessen am Pegel ${f.gauge.gauge.name}: ${f.gauge.latest.q.toFixed(f.gauge.latest.q < 10 ? 1 : 0).replace(".", ",")} m³/s` };
-  if (src === "mq") return { q: f.mq * k, label: `Mittel MQ ≈ ${(f.mq * k).toFixed(0)} m³/s${tag}` };
-  if (src === "summer") return { q: f.summer * k, label: `Sommer-Mittel ≈ ${(f.summer * k).toFixed(0)} m³/s${tag}` };
-  return f.today ? { q: f.today.q * k, label: `heute ≈ ${(f.today.q * k).toFixed(1)} m³/s${tag}` } : { q: null, label: "kein Wert für heute" };
+  if ((src === "gauge" || src === "today") && f.gauge?.latest) return { q: f.gauge.latest.q, label: `heute gemessen am Pegel ${f.gauge.gauge.name}: ${fmtQ1(f.gauge.latest.q)} m³/s` };
+  if (src === "mq") return { q: f.mq * k, label: `Mittel MQ ≈ ${fmtQ1(f.mq * k)} m³/s${tag}` };
+  if (src === "summer") return { q: f.summer * k, label: `Sommer-Mittel ≈ ${fmtQ1(f.summer * k)} m³/s${tag}` };
+  return f.today ? { q: f.today.q * k, label: `heute ≈ ${fmtQ1(f.today.q * k)} m³/s${tag}` } : { q: null, label: "kein Wert für heute" };
+}
+
+function fmtQ1(q: number) {
+  return (q >= 10 ? q.toFixed(0) : q.toFixed(1)).replace(".", ",");
 }
 
 function updateQOptions() {
@@ -665,7 +669,9 @@ function renderFlowInfo() {
         ? `Das Modell lag zuletzt um den Faktor ${gm.factor.toFixed(2).replace(".", ",")} daneben${gm.correlation !== null ? ` (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")})` : ""} – Wucht-Bewertung und MQ (≈ ${fmtQ(f.mq * gm.factor)} m³/s) sind damit geeicht.`
         : gm.correlation !== null
           ? `Das Modell passt hier schlecht zum Pegel (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")}) – die gemessenen Werte sind maßgeblich.`
-          : "Das Modell lässt sich an diesem Pegel nicht eichen (keine Tageswerte der letzten Wochen) – die gemessenen Werte sind maßgeblich.") +
+          : !gm.latest
+            ? "Dieser Pegel veröffentlicht keinen Abfluss (nur die Wasserstandsklasse) – die Wucht-Bewertung nutzt deshalb das Modell. Für kleinere oder ausgeleitete Flüsse liegt es oft deutlich zu hoch; bei Bedarf unter „Abfluss für Wucht“ einen eigenen Wert eintragen."
+            : "Das Modell lässt sich an diesem Pegel nicht eichen (keine Tageswerte der letzten Wochen) – die gemessenen Werte sind maßgeblich.") +
       `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o) => `<a href="${o.url}" target="_blank" rel="noopener">${o.name}</a>`).join(", ")}.` : ""}</p>`
     : `<p class="hint">Kein offizieller Pegel mit Abfluss an dieser Strecke gefunden${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " – für Norwegen bitte den kostenlosen NVE-Schlüssel unter „Analyse-Parameter“ eintragen" : ""}.</p>`;
   const gauges = (gm ? [] : officialGauges(current.analysis.profile[0].p))
