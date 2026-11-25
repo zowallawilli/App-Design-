@@ -139,3 +139,4 @@ button.danger { background: #c0392b; color: #fff; }
 .flow-info a { color: var(--accent); }
 @media (max-width: 760px) { .img-date { display: none; } }
 .tour .hint { margin: 0; flex: 1; min-width: 0; }
+#wave-btn.on { background: var(--accent); color: var(--accent-fg); }

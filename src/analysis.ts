@@ -113,7 +113,48 @@ export interface Analysis {
   profile: ProfilePoint[];
   segments: Segment[];
   hotspots: Hotspot[];
+  /** kurze, steile Stufen (mögliche Wasserfälle/Katarakte) */
+  steps: Step[];
   classShare: { cls: GradientClass; length: number }[];
+}
+
+export interface Step {
+  d0: number;
+  d1: number;
+  /** Höhenverlust (m) */
+  drop: number;
+  center: LngLat;
+}
+
+/** Mindest-Höhenverlust (m) auf STEP_WINDOW Metern für eine Steilstufe */
+export const STEP_MIN_DROP = 8;
+export const STEP_WINDOW = 100;
+
+/**
+ * Steilstufen aus dem monoton angepassten Profil OHNE die 300-m-Glättung suchen – die
+ * Glättung würde einen Wasserfall auf mehrere hundert Meter verteilen.
+ */
+export function findSteps(d: number[], zMono: number[], points: LngLat[], step: number): Step[] {
+  const k = Math.max(1, Math.round(STEP_WINDOW / step));
+  const out: Step[] = [];
+  let cur: { i0: number; i1: number } | null = null;
+  const flush = () => {
+    if (!cur) return;
+    const drop = zMono[cur.i0] - zMono[cur.i1];
+    out.push({ d0: d[cur.i0], d1: d[cur.i1], drop, center: points[Math.round((cur.i0 + cur.i1) / 2)] });
+    cur = null;
+  };
+  for (let i = 0; i + k < zMono.length; i++) {
+    if (zMono[i] - zMono[i + k] >= STEP_MIN_DROP) {
+      if (cur && i <= cur.i1) cur.i1 = i + k;
+      else {
+        flush();
+        cur = { i0: i, i1: i + k };
+      }
+    }
+  }
+  flush();
+  return out;
 }
 
 /**
@@ -239,7 +280,9 @@ export async function analyzeRiver(
   const floors = profileRaw.map((p) => p.floor);
   const med = runningMedian(floors, Math.round(250 / o.step));
   const clipped = floors.map((v, i) => Math.max(v, med[i] - 8));
-  const smooth = movingAverage(monotoneDecreasing(clipped), Math.round(o.smoothWindow / o.step / 2));
+  const mono = monotoneDecreasing(clipped);
+  const smooth = movingAverage(mono, Math.round(o.smoothWindow / o.step / 2));
+  const steps = findSteps(profileRaw.map((p) => p.d), mono, profileRaw.map((p) => p.p), o.step);
   const profile: ProfilePoint[] = profileRaw.map((p, i) => ({ ...p, z: smooth[i] }));
 
   const length = profile[profile.length - 1].d;
@@ -309,6 +352,7 @@ export async function analyzeRiver(
     profile,
     segments,
     hotspots,
+    steps,
     classShare,
   };
 }

@@ -5,7 +5,7 @@ import "./style.css";
 import { analyzeRiver, type Analysis } from "./analysis";
 import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nearNorway, TERRARIUM_URL, type DemSource } from "./dem";
 import { download, toCsv, toGeoJson, toGpx } from "./export";
-import { lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
+import { haversine, lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
 import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
 import { waterInBbox } from "./vectorWater";
 import { PRESETS } from "./presets";
@@ -14,7 +14,8 @@ import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
-import { flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, type DischargeSeries, type FlowState } from "./discharge";
+import { calibrateWithGauge, flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, summerMean, type DischargeSeries, type FlowState, type GaugeCalibration } from "./discharge";
+import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -147,7 +148,7 @@ map.on("moveend", () => void updateImageDate());
 map.on("load", () => void updateImageDate());
 
 // ---------- Zustand ----------
-type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "route-in" | "route-out" | "draw";
+type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "route-in" | "route-out" | "draw" | "wave";
 let mode: Mode = "idle";
 let riverLine: LngLat[] | null = null;
 let riverName = "";
@@ -158,6 +159,9 @@ interface FlowInfo {
   series: DischargeSeries | null;
   today: FlowState | null;
   mq: number;
+  summer: number;
+  /** Eichung an einem gemessenen Pegel (Faktor gemessen ÷ Modell) */
+  cal: GaugeCalibration | null;
   error?: string;
 }
 let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo } | null = null;
@@ -209,6 +213,7 @@ const MODE_HELP: Record<Mode, string> = {
   "route-in": "Klicke auf den Einstieg am Fluss.",
   "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
   draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
+  wave: "Weit ins Luftbild zoomen und nacheinander die Kämme einer Wellenfolge anklicken (mind. 3). Doppelklick oder „Messung beenden“ wertet aus, Esc bricht ab.",
 };
 
 function setMode(m: Mode) {
@@ -216,10 +221,12 @@ function setMode(m: Mode) {
   $("mode-help").textContent = MODE_HELP[m];
   const group = m.startsWith("osm") ? "osm" : m.startsWith("route") ? "route" : m === "draw" ? "draw" : "";
   document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === group));
-  $("finish-draw").hidden = m !== "draw";
-  $("undo-draw").hidden = m !== "draw";
+  $("finish-draw").hidden = m !== "draw" && m !== "wave";
+  $("undo-draw").hidden = m !== "draw" && m !== "wave";
+  $("finish-draw").textContent = m === "wave" ? "Messung beenden" : "Zeichnen beenden";
+  $("wave-btn").classList.toggle("on", m === "wave");
   // Doppelklick beendet im Zeichenmodus die Linie statt zu zoomen
-  if (m === "draw") map.doubleClickZoom.disable();
+  if (m === "draw" || m === "wave") map.doubleClickZoom.disable();
   else map.doubleClickZoom.enable();
   map.getCanvas().style.cursor = m === "idle" ? "" : "crosshair";
 }
@@ -363,7 +370,16 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
 
 function showResults() {
   if (!current) return;
-  const { analysis: a, name, source } = current;
+  const { name, source } = current;
+  const a = rated() ?? current.analysis;
+  const rq = ratingQ();
+  const mode = rateMode();
+  $("rate-note").textContent =
+    mode === "gradient"
+      ? "Farben nach Gefälle allein."
+      : rq.q === null
+        ? `Wucht-Bewertung wartet auf Abflussdaten (${rq.label}) – bis dahin nach Gefälle.`
+        : `${mode === "power" ? "Farben nach Wucht" : "Farben nach der schwierigeren Einstufung aus Gefälle und Wucht"} · Abfluss: ${rq.label} · Strömungsleistung Ø ${Math.round(streamPower(rq.q, current.analysis.meanGradient))} W/m.`;
 
   src("section").setData({
     type: "FeatureCollection",
@@ -386,6 +402,28 @@ function showResults() {
     el.title = `km ${(h.d0 / 1000).toFixed(1)}–${(h.d1 / 1000).toFixed(1)}: max. ${h.maxGradient.toFixed(0)} m/km`;
     el.addEventListener("click", (ev) => { ev.stopPropagation(); focusHotspot(i); });
     markers.push(new maplibregl.Marker({ element: el }).setLngLat(h.center).addTo(map));
+  });
+
+  // Steilstufen / mögliche Wasserfälle
+  a.steps.forEach((st, i) => {
+    const el = document.createElement("button");
+    el.className = "st-marker";
+    el.style.cssText = "background:#1d3557;color:#fff;font:700 12px system-ui;width:24px;height:24px;border-radius:4px;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer";
+    el.textContent = "▼";
+    el.title = `Steilstufe: ${st.drop.toFixed(0)} m auf ${Math.round(st.d1 - st.d0)} m (km ${(st.d0 / 1000).toFixed(2)})`;
+    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusStep(i); });
+    markers.push(new maplibregl.Marker({ element: el }).setLngLat(st.center).addTo(map));
+  });
+  const stList = $("steps-list");
+  stList.innerHTML = a.steps.length ? "" : `<li class="hint">Keine Stufen ≥ 8 m auf 100 m im Höhenmodell.</li>`;
+  a.steps.forEach((st, i) => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.innerHTML = `<span class="id" style="color:#1d3557">▼</span><span>${st.drop.toFixed(0)} m Höhenverlust auf ${Math.round(st.d1 - st.d0)} m</span>` +
+      `<span class="meta">km ${(st.d0 / 1000).toFixed(2)}–${(st.d1 / 1000).toFixed(2)} · möglicher Wasserfall, Katarakt oder Wehr – im Luftbild prüfen</span>`;
+    b.addEventListener("click", () => focusStep(i));
+    li.appendChild(b);
+    stList.appendChild(li);
   });
 
   // Engstellen, Schluchten, Klammen
@@ -438,6 +476,7 @@ function showResults() {
     ["Ø Gefälle", `${a.meanGradient.toFixed(1)} m/km`],
     ["Steilster Abschnitt", `${a.maxSegmentGradient.toFixed(1)} m/km`],
     ["Hotspots", `${a.hotspots.length}`],
+    ["Steilstufen", a.steps.length ? `${a.steps.length} (größte ${Math.max(...a.steps.map((x) => x.drop)).toFixed(0)} m)` : "–"],
     ["Talenge", a.confinedLength > 0 ? fmtKm(a.confinedLength) : "–"],
     ...(nr ? ([["Engstellen/Schluchten", nr.features.length ? (["engstelle", "schlucht", "klamm"] as NarrowKind[]).map((k) => `${nr.features.filter((f) => f.kind === k).length} ${NARROW_STYLE[k].letter}`).join(" · ") : "–"]] as [string, string][]) : []),
   ];
@@ -480,7 +519,7 @@ function showResults() {
 
 function drawChart() {
   if (!current || $("profile-wrap").hidden) return;
-  const a = current.analysis;
+  const a = rated() ?? current.analysis;
   chart = renderProfile($("profile"), a, current.narrows, (d) => {
     if (d === null) return src("cursor").setData(empty);
     const p = a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
@@ -498,20 +537,62 @@ async function loadFlowInfo(a: Analysis, id: number) {
     const [imagery, cell] = await Promise.all([imageryAlong(pts).catch(() => []), riverCell(line).catch(() => null)]);
     const series = cell ? await seriesFor(cell).catch(() => null) : null;
     const ld = series ? latestDate(series) : null;
+    const cal = series ? await calibrateWithGauge(line, series).catch(() => null) : null;
     info = {
       imagery: imagery.map((im) => ({ ...im, flow: series ? flowOn(series, im.date) : null })),
       series,
       today: series && ld ? flowOn(series, ld) : null,
       mq: series ? meanFlow(series) : NaN,
+      summer: series ? summerMean(series) : NaN,
+      cal,
     };
   } catch (e) {
-    info = { imagery: [], series: null, today: null, mq: NaN, error: (e as Error).message };
+    info = { imagery: [], series: null, today: null, mq: NaN, summer: NaN, cal: null, error: (e as Error).message };
   }
   if (id !== runId && current?.analysis !== a) return;
   if (current?.analysis !== a) return;
   current.flow = info;
-  renderFlowInfo();
+  updateQOptions();
+  showResults(); // neu einfärben (Wucht-Bewertung braucht den Abfluss)
 }
+
+// ---------- Wucht-Bewertung ----------
+const rateMode = () => $<HTMLSelectElement>("rate-mode").value as RatingMode;
+
+/** Abfluss für die Wucht-Bewertung je nach Auswahl (m³/s), mit Pegel-Eichung falls vorhanden. */
+function ratingQ(): { q: number | null; label: string } {
+  const f = current?.flow;
+  const src = $<HTMLSelectElement>("q-src").value;
+  if (src === "own") {
+    const v = Number($<HTMLInputElement>("q-own").value.replace(",", "."));
+    return v > 0 ? { q: v, label: `eigener Wert ${v} m³/s` } : { q: null, label: "eigenen Abfluss eingeben" };
+  }
+  if (!f?.series) return { q: null, label: "Abfluss nicht verfügbar" };
+  const k = f.cal?.factor ?? 1;
+  const tag = f.cal ? ` (geeicht an Pegel ${f.cal.station})` : " (Modell)";
+  if (src === "gauge" && f.cal) return { q: f.cal.latestQ, label: `Pegel ${f.cal.station} gemessen: ${f.cal.latestQ} m³/s` };
+  if (src === "mq") return { q: f.mq * k, label: `Mittel MQ ≈ ${(f.mq * k).toFixed(0)} m³/s${tag}` };
+  if (src === "summer") return { q: f.summer * k, label: `Sommer-Mittel ≈ ${(f.summer * k).toFixed(0)} m³/s${tag}` };
+  return f.today ? { q: f.today.q * k, label: `heute ≈ ${(f.today.q * k).toFixed(1)} m³/s${tag}` } : { q: null, label: "kein Wert für heute" };
+}
+
+function updateQOptions() {
+  const opt = $<HTMLSelectElement>("q-src").querySelector<HTMLOptionElement>('option[value="gauge"]');
+  if (opt) opt.hidden = !current?.flow?.cal;
+}
+
+/** Analyse mit der gewählten Bewertung (Gefälle / Wucht / kombiniert). */
+function rated(): Analysis | null {
+  if (!current) return null;
+  return rateAnalysis(current.analysis, rateMode(), ratingQ().q);
+}
+
+$("rate-mode").addEventListener("change", () => current && showResults());
+$("q-src").addEventListener("change", () => {
+  $("q-own").hidden = $<HTMLSelectElement>("q-src").value !== "own";
+  if (current) showResults();
+});
+$("q-own").addEventListener("change", () => current && showResults());
 
 function renderFlowInfo() {
   const el = $("flow-info");
@@ -540,6 +621,10 @@ function renderFlowInfo() {
     first?.flow && f.today
       ? `<p class="hint">Heute fließt etwa <b>${(f.today.q / first.flow.q).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(first.date)}). Mittlerer Abfluss (MQ): ~${fmtQ(f.mq)} m³/s.</p>`
       : "";
+  const cal = f.cal
+    ? `<p class="hint"><b>Gemessener Pegel:</b> <a href="${f.cal.url}" target="_blank" rel="noopener">${f.cal.station}</a> (${f.cal.water.toLowerCase().replace(/^./, (c) => c.toUpperCase())}, ${f.cal.distanceKm.toFixed(0)} km entfernt) – zuletzt <b>${fmtQ(f.cal.latestQ)} m³/s</b> (${f.cal.latestTime.slice(0, 16).replace("T", " ")}). ` +
+      `Das Modell lag in den letzten ${f.cal.days} Tagen um den Faktor ${f.cal.factor.toFixed(2).replace(".", ",")} daneben (Verlauf r = ${f.cal.correlation.toFixed(2).replace(".", ",")}); geeichte Werte: Aufnahmetag ≈ ${first?.flow ? fmtQ(first.flow.q * f.cal.factor) : "–"} m³/s, MQ ≈ ${fmtQ(f.mq * f.cal.factor)} m³/s.</p>`
+    : "";
   const gauges = officialGauges(current.analysis.profile[0].p)
     .map((g) => `<a href="${g.url}" target="_blank" rel="noopener">${g.label}</a>`)
     .join(" · ");
@@ -548,6 +633,7 @@ function renderFlowInfo() {
       ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Abfluss*</th></tr>${rows}${today}</table>`
       : `<p class="hint">Keine Bild- oder Abflussdaten verfügbar${f.error ? ` (${f.error})` : ""}.</p>`) +
     ratio +
+    cal +
     `<p class="hint">* Modellabfluss GloFAS (Copernicus, über Open-Meteo), Rasterpunkt ${f.series ? `${f.series.cell.lat.toFixed(3)}, ${f.series.cell.lon.toFixed(3)}` : "–"} (5-km-Raster, auf der Karte als blauer Punkt). ` +
     `Einordnung im Vergleich zu allen Jahren um dieselbe Jahreszeit. Für kleine Flüsse und nahe Mündungen nur grob – mit dem Pegel vor Ort vergleichen${gauges ? `: ${gauges}` : ""}.</p>`;
   src("gauge").setData(
@@ -565,6 +651,7 @@ function tourStops() {
   const a = current.analysis;
   const stops = [
     ...a.hotspots.map((h, i) => ({ d: (h.d0 + h.d1) / 2, label: `H${i + 1} · max. ${h.maxGradient.toFixed(0)} m/km`, go: () => focusHotspot(i) })),
+    ...a.steps.map((st, i) => ({ d: (st.d0 + st.d1) / 2, label: `Stufe · ${st.drop.toFixed(0)} m`, go: () => focusStep(i) })),
     ...(current.narrows?.features ?? []).map((f, i) => ({ d: (f.d0 + f.d1) / 2, label: f.title, go: () => focusNarrow(i) })),
   ];
   return stops.sort((x, y) => x.d - y.d);
@@ -581,6 +668,13 @@ function tour(step: number) {
 }
 $("tour-prev").addEventListener("click", () => tour(-1));
 $("tour-next").addEventListener("click", () => tour(1));
+
+function focusStep(i: number) {
+  const st = current?.analysis.steps[i];
+  if (!st) return;
+  map.flyTo({ center: st.center, zoom: DETAIL_ZOOM, duration: 900 });
+  chart?.highlight((st.d0 + st.d1) / 2);
+}
 
 function focusNarrow(i: number) {
   const f = current?.narrows?.features[i];
@@ -645,7 +739,53 @@ function updateDraft() {
   src("draft").setData({ type: "FeatureCollection", features });
 }
 
+// ---------- Wellen messen ----------
+
+function finishWave() {
+  const pts = drawPts.filter((p, i) => i === 0 || p[0] !== drawPts[i - 1][0] || p[1] !== drawPts[i - 1][1]);
+  if (pts.length < 3) return setStatus("Mindestens drei Wellenkämme anklicken.", true);
+  const gaps = pts.slice(1).map((p, i) => haversine(pts[i], p));
+  const lambda = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const spread = Math.max(...gaps) - Math.min(...gaps);
+  const v = waveVelocity(lambda);
+  const img = $("img-date").textContent?.replace("Bild: ", "") ?? "";
+  // Abfluss am Aufnahmetag des Bildes an genau dieser Stelle (Bildstände wechseln entlang der Strecke)
+  let imgFlow = "";
+  if (current?.flow) {
+    const prof = current.analysis.profile;
+    const near = prof.reduce((b, q) => (haversine(q.p, pts[0]) < haversine(b.p, pts[0]) ? q : b));
+    const st = current.flow.imagery.find((im) => near.d >= im.d0 && near.d <= im.d1);
+    if (st?.flow && haversine(near.p, pts[0]) < 500) {
+      const k = current.flow.cal?.factor ?? 1;
+      imgFlow = `${(st.flow.q * k).toFixed(st.flow.q * k < 10 ? 1 : 0)} (${st.flow.label}, ${current.flow.cal ? "geeicht" : "Modell"})`;
+    }
+  }
+  const html =
+    `<strong>Wellenabstand Ø ${lambda.toFixed(1).replace(".", ",")} m</strong> (${pts.length} Kämme, Streuung ${spread.toFixed(1).replace(".", ",")} m)<br>` +
+    `→ Strömung ≈ <b>${v.toFixed(1).replace(".", ",")} m/s</b> (${(v * 3.6).toFixed(0)} km/h)<br>` +
+    `Wellenhöhe höchstens ≈ ${(lambda / 7).toFixed(1).replace(".", ",")} m (steilere Wellen brechen)<br>` +
+    `<span style="color:var(--muted)">Gilt für stehende Wellen. ${img ? `Bild ${img}` : ""}${imgFlow ? ` · Abfluss am Aufnahmetag ≈ ${imgFlow} m³/s` : ""}</span>`;
+  new maplibregl.Popup({ maxWidth: "320px" }).setLngLat(pts[pts.length - 1]).setHTML(html).addTo(map);
+  setStatus(`Wellen: Ø ${lambda.toFixed(1)} m Abstand → ca. ${v.toFixed(1)} m/s Strömung.`);
+  drawPts = [];
+  src("draft").setData(empty);
+  setMode("idle");
+}
+$("wave-btn").addEventListener("click", () => {
+  if (busy) return;
+  if (mode === "wave") {
+    drawPts = [];
+    src("draft").setData(empty);
+    return setMode("idle");
+  }
+  drawPts = [];
+  src("draft").setData(empty);
+  setMode("wave");
+  if (map.getZoom() < 17) setStatus("Tipp: für die Wellenmessung weit hineinzoomen (Luftbild 0,25–0,5 m).");
+});
+
 async function finishDraw() {
+  if (mode === "wave") return finishWave();
   // doppelte Punkte (z. B. durch Doppelklick) entfernen
   const line = drawPts.filter((p, i) => i === 0 || p[0] !== drawPts[i - 1][0] || p[1] !== drawPts[i - 1][1]);
   if (line.length < 2) return setStatus("Mindestens zwei Punkte zeichnen.", true);
@@ -660,16 +800,20 @@ $("undo-draw").addEventListener("click", () => {
   updateDraft();
 });
 map.on("dblclick", (e) => {
-  if (mode !== "draw") return;
+  if (mode !== "draw" && mode !== "wave") return;
   e.preventDefault();
   void finishDraw();
 });
 document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, select, textarea")) return;
-  if (e.key === "Escape" && mode !== "idle" && !busy) {
+  if (e.key === "Escape" && mode === "wave") {
+    drawPts = [];
+    src("draft").setData(empty);
+    setMode("idle");
+  } else if (e.key === "Escape" && mode !== "idle" && !busy) {
     resetAll();
     setMode("idle");
-  } else if (e.key === "Backspace" && mode === "draw") {
+  } else if (e.key === "Backspace" && (mode === "draw" || mode === "wave")) {
     drawPts.pop();
     updateDraft();
   }
@@ -762,6 +906,7 @@ map.on("click", async (e) => {
       break;
     }
     case "draw":
+    case "wave":
       drawPts.push(p);
       updateDraft();
       break;

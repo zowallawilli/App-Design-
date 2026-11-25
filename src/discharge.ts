@@ -42,6 +42,20 @@ export async function riverCell(line: LngLat[], fetchFn: typeof fetch = fetch): 
   const from = Math.floor(n * 0.15), upto = Math.max(from + 1, Math.floor(n * 0.75));
   const step = Math.max(1, Math.floor((upto - from) / 12));
   for (let i = from; i < upto; i += step) pts.push(line[i]);
+  let best = await bestCell(pts, fetchFn);
+  // Auffällig wenig Wasser (z. B. Isar: 0,7 statt ~50 m³/s): Die nächsten Rasterzellen liegen am
+  // Hang. Dann auch die Nachbarzellen (±1 Zelle ≈ 5 km) um die Streckenmitte prüfen.
+  if (!best || best.recentMean < 5) {
+    const mid = line[Math.floor(n / 2)];
+    const ring: LngLat[] = [];
+    for (const dy of [-0.05, 0, 0.05]) for (const dx of [-0.05, 0, 0.05]) ring.push([mid[0] + dx, mid[1] + dy]);
+    const alt = await bestCell(ring, fetchFn);
+    if (alt && (!best || alt.recentMean > best.recentMean)) best = alt;
+  }
+  return best;
+}
+
+async function bestCell(pts: LngLat[], fetchFn: typeof fetch): Promise<DischargeCell | null> {
   const lat = pts.map((p) => p[1].toFixed(4)).join(",");
   const lon = pts.map((p) => p[0].toFixed(4)).join(",");
   const res = await fetchFn(`${API}?latitude=${lat}&longitude=${lon}&daily=river_discharge&past_days=30&forecast_days=1`);
@@ -56,6 +70,12 @@ export async function riverCell(line: LngLat[], fetchFn: typeof fetch = fetch): 
     if (!best || m > best.recentMean) best = { lat: x.latitude, lon: x.longitude, recentMean: m };
   }
   return best;
+}
+
+/** Mittlerer Abfluss in den Sommermonaten Juni–August (Paddelsaison im Norden, Gletscherschmelze). */
+export function summerMean(series: DischargeSeries): number {
+  const v = series.q.filter((q, i): q is number => q !== null && /-0[678]-/.test(series.time[i]));
+  return v.reduce((a, b) => a + b, 0) / Math.max(1, v.length);
 }
 
 const cache = new Map<string, Promise<DischargeSeries>>();
@@ -132,4 +152,96 @@ export function officialGauges(p: LngLat): { label: string; url: string }[] {
   if (lat > 45.8 && lat < 47.9 && lon > 5.9 && lon < 10.5) return [{ label: "BAFU Hydrodaten (Schweiz)", url: "https://www.hydrodaten.admin.ch/" }];
   if (lat > 46.3 && lat < 49.1 && lon > 9.5 && lon < 17.2) return [{ label: "eHYD (Österreich)", url: "https://ehyd.gv.at/" }];
   return [];
+}
+
+// ---------------------------------------------------------------------------
+// Eichung an gemessenen Pegeln (PEGELONLINE, Bundeswasserstraßen in Deutschland).
+// Das Modell trifft den zeitlichen Verlauf gut (Lahn: r ≈ 0,95), liegt absolut aber oft
+// daneben (Lahn: ~30 % zu niedrig). Liegt ein Pegel mit Abfluss in der Nähe, wird das Modell
+// mit dem Verhältnis der letzten 31 Tage skaliert.
+// ---------------------------------------------------------------------------
+
+const PEGELONLINE = "https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations";
+
+export interface GaugeCalibration {
+  station: string;
+  water: string;
+  distanceKm: number;
+  /** gemessen ÷ Modell (Mittel der gemeinsamen Tage) */
+  factor: number;
+  correlation: number;
+  days: number;
+  latestQ: number;
+  latestTime: string;
+  url: string;
+}
+
+interface PoStation {
+  uuid: string;
+  shortname: string;
+  latitude?: number;
+  longitude?: number;
+  water: { longname: string };
+  timeseries?: { shortname: string }[];
+}
+
+let stations: Promise<PoStation[]> | null = null;
+
+const distKm = (a: LngLat, b: LngLat) => {
+  const k = Math.PI / 180;
+  const x = (b[0] - a[0]) * Math.cos(((a[1] + b[1]) / 2) * k);
+  const y = b[1] - a[1];
+  return Math.sqrt(x * x + y * y) * 111.2;
+};
+
+/** Nächster PEGELONLINE-Pegel mit Abfluss (≤ maxKm zur Strecke) und Eichfaktor fürs Modell. */
+export async function calibrateWithGauge(line: LngLat[], series: DischargeSeries, maxKm = 15, fetchFn: typeof fetch = fetch): Promise<GaugeCalibration | null> {
+  if (!stations) {
+    stations = fetchFn(`${PEGELONLINE}.json?includeTimeseries=true`).then((r) => r.json());
+    stations.catch(() => (stations = null));
+  }
+  const list = (await stations).filter((s) => s.latitude && s.longitude && s.timeseries?.some((t) => t.shortname === "Q"));
+  let best: { s: PoStation; d: number } | null = null;
+  for (const s of list) {
+    const p: LngLat = [s.longitude!, s.latitude!];
+    const d = Math.min(...line.filter((_, i) => i % 10 === 0).map((q) => distKm(p, q)));
+    if (d <= maxKm && (!best || d < best.d)) best = { s, d };
+  }
+  if (!best) return null;
+  const res = await fetchFn(`${PEGELONLINE}/${best.s.uuid}/Q/measurements.json?start=P31D`);
+  if (!res.ok) return null;
+  const m = (await res.json()) as { timestamp: string; value: number }[];
+  if (!m.length) return null;
+  const daily = new Map<string, number[]>();
+  for (const x of m) {
+    const d = x.timestamp.slice(0, 10);
+    (daily.get(d) ?? daily.set(d, []).get(d)!).push(x.value);
+  }
+  const pairs: [number, number][] = [];
+  for (const [d, v] of daily) {
+    const i = series.time.indexOf(d);
+    const q = i >= 0 ? series.q[i] : null;
+    if (q !== null && q > 0 && v.length >= 12) pairs.push([v.reduce((a, b) => a + b, 0) / v.length, q]);
+  }
+  if (pairs.length < 10) return null;
+  const sg = pairs.reduce((a, p) => a + p[0], 0), sm = pairs.reduce((a, p) => a + p[1], 0);
+  const mx = sg / pairs.length, my = sm / pairs.length;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const [x, y] of pairs) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
+  const r = sxy / Math.sqrt(sxx * syy || 1);
+  const factor = sg / sm;
+  // anderer Fluss oder unplausibel → nicht eichen
+  if (!(r >= 0.6) || factor < 0.3 || factor > 3.5) return null;
+  const last = m[m.length - 1];
+  return {
+    station: best.s.shortname,
+    water: best.s.water.longname,
+    distanceKm: best.d,
+    factor,
+    correlation: r,
+    days: pairs.length,
+    latestQ: last.value,
+    latestTime: last.timestamp,
+    url: `https://www.pegelonline.wsv.de/gast/stammdaten?pegelnr=${best.s.uuid}`,
+  };
 }

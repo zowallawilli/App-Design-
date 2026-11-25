@@ -16,6 +16,13 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult): strin
         `    <sym>Danger Area</sym>\n  </wpt>`,
     )
     .join("\n");
+  const stWpts = (a.steps ?? [])
+    .map(
+      (st) =>
+        `  <wpt lat="${st.center[1].toFixed(6)}" lon="${st.center[0].toFixed(6)}">\n` +
+        `    <name>${esc(`Stufe ${st.drop.toFixed(0)} m`)}</name>\n    <desc>${esc(`km ${km(st.d0)}–${km(st.d1)}: ${st.drop.toFixed(0)} m Höhenverlust – möglicher Wasserfall/Katarakt/Wehr`)}</desc>\n    <sym>Danger Area</sym>\n  </wpt>`,
+    )
+    .join("\n");
   const nrWpts = (narrows?.features ?? [])
     .map(
       (f) =>
@@ -30,6 +37,7 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult): strin
 <gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata><name>${esc(name)}</name></metadata>
 ${wpts}
+${stWpts}
 ${nrWpts}
   <trk>
     <name>${esc(name)}</name>
