@@ -8,8 +8,10 @@ import { traceRiver } from "../src/route";
 import { compositeTileLoader, ElevationSampler } from "../src/dem";
 import { locateOnLine, type LngLat } from "../src/geo";
 import { waterInBbox } from "../src/vectorWater";
-import { findBreaklines, orthoSourceFor, sampleStrip, type TileDecoder } from "../src/whitewater";
+import { edgeCandidates, findBreaklines, localProfile, orthoSourceFor, sampleStrip, type TileDecoder } from "../src/whitewater";
+// DEMZ = Zoomstufe des Höhenmodells (Standard 13 wie in der App)
 import { nodeTileLoader } from "./nodeTileLoader";
+import { sentinelWater } from "../src/sentinel";
 
 const OUT = process.argv[2] ?? "bl-out";
 const only = process.argv.slice(3);
@@ -26,11 +28,11 @@ const loader = compositeTileLoader("global", nodeTileLoader);
 let pos = 0, hit = 0, neg = 0, negHit = 0, extra = 0;
 for (const r of fx.rivers) {
   if (only.length && !only.includes(r.id)) continue;
-  const lf = `${OUT}/line-${r.id}.json`;
+  const lf = `${OUT}/line-${r.id}${process.env.S2 ? "-s2" : ""}.json`; // S2=1: Linie wie in der App (mit Sentinel-2)
   let line: LngLat[];
   if (existsSync(lf)) line = JSON.parse(readFileSync(lf, "utf8"));
-  else { line = (await traceRiver(r.putIn, r.takeOut, { loader, waterways: waterInBbox })).line; writeFileSync(lf, JSON.stringify(line)); }
-  const a = await analyzeRiver(line, (p, cb) => new ElevationSampler(loader, 15).elevations(p, cb), { segmentLength: 250 });
+  else { line = (await traceRiver(r.putIn, r.takeOut, { loader, waterways: waterInBbox, ...(process.env.S2 ? { water: sentinelWater } : {}) })).line; writeFileSync(lf, JSON.stringify(line)); }
+  const a = await analyzeRiver(line, (p, cb) => new ElevationSampler(loader, Number(process.env.DEMZ ?? 13)).elevations(p, cb), { segmentLength: 250 });
   const pl = a.profile.map((p) => p.p);
   const zm = monotoneDecreasing(a.profile.map((p) => p.floor));
   const zAt = (d: number) => { let b = 0; for (let i = 0; i < a.profile.length; i++) if (Math.abs(a.profile[i].d - d) < Math.abs(a.profile[b].d - d)) b = i; return zm[b]; };
@@ -38,7 +40,11 @@ for (const r of fx.rivers) {
   console.log(`\n== ${r.name} (${src?.name ?? "keine Bildquelle"}) · Steilstufen im Höhenmodell: ${a.steps.map((s) => `km ${(s.d0 / 1000).toFixed(2)} ${s.drop.toFixed(0)} m`).join(", ") || "–"}`);
   if (!src) continue;
   const strip = await sampleStrip(pl, src, decode);
-  const bl = findBreaklines(strip, zAt);
+  const cands = edgeCandidates(strip);
+  const fine = new ElevationSampler(loader, 15);
+  const zf = new Map<number, (d: number) => number>();
+  for (const c of cands) zf.set(c.i, await localProfile(strip, c, (pts) => fine.elevations(pts)));
+  const bl = findBreaklines(strip, zAt, undefined, cands, (c, d) => zf.get(c.i)!(d));
   const refs = (r.spots as { name: string; from: LngLat; to: LngLat; tol: number; expect: string }[]).map((s) => {
     const x = locateOnLine(pl, s.from).d, y = locateOnLine(pl, s.to).d;
     return { ...s, d0: Math.min(x, y) - s.tol, d1: Math.max(x, y) + s.tol, hit: false };

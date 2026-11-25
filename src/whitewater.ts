@@ -550,10 +550,12 @@ export interface BreakParams {
   minJump: number;
   /** Weißanteil unmittelbar unterhalb der Kante */
   minBelow: number;
-  /** Mindest-Höhenverlust (m) zwischen 60 m oberhalb und 30 m unterhalb der Kante */
+  /** Mindest-Höhenverlust (m) zwischen `up` m oberhalb und `down` m unterhalb der Kante */
   minDrop: number;
+  up: number;
+  down: number;
 }
-export const DEFAULT_BREAK: BreakParams = { minJump: 0.4, minBelow: 0.5, minDrop: 5 };
+export const DEFAULT_BREAK: BreakParams = { minJump: 0.4, minBelow: 0.5, minDrop: 8, up: 80, down: 100 };
 /** Weiß für Gischt/Schaum: Minimum-Kanal ≥ 165, Sättigung ≤ 0,14 */
 export const SPRAY_MIN = 165;
 
@@ -570,13 +572,15 @@ export interface Breakline {
   confidence: "deutlich" | "möglich";
 }
 
-/** Weißanteil je Meter in der Flussmitte (±8 m um die Linie). NaN = keine Bilddaten. */
-export function centerWhite(strip: Strip, half = 8): Float64Array {
+/** Weißanteil je Meter in einem Band von ±`half` m um den Querversatz `offset` (m) zur Linie.
+ *  NaN = keine Bilddaten. */
+export function centerWhite(strip: Strip, half = 8, offset = 0): Float64Array {
   const out = new Float64Array(strip.rows).fill(NaN);
-  const c0 = Math.round(strip.cols / 2), band = Math.round(half / ACROSS);
+  const c0 = Math.round(strip.cols / 2 + offset / ACROSS), band = Math.round(half / ACROSS);
+  const lo = Math.max(0, c0 - band), hi = Math.min(strip.cols - 1, c0 + band);
   for (let i = 0; i < strip.rows; i++) {
     let w = 0, n = 0;
-    for (let c = c0 - band; c <= c0 + band; c++) {
+    for (let c = lo; c <= hi; c++) {
       const k = i * strip.cols + c;
       if (!strip.valid[k]) continue;
       const r = strip.rgb[k * 3], g = strip.rgb[k * 3 + 1], b = strip.rgb[k * 3 + 2];
@@ -584,7 +588,7 @@ export function centerWhite(strip: Strip, half = 8): Float64Array {
       n++;
       if (mn >= SPRAY_MIN && (mx - mn) / Math.max(mx, 1) <= 0.14) w++;
     }
-    if (n >= band) out[i] = w / n;
+    if (n >= (hi - lo) / 2) out[i] = w / n;
   }
   return out;
 }
@@ -595,35 +599,61 @@ const meanRange = (a: Float64Array, i0: number, i1: number) => {
   return n >= (i1 - i0) / 2 ? s / n : NaN;
 };
 
-/**
- * Abbruchkanten: Weißwasser/Gischt setzt entlang des Flusses schlagartig ein (Sprung ≥ minJump
- * auf 15 m, unterhalb ≥ minBelow) UND das Höhenmodell zeigt dort Höhenverlust ≥ minDrop.
- * `zAt(d)` = monoton fallendes, ungeglättetes Profil (Talboden) an Stationierung d.
- */
-export function findBreaklines(strip: Strip, zAt: (d: number) => number, params: BreakParams = DEFAULT_BREAK): Breakline[] {
-  const wf = centerWhite(strip);
+export interface EdgeCandidate {
+  i: number;
+  d: number;
+  jump: number;
+  above: number;
+  below: number;
+}
+
+/** Stellen, an denen Weißwasser/Gischt in der Flussmitte schlagartig einsetzt (nur Bild). */
+export function edgeCandidates(strip: Strip, params: BreakParams = DEFAULT_BREAK): EdgeCandidate[] {
+  // nur die Flussmitte: Seitenbänder (±17 m) fanden Selfoss bei versetzter Linie auch nicht, markierten
+  // aber Kiesbänke und Blöcke an der Soča → bewusst weggelassen
+  const bands = [centerWhite(strip)];
   const L = 15;
-  const cand: { i: number; jump: number; above: number; below: number }[] = [];
+  const cand: EdgeCandidate[] = [];
   for (let i = L; i < strip.rows - L; i++) {
-    const above = meanRange(wf, i - L, i), below = meanRange(wf, i, i + L);
-    if (!Number.isFinite(above) || !Number.isFinite(below)) continue;
-    const jump = below - above;
-    if (jump >= params.minJump && below >= params.minBelow) cand.push({ i, jump, above, below });
+    let best: EdgeCandidate | null = null;
+    for (const wf of bands) {
+      const above = meanRange(wf, i - L, i), below = meanRange(wf, i, i + L);
+      if (!Number.isFinite(above) || !Number.isFinite(below)) continue;
+      const jump = below - above;
+      if (jump >= params.minJump && below >= params.minBelow && (!best || jump > best.jump)) best = { i, d: strip.d[i], jump, above, below };
+    }
+    if (best) cand.push(best);
   }
   // je Häufung nur das stärkste Maximum
-  const peaks: typeof cand = [];
+  const peaks: EdgeCandidate[] = [];
   for (const c of cand) {
     const last = peaks[peaks.length - 1];
     if (last && c.i - last.i < 60) { if (c.jump > last.jump) peaks[peaks.length - 1] = c; }
     else peaks.push(c);
   }
+  return peaks;
+}
+
+/**
+ * Abbruchkanten: Weißwasser/Gischt setzt schlagartig ein (Bild) UND das Höhenmodell zeigt dort
+ * Höhenverlust ≥ minDrop zwischen `up` m oberhalb und `down` m unterhalb, davon ≥ 60 % mehr als
+ * das örtliche Gefälle (±500 m) erwarten lässt. `zAt(d)` = monoton fallendes Profil; `zFine`
+ * (optional) = feineres Profil nur um die Kandidaten (siehe localProfile).
+ */
+export function findBreaklines(
+  strip: Strip, zAt: (d: number) => number, params: BreakParams = DEFAULT_BREAK,
+  cands: EdgeCandidate[] = edgeCandidates(strip, params), zFine?: (c: EdgeCandidate, d: number) => number,
+): Breakline[] {
   const total = strip.d[strip.rows - 1];
   const out: Breakline[] = [];
-  for (const pk of peaks) {
-    const d = strip.d[pk.i];
-    const drop = zAt(Math.max(0, d - 60)) - zAt(Math.min(total, d + 30));
-    const regional = (zAt(Math.max(0, d - 500)) - zAt(Math.min(total, d + 500))) / Math.max(1, Math.min(total, d + 500) - Math.max(0, d - 500));
-    const excess = drop - regional * 90;
+  for (const pk of cands) {
+    const d = pk.d;
+    const z = zFine ? (x: number) => zFine(pk, x) : zAt;
+    const a = Math.max(0, d - params.up), b = Math.min(total, d + params.down);
+    const drop = z(a) - z(b);
+    const r0 = Math.max(0, d - 500), r1 = Math.min(total, d + 500);
+    const regional = (zAt(r0) - zAt(r1)) / Math.max(1, r1 - r0);
+    const excess = drop - regional * (b - a);
     if (drop < params.minDrop || excess < params.minDrop * 0.6) continue;
     out.push({
       d, center: strip.p[pk.i], above: pk.above, below: pk.below, drop, excess,
@@ -631,4 +661,38 @@ export function findBreaklines(strip: Strip, zAt: (d: number) => number, params:
     });
   }
   return out;
+}
+
+/**
+ * Feines Höhenprofil um eine Kante: alle 5 m von d−(up+50) bis d+(down+50), je Punkt das Minimum
+ * aus Linie und ±10 m quer (Talboden), monoton fallend gemacht. Gibt z(d) für diesen Kandidaten.
+ */
+export async function localProfile(
+  strip: Strip, c: EdgeCandidate, elevations: (pts: LngLat[]) => Promise<number[]>, params: BreakParams = DEFAULT_BREAK,
+): Promise<(d: number) => number> {
+  const total = strip.d[strip.rows - 1];
+  const ds: number[] = [];
+  for (let d = Math.max(0, c.d - params.up - 50); d <= Math.min(total, c.d + params.down + 50); d += 5) ds.push(d);
+  const pts: LngLat[] = [];
+  for (const d of ds) {
+    const i = Math.min(strip.rows - 1, Math.round(d / ALONG));
+    const a = strip.p[Math.max(0, i - 5)], b = strip.p[Math.min(strip.rows - 1, i + 5)], m = strip.p[i];
+    const k = Math.cos((m[1] * Math.PI) / 180) * 111320;
+    let ex = (b[0] - a[0]) * k, ey = (b[1] - a[1]) * 110574;
+    const L = Math.hypot(ex, ey) || 1; ex /= L; ey /= L;
+    for (const o of [-10, 0, 10]) pts.push([m[0] + (-ey * o) / k, m[1] + (ex * o) / 110574]);
+  }
+  const z = await elevations(pts);
+  const floor = ds.map((_, j) => Math.min(z[3 * j], z[3 * j + 1], z[3 * j + 2]));
+  // monoton fallend (Pool-Adjacent-Violators)
+  const blocks: { s: number; n: number }[] = [];
+  for (const v of floor) {
+    blocks.push({ s: v, n: 1 });
+    while (blocks.length > 1 && blocks[blocks.length - 2].s / blocks[blocks.length - 2].n < blocks[blocks.length - 1].s / blocks[blocks.length - 1].n) {
+      const t = blocks.pop()!; blocks[blocks.length - 1].s += t.s; blocks[blocks.length - 1].n += t.n;
+    }
+  }
+  const mono: number[] = [];
+  for (const bl of blocks) for (let q = 0; q < bl.n; q++) mono.push(bl.s / bl.n);
+  return (d: number) => mono[Math.max(0, Math.min(mono.length - 1, Math.round((d - ds[0]) / 5)))];
 }

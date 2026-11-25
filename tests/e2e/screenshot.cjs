@@ -43,6 +43,8 @@ const { chromium } = require('playwright');
   // FOCUS=<n> springt zur n-ten Schwallstelle (Detailansicht), BASE=<esri|ortho|s2|topo> wählt den Hintergrund
   if (process.env.BASE) { await page.click(`#basemap button[data-base="${process.env.BASE}"]`); await page.waitForTimeout(500); }
   if (process.env.FOCUS) { await page.click(`#ww-list li:nth-child(${process.env.FOCUS}) button`); await page.waitForTimeout(6000); }
+  // ROT=<Grad> schaltet 3D ein und dreht die Karte (Blick auf die Topografie)
+  if (process.env.ROT) { await page.check('#terrain'); await page.waitForTimeout(1500); await page.evaluate((b) => window.__map.easeTo({ bearing: b, pitch: 62, duration: 0 }), Number(process.env.ROT)); await page.waitForTimeout(5000); }
   // SCROLL=<CSS-Selektor> scrollt das Panel zu einem anderen Abschnitt (z. B. '#ww-list')
   await page.evaluate((sel) => document.querySelector(sel).scrollIntoView(), process.env.SCROLL || '#res-title');
   await page.waitForTimeout(500);

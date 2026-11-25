@@ -178,6 +178,12 @@
           <button data-base="s2">Sentinel-2</button>
           <button data-base="topo">Topo</button>
           <label><input type="checkbox" id="terrain" /> 3D</label>
+          <span id="rot" class="rot" hidden title="Drehen auch mit rechter Maustaste bzw. Strg + Ziehen, mit zwei Fingern oder Umschalt + Pfeiltasten">
+            <button id="rot-left" aria-label="Karte nach links drehen">⟲</button>
+            <button id="rot-right" aria-label="Karte nach rechts drehen">⟳</button>
+            <button id="rot-orbit" title="Langsam um die Kartenmitte kreisen (Klick in die Karte stoppt)">Rundflug</button>
+            <button id="rot-north" aria-label="Norden oben" title="Norden oben">N</button>
+          </span>
           <span id="img-date" class="img-date" title="Quelle, Aufnahmedatum und Auflösung des Luftbilds in der Kartenmitte"></span>
         </div>
         <div id="profile-wrap" hidden>

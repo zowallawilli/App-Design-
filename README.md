@@ -39,7 +39,8 @@ NODE_USE_ENV_PROXY=1 npx tsx scripts/soca.mts
 | **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte |
 | **Schwall-/Gefahrenstellen** | Weißwasser und Abbruchkanten im offenen Orthofoto (siehe unten); Klick zoomt hin. Das Gefälle zeigen die Abschnittsfarben – eigene Hotspot-Marker gibt es nicht mehr. |
 | **Export** | GPX (Track + Gefahren-, Schwallstellen, Stufen und Schluchten als Wegpunkte, z. B. für GPS/Offline-Karten), CSV, GeoJSON |
-| **Hintergrund** | Esri-Satellitenbild, Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände |
+| **Hintergrund** | Esri-Satellitenbild, Orthofoto AT (basemap.at), Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände |
+| **3D drehen** | In der 3D-Ansicht: ⟲ ⟳ dreht um 45°, „Rundflug“ kreist langsam um die Kartenmitte (Klick in die Karte stoppt), „N“ stellt Norden nach oben. Außerdem rechte Maustaste bzw. Strg + Ziehen, zwei Finger oder Umschalt + Pfeiltasten. |
 
 ## Flusslauf automatisch nachziehen (Modus „Ein-/Ausstieg“)
 
@@ -268,28 +269,33 @@ Steilstufen allein aus dem Höhenmodell sind unscharf (Schluchtränder, 30-m-Ras
 
 1. **Kante im Luftbild:** In der Flussmitte (±8 m) setzt Weißwasser/Gischt entlang des Flusses
    schlagartig ein – Anteil heller, ungesättigter Pixel (Minimum-Kanal ≥ 165) auf den 15 m unterhalb
-   ≥ 50 % und mindestens 40 Prozentpunkte höher als auf den 15 m oberhalb. Gischt ist glatt, deshalb hier
-   ohne Textur- und Wasserfarben-Kriterium (Gletscherwasser ist grau).
-2. **Höhenverlust:** im monoton angepassten, ungeglätteten Profil ≥ 5 m zwischen 60 m oberhalb und 30 m
-   unterhalb der Kante, davon ≥ 3 m mehr als das örtliche Gefälle erwarten lässt. Auch Stufen unter 10 m zählen.
+   ≥ 50 % und mindestens 40 Prozentpunkte höher als auf den 15 m oberhalb. Gischt ist glatt, deshalb hier ohne
+   Textur- und Wasserfarben-Kriterium (Gletscherwasser ist grau).
+2. **Höhenverlust:** Nur an diesen Kandidaten wird das feinere Höhenmodell (Zoomstufe 15, Talboden aus
+   Linie ±10 m, monoton fallend) nachgeladen. Gefordert: ≥ 8 m zwischen 80 m oberhalb und 100 m
+   unterhalb der Kante, davon ≥ 4,8 m mehr als das örtliche Gefälle (±500 m) erwarten lässt.
 
 „Deutlich“ bei einem Sprung ≥ 60 Prozentpunkte und ≥ 10 m Höhenverlust, sonst „möglich“. Steilstufen,
-die das Bild nicht bestätigt, bleiben als ▼ „nur Höhenmodell“ stehen. Wehre mit kleiner Fallhöhe erscheinen
-als Schwallstelle (Fallhöhe unter der Auflösung des Höhenmodells).
+die das Bild nicht bestätigt, bleiben als ▼ „nur Höhenmodell“ stehen. Wehre und Stufen unter ~8 m erscheinen
+als Schwallstelle: Mit 5 m ließen sich auch kleine Stufen fassen, dann markierten aber helle Kalkkiesbänke
+an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter 8 m ist das Höhenmodell zu ungenau.
 
 **Training und Messung** (`scripts/breakline-eval.mts`, `tests/fixtures/abbruchkanten.json`), Stand 11/2026:
 
 | Stelle | Bild | erwartet | Ergebnis |
 |---|---|---|---|
-| Selfoss (Jökulsá á Fjöllum) | NÁTT | Kante | ✅ erkannt (11 m, „möglich“) |
-| Dettifoss | NÁTT | Kante | ✅ erkannt (12 m im Höhenmodell, „deutlich“) |
-| Hafragilsfoss | NÁTT | Kante | ✅ erkannt (24 m, „deutlich“) |
+| Selfoss (Jökulsá á Fjöllum) | NÁTT | Kante | ✅ erkannt (13 m, „möglich“) |
+| Dettifoss | NÁTT | Kante | ✅ erkannt (50 m, „deutlich“) |
+| Hafragilsfoss | NÁTT | Kante | ✅ erkannt (96 m inkl. Schlucht darunter, „deutlich“) |
 | Stromschnellen zwischen Selfoss und Dettifoss (Höhenmodell meldet 35 m) | NÁTT | keine | ✅ keine Kante |
 | Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten, keine einzelne Kante (▼ Steilstufe bleibt) |
 | Sanna: Schiefes Eck, Pianser Schwall, Oberlauf | basemap.at | keine | ✅ keine Kante |
-| Soča: Blockwerk vor Trnovo | GURS | keine | ✅ keine Kante |
+| Soča: Blockwerk vor Trnovo, Kalkkiesbänke | GURS | keine | ✅ keine Kante |
 
-**3/5 Abbruchkanten erkannt, 0/5 Fehlalarme**, keine weiteren Kanten auf den Strecken. Markarfljót,
+**3/5 Abbruchkanten erkannt, 0/5 Fehlalarme**, keine weiteren Kanten auf den Strecken (Messskript mit OSM-Linie).
+In der App (Linie zusätzlich aus Sentinel-2) wird Selfoss nicht markiert: Die Linie liegt dort 36 m neben der
+Fallkante im über 100 m breiten Fluss. Breitere Suchbänder fanden Selfoss trotzdem nicht, markierten aber
+Kiesbänke an der Soča – deshalb nur die Flussmitte. Markarfljót,
 Gullfoss und Goðafoss liegen (noch) außerhalb des NÁTT-Mosaiks; Sjoa/Norwegen hat keine offene Bildquelle.
 Der Datensatz ist klein – Schwellen mit weiteren Fällen (eigene Markierungen, neue Mosaik-Gebiete) nachprüfen.
 

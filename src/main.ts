@@ -19,7 +19,7 @@ import { assess, captureNote, isGlacial, samplePoints, weatherBefore, type Condi
 import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type Gauge, type GaugeMatch, type Reading } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 import {
-  DEFAULT_PARAMS, describeSpots, findBreaklines, findSpots, type Breakline, fitParams, labelFeature, orthoSourceFor, sampleStrip, whitewaterProfile,
+  DEFAULT_PARAMS, describeSpots, edgeCandidates, findBreaklines, findSpots, localProfile, type Breakline, fitParams, labelFeature, orthoSourceFor, sampleStrip, whitewaterProfile,
   type OrthoSource, type WhitewaterBin, type WhitewaterLabel, type WhitewaterParams, type WhitewaterSpot,
 } from "./whitewater";
 import { browserDecoder, exportJson, loadLabels, loadParams, mergeLabels, parseImport, saveLabels, saveParams } from "./whitewaterStore";
@@ -148,9 +148,36 @@ document.querySelectorAll<HTMLButtonElement>("#basemap button").forEach((b) =>
 $<HTMLInputElement>("terrain").addEventListener("change", (e) => {
   const on = (e.target as HTMLInputElement).checked;
   map.setTerrain(on ? { source: "dem", exaggeration: 1.4 } : null);
+  $("rot").hidden = !on;
   if (on && map.getPitch() < 30) map.easeTo({ pitch: 55 });
-  if (!on) map.easeTo({ pitch: 0 });
+  if (!on) { stopOrbit(); map.easeTo({ pitch: 0, bearing: 0 }); }
 });
+
+// Karte drehen (v. a. in 3D, um die Topografie von allen Seiten zu sehen)
+let orbit: number | null = null;
+function stopOrbit() {
+  if (orbit !== null) cancelAnimationFrame(orbit);
+  orbit = null;
+  $("rot-orbit").classList.remove("on");
+}
+function startOrbit() {
+  stopOrbit();
+  $("rot-orbit").classList.add("on");
+  let last = performance.now();
+  const step = (t: number) => {
+    map.setBearing((map.getBearing() + ((t - last) / 1000) * 8) % 360); // 8° pro Sekunde
+    last = t;
+    orbit = requestAnimationFrame(step);
+  };
+  orbit = requestAnimationFrame(step);
+}
+const rotateBy = (deg: number) => { stopOrbit(); map.easeTo({ bearing: map.getBearing() + deg, duration: 700 }); };
+$("rot-left").addEventListener("click", () => rotateBy(-45));
+$("rot-right").addEventListener("click", () => rotateBy(45));
+$("rot-north").addEventListener("click", () => { stopOrbit(); map.easeTo({ bearing: 0, duration: 700 }); });
+$("rot-orbit").addEventListener("click", () => (orbit === null ? startOrbit() : stopOrbit()));
+// eigene Bedienung der Karte beendet den Rundflug
+for (const ev of ["mousedown", "touchstart", "wheel"] as const) map.on(ev, stopOrbit);
 
 // Aufnahmedatum/Auflösung des Luftbilds in der Kartenmitte anzeigen
 let imgReq = 0;
@@ -588,7 +615,15 @@ async function runWhitewater(a: Analysis, id: number) {
       while (hi - lo > 1) { const m = (lo + hi) >> 1; if (a.profile[m].d <= d) lo = m; else hi = m; }
       return Math.abs(a.profile[lo].d - d) <= Math.abs(a.profile[hi].d - d) ? zm[lo] : zm[hi];
     };
-    const breaks = findBreaklines(strip, zAt);
+    // Abbruchkanten: Kandidaten aus dem Bild, Höhenverlust dort mit feinerem Höhenmodell (Zoom 15)
+    const cands = edgeCandidates(strip);
+    const fine = new ElevationSampler(compositeTileLoader(demSource()), 15);
+    const zf = new Map<number, (d: number) => number>();
+    for (const c of cands) {
+      progress(`Gefahrenstellen: Höhenverlust an möglicher Kante km ${(c.d / 1000).toFixed(2)} …`);
+      zf.set(c.i, await localProfile(strip, c, (pts) => fine.elevations(pts)).catch(() => zAt));
+    }
+    const breaks = findBreaklines(strip, zAt, undefined, cands, (c, d) => (zf.get(c.i) ?? zAt)(d));
     current.ww = { status: "done", source, bins: prof.bins, track: { d: strip.d, p: strip.p }, coverage: prof.coverage, spots: [], breaks };
     wwCache.set(key, current.ww);
     if (wwCache.size > 6) wwCache.delete(wwCache.keys().next().value!);

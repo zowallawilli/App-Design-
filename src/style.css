@@ -160,3 +160,9 @@ button.danger { background: #c0392b; color: #fff; }
 .ww-popup .row { display: flex; gap: 6px; margin-top: 6px; }
 .ww-popup button { padding: 4px 10px; cursor: pointer; }
 .hotspots .ww-id { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; }
+
+/* Drehen in 3D */
+.rot { display: inline-flex; gap: 3px; align-items: center; }
+.rot[hidden] { display: none; }
+.rot button { padding: 2px 7px; font-size: 0.85rem; min-width: 28px; }
+.rot button.on { background: var(--accent); color: var(--accent-fg); }

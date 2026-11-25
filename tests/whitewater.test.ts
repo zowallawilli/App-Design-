@@ -158,6 +158,6 @@ describe("Abbruchkanten (Gefahrenstellen)", () => {
     const w = centerWhite(sprayStrip(400, 200));
     expect(w[100]).toBe(0);
     expect(w[300]).toBeGreaterThan(0.5);
-    expect(DEFAULT_BREAK.minDrop).toBe(5);
+    expect(DEFAULT_BREAK.minDrop).toBe(8);
   });
 });

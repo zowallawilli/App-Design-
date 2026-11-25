@@ -220,6 +220,15 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
 
   // 17 Kartenwechsel + 3D
   await page.click('[data-base="s2"]'); await page.click('[data-base="topo"]'); await page.check('#terrain'); await page.waitForTimeout(1500); await page.uncheck('#terrain');
+  await page.check('#terrain'); await page.waitForTimeout(800);
+  await page.click('#rot-right'); await page.waitForTimeout(1200);
+  const br = await page.evaluate(() => window.__map.getBearing());
+  await page.click('#rot-orbit'); await page.waitForTimeout(1500);
+  const br2 = await page.evaluate(() => window.__map.getBearing());
+  await page.click('#rot-orbit'); await page.click('#rot-north'); await page.waitForTimeout(1200);
+  const br3 = await page.evaluate(() => window.__map.getBearing());
+  await page.uncheck('#terrain');
+  check('3D: Karte drehen (45°, Rundflug, Norden)', Math.abs(br - 45) < 2 && br2 > br + 3 && Math.abs(br3) < 1, `${br.toFixed(1)}° → ${br2.toFixed(1)}° → ${br3.toFixed(1)}°`);
   check('Karten/3D ohne Fehler', true);
 
   // 18 Mobil
