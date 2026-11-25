@@ -86,3 +86,48 @@ export async function waterInBbox(bbox: [number, number, number, number], fetchF
     }
   return (await Promise.all(jobs)).flat();
 }
+
+/**
+ * Gletscherfläche (km²) im Umkreis `radiusKm` um einen Punkt aus der OpenMapTiles-Ebene „landcover“
+ * (Klasse ice/glacier, OSM natural=glacier). Grobe Näherung für Gletschereinfluss – der Umkreis ist
+ * nicht das Einzugsgebiet. Gezählt werden Flächenteile, deren Schwerpunkt im Umkreis liegt.
+ */
+export async function glacierAreaNear(p: LngLat, radiusKm = 20, fetchFn: typeof fetch = fetch): Promise<number> {
+  const z = 9;
+  const dLat = radiusKm / 111.2, dLon = radiusKm / (111.2 * Math.cos((p[1] * Math.PI) / 180));
+  const x0 = lon2tile(p[0] - dLon, z), x1 = lon2tile(p[0] + dLon, z), y0 = lat2tile(p[1] + dLat, z), y1 = lat2tile(p[1] - dLat, z);
+  const tmpl = await template(fetchFn);
+  const kx = 111.2 * Math.cos((p[1] * Math.PI) / 180);
+  let area = 0;
+  const jobs: Promise<void>[] = [];
+  for (let x = x0; x <= x1; x++)
+    for (let y = y0; y <= y1; y++)
+      jobs.push(
+        (async () => {
+          const res = await fetchFn(tmpl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
+          if (!res.ok) return;
+          const layer = new VectorTile(new Pbf(new Uint8Array(await res.arrayBuffer()))).layers.landcover;
+          if (!layer) return;
+          for (let i = 0; i < layer.length; i++) {
+            const f = layer.feature(i);
+            if (f.properties.class !== "ice") continue;
+            const g = (f.toGeoJSON(x, y, z) as GeoJSON.Feature).geometry;
+            const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+            for (const poly of polys) {
+              const ring = poly[0] as LngLat[];
+              let a = 0, cx = 0, cy = 0;
+              for (let k = 0; k < ring.length - 1; k++) {
+                const [ax, ay] = [(ring[k][0] - p[0]) * kx, (ring[k][1] - p[1]) * 111.2];
+                const [bx, by] = [(ring[k + 1][0] - p[0]) * kx, (ring[k + 1][1] - p[1]) * 111.2];
+                a += ax * by - bx * ay;
+                cx += ax; cy += ay;
+              }
+              cx /= Math.max(1, ring.length - 1); cy /= Math.max(1, ring.length - 1);
+              if (Math.hypot(cx, cy) <= radiusKm) area += Math.abs(a) / 2;
+            }
+          }
+        })().catch(() => undefined),
+      );
+  await Promise.all(jobs);
+  return area;
+}

@@ -150,7 +150,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.click('#load-preset'); await waitIdle();
   await page.waitForFunction(() => !/Wird geladen/.test(document.querySelector('#flow-info').textContent), null, { timeout: 60000 }).catch(() => {});
   const fi = (await page.textContent('#flow-info')).replace(/\s+/g, ' ');
-  check('Luftbild-Datum + Abfluss am Aufnahmetag', /21\.08\.2023/.test(fi) && /m³\/s/.test(fi), fi.slice(0, 140));
+  check('Luftbild-Datum + Hinweise, keine Modellzahl', /21\.08\.2023/.test(fi) && /eher niedrig|unauffällig|eher erhöht|eher hoch/.test(fi) && !/Modell/.test(fi), fi.slice(0, 160));
   await page.click('#tour-next'); await page.waitForTimeout(1500);
   check('Stellen-Tour zoomt ins Luftbild', (await page.evaluate(() => window.__map.getZoom())) > 17, await page.textContent('#tour-label'));
   check('Referenz Koritnica', await resultsVisible(), `${await stat('Länge')} · ${await stat('Ø Gefälle')} · ${await stat('Literatur')}`);
@@ -159,7 +159,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Koritnica: Marker K auf Karte', (await page.locator('.nr-marker').count()) > 0);
   check('Koritnica: Band im Profil', (await page.locator('#profile .narrow-band').count()) > 0);
   check('Koritnica: Steilstufe am Schluchtausgang', /Höhenverlust/.test(await page.textContent('#steps-list')), (await page.textContent('#steps-list')).replace(/\s+/g, ' ').slice(0, 100));
-  check('Wucht-Bewertung aktiv', /Strömungsleistung/.test(await page.textContent('#rate-note')), await page.textContent('#rate-note'));
+  check('Wucht nur mit Pegel, sonst Hinweis', /kein Pegel/.test(fi) ? /braucht einen Abfluss/.test(await page.textContent('#rate-note')) : /Strömungsleistung/.test(await page.textContent('#rate-note')), await page.textContent('#rate-note'));
   await page.selectOption('#q-src', 'own'); await page.fill('#q-own', '150'); await page.dispatchEvent('#q-own', 'change'); await page.waitForTimeout(500);
   check('Eigener Abfluss → schwerere Einstufung', /150 m³\/s/.test(await page.textContent('#rate-note')), (await page.textContent('#classes')).replace(/\s+/g, ' ').slice(0, 120));
   await page.selectOption('#q-src', 'today');
