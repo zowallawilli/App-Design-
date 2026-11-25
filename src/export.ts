@@ -39,9 +39,9 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitew
     .join("\n");
   const wwWpts = whitewater
     .map(
-      (s, i) =>
+      (s) =>
         `  <wpt lat="${s.center[1].toFixed(6)}" lon="${s.center[0].toFixed(6)}">\n` +
-        `    <name>${esc(`${s.hazard ? "Gefahr " : ""}W${i + 1} Schwall`)}</name>\n    <desc>${esc(spotText(s))}</desc>\n    <sym>${s.hazard ? "Danger Area" : "Caution"}</sym>\n  </wpt>`,
+        `    <name>${esc(`${s.hazard ? "Gefahrenstelle" : "Schwall"} km ${km(s.dPeak)}`)}</name>\n    <desc>${esc(spotText(s))}</desc>\n    <sym>${s.hazard ? "Danger Area" : "Caution"}</sym>\n  </wpt>`,
     )
     .join("\n");
   const trkpts = a.profile
@@ -94,10 +94,10 @@ export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult, wh
         properties: { kind: f.kind, title: f.title, detail: f.detail, km_from: f.d0 / 1000, km_to: f.d1 / 1000 },
         geometry: { type: "LineString", coordinates: a.profile.filter((p) => p.d >= f.d0 && p.d <= f.d1).map((p) => p.p).concat(f.d1 - f.d0 < 30 ? [f.center, f.center] : []) },
       })),
-      ...whitewater.map((s, i) => ({
+      ...whitewater.map((s) => ({
         type: "Feature",
         properties: {
-          kind: "schwall", id: `W${i + 1}`, hazard: !!s.hazard, strong: s.strong, km_from: s.d0 / 1000, km_to: s.d1 / 1000,
+          kind: "schwall", hazard: !!s.hazard, strong: s.strong, km_from: s.d0 / 1000, km_to: s.d1 / 1000,
           whitewater_m2: Math.round(s.area), density_m2_per_m: +s.peakDensity.toFixed(2), whitewater_share: +s.peakFrac.toFixed(3), notes: s.notes, text: spotText(s),
         },
         geometry: { type: "Point", coordinates: s.center },

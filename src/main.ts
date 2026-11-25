@@ -562,6 +562,11 @@ function showResults() {
 
 // ---------- Schwallstellen: Weißwasser im offenen Orthofoto ----------
 const WW_STYLE = (s: WhitewaterSpot) => (s.hazard ? "#d62828" : "#0077b6");
+/** Wellensymbol (bewusst ohne Nummer/Stufe – keine Schwierigkeitsangabe) */
+export const WAVE_SVG = (color = "#fff", size = 16) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" aria-hidden="true">` +
+  `<path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg>`;
+const kmRange = (s: WhitewaterSpot) => `km ${(s.d0 / 1000).toFixed(2)}–${(s.d1 / 1000).toFixed(2)}`;
 
 const wwCache = new Map<string, WwState>();
 async function runWhitewater(a: Analysis, id: number) {
@@ -657,8 +662,8 @@ function renderWhitewater(a: Analysis) {
       const b = document.createElement("button");
       const img = wwImageAt((s.d0 + s.d1) / 2);
       b.innerHTML =
-        `<span class="id" style="color:${WW_STYLE(s)}">W${i + 1}</span><span>${s.hazard ? "Gefahrenstelle: " : ""}${s.strong ? "viel Weißwasser" : "Weißwasser"} · ${Math.round(s.area)} m² auf ${Math.round(s.d1 - s.d0)} m</span>` +
-        `<span class="meta">km ${(s.d0 / 1000).toFixed(2)}–${(s.d1 / 1000).toFixed(2)} · ${Math.round(s.peakFrac * 100)} % der Wasserfläche${s.notes.length ? ` · ${s.notes.join(" · ")}` : ""}` +
+        `<span class="id ww-id" style="background:${WW_STYLE(s)}">${WAVE_SVG("#fff", 14)}</span><span>${s.hazard ? "Gefahrenstelle" : "Schwallstelle"} · ${kmRange(s)}</span>` +
+        `<span class="meta">Weißwasser ${Math.round(s.area)} m² auf ${Math.round(s.d1 - s.d0)} m · ${Math.round(s.peakFrac * 100)} % der Wasserfläche${s.notes.length ? ` · ${s.notes.join(" · ")}` : ""}` +
         `${img ? ` · Bild ${fmtDate(img.date)}${img.flow ? ` (${img.flow.label})` : ""}` : ""}</span>`;
       b.addEventListener("click", () => focusWw(i));
       li.appendChild(b);
@@ -683,10 +688,10 @@ function renderWhitewater(a: Analysis) {
   ww?.spots.forEach((s, i) => {
     const el = document.createElement("button");
     el.className = "ww-marker";
-    const size = s.strong || s.hazard ? 26 : 22;
-    el.style.cssText = `background:${WW_STYLE(s)};color:#fff;font:700 11px system-ui;width:${size}px;height:${size}px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer`;
-    el.textContent = `W${i + 1}`;
-    el.title = `${s.hazard ? "Gefahrenstelle – " : ""}Weißwasser km ${(s.d0 / 1000).toFixed(2)}–${(s.d1 / 1000).toFixed(2)}: ${Math.round(s.area)} m²${s.notes.length ? `, ${s.notes.join(", ")}` : ""}`;
+    el.style.cssText = `background:${WW_STYLE(s)};width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer;display:grid;place-items:center`;
+    el.innerHTML = WAVE_SVG("#fff", 15);
+    el.setAttribute("aria-label", s.hazard ? "Gefahrenstelle" : "Schwallstelle");
+    el.title = `${s.hazard ? "Gefahrenstelle" : "Schwallstelle"} ${kmRange(s)}: Weißwasser im Luftbild ${Math.round(s.area)} m²${s.notes.length ? `, ${s.notes.join(", ")}` : ""}`;
     el.addEventListener("click", (ev) => { ev.stopPropagation(); focusWw(i); });
     markers.push(new maplibregl.Marker({ element: el }).setLngLat(s.center).addTo(map));
   });
@@ -964,7 +969,7 @@ function tourStops() {
     ...a.hotspots.map((h, i) => ({ d: (h.d0 + h.d1) / 2, label: `H${i + 1} · max. ${h.maxGradient.toFixed(0)} m/km`, go: () => focusHotspot(i) })),
     ...a.steps.map((st, i) => ({ d: (st.d0 + st.d1) / 2, label: `Stufe · ${st.drop.toFixed(0)} m`, go: () => focusStep(i) })),
     ...(current.narrows?.features ?? []).map((f, i) => ({ d: (f.d0 + f.d1) / 2, label: f.title, go: () => focusNarrow(i) })),
-    ...(current.ww?.spots ?? []).map((w, i) => ({ d: w.dPeak, label: `W${i + 1} · ${w.hazard ? "Gefahrenstelle (Weißwasser + Stufe)" : "Schwallstelle"}`, go: () => focusWw(i) })),
+    ...(current.ww?.spots ?? []).map((w, i) => ({ d: w.dPeak, label: w.hazard ? "Gefahrenstelle (Weißwasser + Stufe)" : "Schwallstelle", go: () => focusWw(i) })),
   ];
   return stops.sort((x, y) => x.d - y.d);
 }

@@ -175,7 +175,7 @@ GPX- und GeoJSON-Export enthalten die Hinweise als Wegpunkte bzw. Linien.
 
 Gefälle und Höhenmodell übersehen Stellen, die durch **Verblockung** entstehen (z. B. Schiefes Eck und
 Pianser Schwall an der Sanna). Die App sucht deshalb nach der Gefälleanalyse im hochaufgelösten
-**offenen Orthofoto** nach Weißwasser und markiert auffällige Stellen als **W** auf Karte, Profil,
+**offenen Orthofoto** nach Weißwasser und markiert auffällige Stellen mit einem **Wellensymbol** (bewusst ohne Nummer oder Stufe) auf Karte, Profil,
 in der Stellen-Tour (◀ ▶) sowie im GPX/GeoJSON-Export. Das ist ein **Indikator**, keine
 Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher unterscheidbar).
 
