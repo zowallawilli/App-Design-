@@ -144,14 +144,25 @@ export function seasonHint(p: LngLat, date: string, glacial = false): Hint | nul
 const tempAt = (t: number, elevation: number, h: number) => t - 0.0065 * (h - elevation);
 
 /** Hinweise aus dem Wetter der Tage vor `date` (ohne Jahreszeit) */
-export function weatherHints(w: WeatherWindow, date = w.time[w.time.length - 1] ?? "", glacial = false): Hint[] {
+/** Reaktionszeit des Flusses nach Gebietsgröße: Tage, in denen Regen voll wirkt, und wie lange er nachwirkt */
+export function responseDays(areaKm2?: number) {
+  if (!areaKm2 || areaKm2 < 500) return { now: 3, until: 10 };
+  if (areaKm2 < 3000) return { now: 4, until: 12 };
+  return { now: 6, until: 13 };
+}
+
+export function weatherHints(w: WeatherWindow, date = w.time[w.time.length - 1] ?? "", glacial = false, areaKm2?: number): Hint[] {
   const hints: Hint[] = [];
   const n = w.time.length;
   if (!n || !w.points.length) return hints;
   const mo = Number(date.slice(5, 7));
   const rain = w.time.map((_, i) => mean(w.points.map((p) => p.rain[i])));
-  const r3 = sumLast(rain, 3), r7 = sumLast(rain, 7), r14 = sumLast(rain, 14);
-  const r3max = Math.max(...w.points.map((p) => sumLast(p.rain, 3)));
+  const rd = responseDays(areaKm2);
+  const r3 = sumLast(rain, rd.now), r7 = sumLast(rain, 7), r14 = sumLast(rain, 14);
+  const perPoint = w.points.map((p) => sumLast(p.rain, rd.now));
+  const r3max = Math.max(...perPoint);
+  // Anteil der Bezugspunkte mit kräftigem Regen: verbreitet (ganzes Gebiet) oder nur örtlich (Gewitter)
+  const share = perPoint.filter((v) => v >= 30).length / perPoint.length;
   const temp5 = mean(w.points.map((p) => mean(p.temp.slice(-5))));
   const t2000 = mean(w.points.map((p) => tempAt(mean(p.temp.slice(-5)), p.elevation, 2000)));
   const t3000 = mean(w.points.map((p) => tempAt(mean(p.temp.slice(-5)), p.elevation, 3000)));
@@ -163,13 +174,14 @@ export function weatherHints(w: WeatherWindow, date = w.time[w.time.length - 1] 
     .sort((a, b) => b.from - b.to - (a.from - a.to))[0];
   // Starkregen früher im Zeitraum (4–13 Tage vorher): Fluss kann noch erhöht sein
   let heavyEarlier: { ago: number; sum: number } | null = null;
-  for (let e = n - 4; e >= 2; e--) {
+  for (let e = n - 1 - rd.now; e >= Math.max(2, n - rd.until); e--) {
     const s3 = rain[e] + rain[e - 1] + rain[e - 2];
     if (s3 >= 50 && (!heavyEarlier || s3 > heavyEarlier.sum)) heavyEarlier = { ago: n - 1 - e, sum: s3 };
   }
   const deg = (v: number) => `${Math.round(v)} °C`;
 
-  if (r3 >= 30 || r3max >= 50) hints.push({ text: `Kräftiger Regen in den 3 Tagen davor (~${mm(r3)}, örtlich ~${mm(r3max)}).`, effect: 2 });
+  if (r3 >= 30 || share >= 0.5) hints.push({ text: `Kräftiger Regen verbreitet im Gebiet (~${mm(r3)} in ${rd.now} Tagen).`, effect: 2 });
+  else if (r3max >= 40) hints.push({ text: `Örtlich kräftiger Regen (bis ~${mm(r3max)}), nicht im ganzen Gebiet.`, effect: 1 });
   else if (heavyEarlier) hints.push({ text: `Starkregen ${heavyEarlier.ago} Tage davor (~${mm(heavyEarlier.sum)}) – evtl. noch erhöht.`, effect: 1 });
   else if (r7 >= 40) hints.push({ text: `Nasse Woche davor (~${mm(r7)} Regen).`, effect: 1 });
   else if (r3 >= 12) hints.push({ text: `Etwas Regen in den Tagen davor (~${mm(r3)}).`, effect: 0 });
@@ -188,10 +200,19 @@ export function weatherHints(w: WeatherWindow, date = w.time[w.time.length - 1] 
   return hints;
 }
 
-export function assess(date: string, p: LngLat, w: WeatherWindow | null, glacier?: Glacier | null): Conditions {
+export interface Basin {
+  /** Fläche des Einzugsgebiets (km²) – steuert die Reaktionszeit */
+  areaKm2?: number;
+  /** Speicher oder Kraftwerksausleitungen oberhalb (Namen bzw. Beschreibung) */
+  regulated?: string[];
+}
+
+export function assess(date: string, p: LngLat, w: WeatherWindow | null, glacier?: Glacier | null, basin: Basin = {}): Conditions {
   const glacial = isGlacial(glacier);
   const season = seasonHint(p, date, glacial);
-  const hints = [...(w ? weatherHints(w, date, glacial) : []), ...(season ? [season] : [])];
+  const hints = [...(w ? weatherHints(w, date, glacial, basin.areaKm2) : []), ...(season ? [season] : [])];
+  if (basin.regulated?.length)
+    hints.push({ text: `Speicher/Kraftwerke oberhalb (${basin.regulated.slice(0, 2).join(", ")}) – Wetter wirkt gedämpft, Schwall möglich.`, effect: 0 });
   const score = hints.reduce((a, h) => a + h.effect, 0);
   const tendency = score >= 3 ? "eher hoch" : score >= 1 ? "eher erhöht" : score <= -1 ? "eher niedrig" : "unauffällig";
   return { date, hints, tendency, weather: !!w };

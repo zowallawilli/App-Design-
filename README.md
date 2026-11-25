@@ -76,10 +76,22 @@ Nachbarpegeln geschätzt, siehe unten) und, wo kein Pegelwert vorliegt, **Hinwei
 - **Aufnahmedatum und -art:** Esri veröffentlicht nur das Datum, keine Uhrzeit. Satellitenbilder (Vantor/Maxar,
   Airbus) entstehen meist vormittags (~10–12 Uhr Ortszeit); Orthofotos aus Befliegungen bei hohem Sonnenstand,
   das Datum gilt jeweils für den Bildteil.
-- **Regen, Schnee, Schneeschmelze** in den zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo,
-  Wetter-Reanalyse ERA5, `src/weather.ts`): kräftiger Regen in den 3 Tagen davor, Starkregen 4–13 Tage davor
-  (Fluss evtl. noch erhöht), nasse Woche, zwei Wochen trocken, schrumpfende Schneedecke bei Plusgraden
-  (Schneeschmelze), Schneefall bei Frost.
+- **Regen, Schnee, Schneeschmelze im Einzugsgebiet oberhalb des Einstiegs** (`src/catchment.ts`, `src/weather.ts`):
+  Der Abfluss an der Strecke ist die Summe dessen, was oberhalb fällt oder schmilzt – Regen im ganzen Gebiet, Schmelze
+  in den hohen Lagen; das Wetter direkt an der Strecke zählt am wenigsten. Die App verfolgt deshalb den Fluss vom
+  Einstieg flussaufwärts bis zur Quelle (OSM-Flussnamen aus groben Vektorkacheln, bis 80 km Fließstrecke) samt den
+  größten Zubringern (auch Zubringer der Zubringer, z. B. Ötz: Gurgler und Venter Ache) und verteilt bis zu 8
+  Bezugspunkte darauf (Karte: Gebiet gestrichelt, Punkte ○). Flüsse, die erst am Ausstieg dazukommen (Inn an der
+  Sanna), zählen nicht. Ist kein Fluss verfolgbar, gilt der Umkreis von ~15 km um den Einstieg.
+  - Regen wird **nach Fläche** gewertet: „verbreitet“ (≥ Hälfte der Punkte) oder „örtlich“ (Gewitter an einzelnen
+    Punkten → schwächer gewichtet).
+  - **Zeitfenster nach Gebietsgröße** (Pegel-Stammdaten, sonst aus der Flusslänge geschätzt): < 500 km² Regen der
+    letzten 3 Tage, Nachwirkung bis 10 Tage; bis 3 000 km² 4/12 Tage; größer 6/13 Tage.
+  - **Speicher/Kraftwerke oberhalb** (OSM-Seenamen wie Stausee, Speicher, Lago; erkannte Ausleitungen): Hinweis
+    „Wetter wirkt gedämpft, Schwall möglich“.
+- **Bildabschnitte auf der Karte:** farbiges Band neben der Strecke und Schild „B1 · Datum · Tendenz“; dieselbe
+  Nummer und Farbe an der Karte im Panel. Klick auf eine Panelkarte zoomt zum Abschnitt, Klick aufs Schild springt
+  zur Panelkarte. Der Kartenkopf zeigt zum Bild in der Kartenmitte zusätzlich die Tendenz.
 - **Übliche Jahreszeit** der Region (Alpen, Norden, Island, Mittelgebirge), z. B. Schneeschmelze April–Juni in den
   Alpen, „vårflom“ Mai/Juni in Skandinavien.
 - Daraus eine **Tendenz** (eher niedrig / unauffällig / eher erhöht / eher hoch) – ausdrücklich keine Messung.

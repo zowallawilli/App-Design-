@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assess, captureNote, isGlacial, seasonHint, weatherHints, type WeatherWindow } from "../src/weather";
+import { assess, captureNote, isGlacial, responseDays, seasonHint, weatherHints, type WeatherWindow } from "../src/weather";
 
 const win = (rain: number[], opts: { snow?: number[]; temp?: number; snowfall?: number[]; elevation?: number; end?: string } = {}): WeatherWindow => {
   const n = rain.length;
@@ -14,7 +14,7 @@ describe("Hinweise aus Wetter und Jahreszeit", () => {
   it("kräftiger Regen vor der Aufnahme", () => {
     const h = weatherHints(win([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 40, 32]));
     expect(h[0]).toMatchObject({ effect: 2 });
-    expect(h[0].text).toMatch(/^Kräftiger Regen in den 3 Tagen davor/);
+    expect(h[0].text).toMatch(/^Kräftiger Regen verbreitet im Gebiet/);
   });
   it("zwei Wochen trocken → eher niedrig", () => {
     const c = assess("2023-09-14", [10.5, 47.1], win(Array(14).fill(0.2)));
@@ -73,5 +73,26 @@ describe("Gletscherflüsse (Ötz)", () => {
   it("ohne Gletscher: Hochsommer neutral", () => {
     const c = assess("2023-07-20", OETZ, win(Array(14).fill(2), { temp: 22, elevation: 1200, end: "2023-07-20" }), { pct: 0 });
     expect(c.hints.some((h) => /Gletscher/.test(h.text))).toBe(false);
+  });
+});
+
+describe("Einzugsgebiet: Fläche und Reaktionszeit", () => {
+  it("Gewitter an nur einem Bezugspunkt zählt als örtlich, nicht als Hochwasser", () => {
+    const n = 14;
+    const end = Date.parse("2023-07-20T12:00:00Z");
+    const time = Array.from({ length: n }, (_, i) => new Date(end - (n - 1 - i) * 864e5).toISOString().slice(0, 10));
+    const dry = { rain: Array(n).fill(0.5), snowfall: Array(n).fill(0), temp: Array(n).fill(15), snow: Array(n).fill(0), elevation: 1200 };
+    const storm = { ...dry, rain: [...Array(n - 1).fill(0.5), 60] };
+    const h = weatherHints({ time, points: [storm, dry, dry, dry, dry, dry] });
+    expect(h[0]).toMatchObject({ effect: 1 });
+    expect(h[0].text).toMatch(/^Örtlich kräftiger Regen/);
+  });
+  it("großes Gebiet reagiert länger", () => {
+    expect(responseDays(200).now).toBeLessThan(responseDays(5000).now);
+    expect(responseDays(5000).until).toBeGreaterThanOrEqual(responseDays(200).until);
+  });
+  it("Speicher oberhalb → Hinweis auf gedämpfte Wirkung", () => {
+    const c = assess("2023-07-20", [10.5, 47.1], null, null, { regulated: ["Gepatschspeicher"] });
+    expect(c.hints.some((h) => /Speicher\/Kraftwerke oberhalb \(Gepatschspeicher\)/.test(h.text))).toBe(true);
   });
 });
