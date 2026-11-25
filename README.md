@@ -171,6 +171,63 @@ Höhenmodell und wird nicht erkannt. Ein Slowenien-Laserscan (1 m) würde das ä
 Im Längsprofil zeigen farbige Bänder die Hinweise; der Mauszeiger zeigt die gemessene Flussbreite.
 GPX- und GeoJSON-Export enthalten die Hinweise als Wegpunkte bzw. Linien.
 
+## Schwallstellen: Weißwasser im offenen Orthofoto
+
+Gefälle und Höhenmodell übersehen Stellen, die durch **Verblockung** entstehen (z. B. Schiefes Eck und
+Pianser Schwall an der Sanna). Die App sucht deshalb nach der Gefälleanalyse im hochaufgelösten
+**offenen Orthofoto** nach Weißwasser und markiert auffällige Stellen als **W** auf Karte, Profil,
+in der Stellen-Tour (◀ ▶) sowie im GPX/GeoJSON-Export. Das ist ein **Indikator**, keine
+Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher unterscheidbar).
+
+| Schritt | Verfahren |
+|---|---|
+| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
+| Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±30 m in 0,5-m-Schritten. |
+| Wasserfläche | je Querzeile der zusammenhängende Lauf aus wasserähnlichen (bläulich/türkis) und Weißwasser-Pixeln nahe der Linie – auch wenn die Linie etwas neben dem Wasser liegt. |
+| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). |
+| Schwallstelle | Weißwasserfläche je Flussmeter (über 30 m geglättet) ≥ **5 m²/m** und ≥ 18 % der Wasserfläche, zusammen ≥ 150 m²; Lücken bis 50 m werden verbunden. „Viel Weißwasser“ ab 8 m²/m. |
+| Merkmale | scharfe Kurve (≥ 60° auf ±50 m), Verengung (≤ 70 % der üblichen Breite ±500 m), lokales Gefälle ≥ 30 m/km. Fällt eine Stelle mit einer **Steilstufe** zusammen → rote **Gefahrenstelle** („mögliche Stufe/Wasserfall“). |
+| Wasserstand | Esri meldet für denselben Bildflug das Aufnahmedatum (Tirol: Land Tirol 07.09.2023, Slowenien: GURS 21.08.2023). Damit zeigt die App den Abfluss am Aufnahmetag (Pegel, geeichtes Modell) und ob das Bild bei Niedrig-, Mittel- oder Hochwasser entstand. |
+
+**Lernen aus eigenen Markierungen:** „Stellen markieren“ → im Luftbild klicken → „Schwall“ / „kein
+Schwall“. „Aus Markierungen lernen“ passt die Schwelle (m²/m) so an, dass die eigenen Markierungen der
+Strecke möglichst gut getroffen werden. Alles bleibt im Browser (localStorage); „Markierungen
+exportieren/importieren“ sichert es als JSON-Datei (inkl. gelernter Schwelle).
+
+**Hintergrund „Orthofoto AT“:** das basemap.at-Bild (bis 15–30 cm) direkt als Karte – in Österreich
+schärfer als das Esri-Luftbild, gut für die Wellenmessung.
+
+### Messung an den Referenzflüssen
+
+`scripts/whitewater-eval.mts` prüft gegen `tests/fixtures/schwallstellen.json` und erzeugt je Fluss ein
+„gerade gezogenes“ Kontrollbild. Stand 11/2026 (Standardschwellen):
+
+| Fluss | Bild | Referenzstellen | gefunden | weitere markierte Stellen |
+|---|---|---|---|---|
+| Sanna, Einmündung – Landeck | basemap.at 07.09.2023 | Schiefes Eck (WW III), Pianser Schwall (WW III–IV+), Wehr Landeck | **3/3** | 1 (km 1,9, sichtbarer Schwall) + Oberlauf an der Straßengalerie (WW II–III, neutral) |
+| Soča, Srpenica – Trnovo | GURS 21.08.2023 | keine verorteten Einzelstellen in offenen Quellen | – | 7 (Stichprobe: Weißwasser im Blockwerk vor Trnovo bestätigt) |
+| Koritnica, Kluže – Mündung | GURS 21.08.2023 | dto. | – | 3 (unterer Abschnitt, Blockstrecken) |
+| Inn, Imster Schlucht | basemap.at 07.09.2023 | Rohrbrückenschwall, Memminger Walze (Lage nicht belegt) | – | 6 |
+| Sjoa | – | – | – | keine offene Bildquelle |
+
+Erkenntnisse: Mit reiner Helligkeit wäre helles ruhiges Wasser (Soča über Kalkgrund, milchiger Inn)
+massenhaft als Weißwasser erkannt worden – erst die Textur macht das brauchbar. Helle Kalkblöcke am Ufer
+sind farblich ähnlich und können noch Fehlalarme erzeugen; Weißwasser im tiefen Schatten wird übersehen.
+
+### Offene Orthofotos weltweit (Recherche 11/2026)
+
+| Region | Quelle | Auswertung erlaubt? |
+|---|---|---|
+| Österreich, Slowenien | basemap.at, GURS | ✅ eingebaut |
+| Island | NÁTT (ehem. LMÍ), Sommer-Mosaik 2025, CC BY 4.0 | ✅ wahrscheinlich – Dienst/CORS noch prüfen |
+| Finnland | Maanmittauslaitos Ortokuva, CC BY 4.0 | ✅ mit kostenlosem persönlichen Schlüssel |
+| Neuseeland | LINZ Basemaps 7,5–30 cm, CC BY 4.0 | ✅ mit kostenlosem Schlüssel |
+| USA | NAIP 0,6–1 m (USGS), gemeinfrei | ✅ (1 m nur für größere Schwälle) |
+| Schweden | Lantmäteriet: historische Bilder CC0, aktuelle unklar | ⚠️ |
+| Alaska, Kanada | NAIP nur teilweise, „Alaska Vivid“ (lizenziert), Kanada stückweise (OGL) | ⚠️ |
+| Norwegen | Norge i bilder (Norge-digitalt-Lizenz) | ❌ nur Anzeige |
+| Mongolei, Kasachstan, Kirgistan | keine offenen hochauflösenden Orthofotos | ❌ |
+
 ## Wie die Analyse funktioniert
 
 1. **Abtastung** der Flusslinie alle 25 m.
@@ -212,7 +269,9 @@ Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit ei
 | Satellitendaten | [Sentinel-2 L2A](https://registry.opendata.aws/sentinel-2-l2a-cogs/) (ESA Copernicus) über den STAC-Katalog von Element 84 | Bänder Grün, Rot, NIR; nur das benötigte Fenster wird gelesen (Cloud-Optimized GeoTIFF) |
 | Gewässer | OpenStreetMap über Overpass API (3 Server, gestaffelt) | © OSM-Mitwirkende, ODbL |
 | Ortssuche | Nominatim | Nutzungsbedingungen beachten (sparsame Nutzung) |
-| Satellitenbild | Esri World Imagery | nur Anzeige, keine automatisierte Auswertung |
+| Satellitenbild | Esri World Imagery | nur Anzeige, keine automatisierte Auswertung (Metadaten liefern das Aufnahmedatum) |
+| Orthofoto Österreich | [basemap.at](https://basemap.at) | CC BY 4.0; Anzeige („Orthofoto AT“) und Weißwasser-Suche |
+| Orthofoto Slowenien | GURS DOF 2023 (Kachelcache auf gisportal.furs.gov.si) | CC BY 4.0 („Javne informacije Slovenije, Geodetska uprava RS“); Weißwasser-Suche |
 | Satellitenbild | Sentinel-2 cloudless 2023 (EOX) | CC BY-NC-SA 4.0 |
 | Topo | OpenTopoMap | CC-BY-SA |
 
@@ -267,10 +326,12 @@ src/
   osm.ts           Overpass-Abfragen (gestaffelt, Cache), Verkettung von Flusswegen, Ortssuche
   profileChart.ts  Längsprofil (SVG)
   export.ts        GPX/CSV/GeoJSON
+  whitewater.ts    Weißwasser-Suche im offenen Orthofoto, Schwallstellen, Lernen aus Markierungen
+  whitewaterStore.ts  eigene Markierungen/Schwelle (localStorage, Export/Import), Kachel-Dekodierung
   presets.ts       Referenzstrecken
   main.ts          Karte und Bedienoberfläche
 tests/             Unit-Tests (vitest)
-scripts/           Prüfskript mit echten Höhendaten
+scripts/           Prüfskripte mit echten Daten (soca.mts, whitewater-eval.mts)
 ```
 
 ## Nächste Schritte (Roadmap)
@@ -279,13 +340,9 @@ scripts/           Prüfskript mit echten Höhendaten
   ARSO Slowenien, BAFU) sowie GloFAS-Modellabfluss für Gebiete ohne Pegel. Sentinel-2-Szenen mit
   dem Abfluss am Aufnahmetag verknüpfen und per Schieberegler vergleichen.
 - **Höhenmodelle Skandinavien:** Lantmäteriet (Schweden) und Maanmittauslaitos (Finnland) analog zu Kartverket.
-- **Blöcke und Weißwasser automatisch erkennen:** Ein Prototyp auf dem slowenischen 25-cm-Orthofoto
-  zeigt: Schwälle und Blöcke sind im Bild klar sichtbar, eine einfache Farbregel trifft Weißwasser
-  aber nur teilweise und verwechselt helle Kiesbänke. Verlässlich wird es mit einem trainierten
-  Bilderkennungsmodell (eigene markierte Stellen als Trainingsdaten). Voraussetzungen: ein kleiner
-  Server (der Bilddienst erlaubt keinen Pixelzugriff aus dem Browser) und Bilder, deren Lizenz die
-  Auswertung erlaubt (offen z. B. Slowenien, Schweiz, Österreich; Norge i bilder und Esri nur zur
-  Anzeige).
+- **Weißwasser-Suche erweitern:** weitere offene Orthofotos anbinden (Island, Finnland, Neuseeland, USA);
+  Kalkblöcke am Ufer besser von Schaum trennen (Farbe relativ zum Wasser, Schattenkanten); Weißwasser im
+  Schatten; mit mehr eigenen Markierungen einen kleinen Klassifikator statt einer Schwelle trainieren.
 - **Engstellen verfeinern:** OSM-Wasserflächen für exakte Breiten, Laserscan-Modelle für Slowenien,
   Schweiz, Österreich; Strömungsleistung (Gefälle × Abfluss ÷ Breite) mit Abflussdaten.
 - **Phase 3 – Eigene Notizen & offline:** Stromschnellen markieren, Schwierigkeit, Fotos, Pegel bei

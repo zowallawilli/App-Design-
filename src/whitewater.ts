@@ -34,6 +34,8 @@ export interface OrthoSource {
   year: string;
   /** ungefähre Bodenauflösung in m */
   resolution: number;
+  /** Esri-Metadaten mit diesem Anbieter beschreiben denselben Bildflug → Aufnahmetag übernehmen */
+  esriMatch: RegExp;
   covers: (p: LngLat) => boolean;
   /** Pixelkoordinaten (Kachelstufe `level`, 256er-Kacheln) */
   toPixel: (p: LngLat) => [number, number];
@@ -79,6 +81,7 @@ export const ORTHO_SOURCES: OrthoSource[] = [
     license: "CC BY 4.0",
     year: "lt. Bildaufdruck",
     resolution: 0.4,
+    esriMatch: /Land |data\.gv\.at|BEV|basemap/i,
     covers: (p) => inPoly(p, AUSTRIA),
     toPixel: lonLatTo3857Px(18),
     tileUrl: (x, y) => `https://mapsneu.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/18/${y}/${x}.jpeg`,
@@ -92,6 +95,7 @@ export const ORTHO_SOURCES: OrthoSource[] = [
     license: "CC BY 4.0",
     year: "2023",
     resolution: 0.25,
+    esriMatch: /GURS|Slovenia/i,
     covers: (p) => inPoly(p, SLOVENIA),
     toPixel: (p) => {
       const [x, y] = to3794.forward(p);

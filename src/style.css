@@ -140,3 +140,11 @@ button.danger { background: #c0392b; color: #fff; }
 @media (max-width: 760px) { .img-date { display: none; } }
 .tour .hint { margin: 0; flex: 1; min-width: 0; }
 #wave-btn.on { background: var(--accent); color: var(--accent-fg); }
+
+/* Schwallstellen */
+.ww-tools { flex-wrap: wrap; gap: 6px; }
+.ww-tools button { font-size: 0.8rem; padding: 4px 8px; }
+.ww-tools button.on { background: #0077b6; color: #fff; border-color: #0077b6; }
+.ww-popup { font: 13px system-ui; color: #111; }
+.ww-popup .row { display: flex; gap: 6px; margin-top: 6px; }
+.ww-popup button { padding: 4px 10px; cursor: pointer; }

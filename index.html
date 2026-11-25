@@ -100,6 +100,8 @@
           <span class="lbl" style="margin-top:10px">Engstellen &amp; Schluchten</span>
           <label class="check"><input type="checkbox" id="opt-narrows" checked /> Schluchten (Talquerschnitt) und verdeckte Klammen analysieren</label>
           <label class="check"><input type="checkbox" id="opt-width" /> Engstellen aus Sentinel-2-Flussbreite (10 m – nur grob, oft ungenau)</label>
+          <span class="lbl" style="margin-top:10px">Schwallstellen</span>
+          <label class="check"><input type="checkbox" id="opt-ww" checked /> Weißwasser im offenen Orthofoto suchen (Österreich: basemap.at, Slowenien: GURS)</label>
           <p class="hint">Das Höhenmodell wird immer genutzt. Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann in engen Schluchten Kurven abschneiden.</p>
         </details>
 
@@ -138,6 +140,22 @@
           </div>
           <h3>Luftbild &amp; Wasserstand</h3>
           <div id="flow-info" class="flow-info"><p class="hint">Wird geladen …</p></div>
+          <h3>Schwallstellen <span class="hint">(Weißwasser im Luftbild – Indikator)</span></h3>
+          <ul class="legend">
+            <li><span class="dia" style="background:#0077b6;border-radius:50%">W</span> Schwallstelle – viel Weißwasser auf kurzer Strecke (Schwall, Walze, Blockstrecke oder Wehr)</li>
+            <li><span class="dia" style="background:#d62828;border-radius:50%">W</span> Gefahrenstelle – Weißwasser und Steilstufe im Höhenmodell: mögliche Stufe oder Wasserfall</li>
+          </ul>
+          <ol id="ww-list" class="hotspots"></ol>
+          <p id="ww-meta" class="hint"></p>
+          <div class="row ww-tools">
+            <button id="ww-label" class="ghost" title="Bekannte Schwallstellen (oder ruhige Stellen) im Luftbild anklicken und bewerten">Stellen markieren</button>
+            <button id="ww-learn" class="ghost" title="Schwelle der Erkennung an die eigenen Markierungen dieser Strecke anpassen">Aus Markierungen lernen</button>
+            <button id="ww-export" class="ghost">Markierungen exportieren</button>
+            <button id="ww-import" class="ghost">Importieren</button>
+            <button id="ww-reset" class="ghost" title="Gelernte Schwelle verwerfen (Markierungen bleiben)">Schwelle zurücksetzen</button>
+            <input type="file" id="ww-file" accept="application/json,.json" hidden />
+          </div>
+          <p id="ww-learn-info" class="hint"></p>
           <h3>Engstellen &amp; Schluchten</h3>
           <ul class="legend">
             <li><span class="dia" style="background:#ff9f1c">E</span> Engstelle – Flussbett deutlich schmaler als sonst (Sentinel-2, optional)</li>
@@ -168,6 +186,7 @@
         <div id="map"></div>
         <div id="basemap" class="basemap" role="group" aria-label="Kartenhintergrund">
           <button data-base="esri" class="on" title="Hochauflösendes Luft-/Satellitenbild (Esri World Imagery, je nach Region 0,25–1 m)">Luftbild</button>
+          <button data-base="ortho" title="Offenes Orthofoto Österreich (basemap.at, CC BY 4.0, 15–30 cm) – Grundlage der Weißwasser-Suche, gut für Wellenmessung">Orthofoto AT</button>
           <button data-base="s2">Sentinel-2</button>
           <button data-base="topo">Topo</button>
           <label><input type="checkbox" id="terrain" /> 3D</label>

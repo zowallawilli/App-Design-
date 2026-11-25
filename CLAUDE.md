@@ -41,6 +41,9 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
 | `src/vectorWater.ts` | OSM-Gewässer aus OpenFreeMap-Vektorkacheln (Overpass nur Fallback) |
 | `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung je Abschnitt |
+| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023), Streifenbild, Textur, Lernen |
+| `src/whitewaterStore.ts` | eigene Markierungen + gelernte Schwelle (localStorage, JSON-Export/-Import), Browser-Dekoder |
+| `scripts/whitewater-eval.mts` | Messung gegen `tests/fixtures/schwallstellen.json`, Kontrollbilder (Fluss gerade gezogen) |
 | `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln |
 | `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (41 Prüfungen), Screenshot-Skript |
 
@@ -65,9 +68,16 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - **Inn, Imster Schlucht (AT)** [10.7450, 47.2164] → [10.8976, 47.2642] (Screenshot-Zoom 12.2):
   Pegel Imst/Magerbach veröffentlichen nur die Wasserstandsklasse, kein Q; Modell (~76 m³/s) vermutlich zu hoch.
 
+## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
+- Nur markieren, nicht einschätzen. Gefahrenstelle nur bei Weißwasser + Steilstufe. Wehre ebenfalls markieren.
+- Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),
+  Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
+- Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
+  Zielregionen für später: Island, Skandinavien, Nordamerika, Zentralasien, Neuseeland (Recherche im README).
+- Kostenlose Schlüssel (MML Finnland, LINZ) erst später, wenn der Nutzer es will.
+
 ## Offene Punkte / Ideen
-- Verblockung („Schiefes S“, „Pianser Schwall“ an der Sanna) ist mit Gefälle/Höhenmodell nicht
-  erkennbar – bräuchte Bildauswertung (z. B. Weißwasser-Erkennung im hochaufgelösten Luftbild).
+- Weißwasser: Kalkblöcke am Ufer vs. Schaum, Weißwasser im Schatten; weitere offene Orthofotos.
 - Tirol: keine Tageswerte der Vergangenheit (eHYD nur als PDF/ohne nutzbaren Endpunkt) → kein
   gemessener Wert am Aufnahmetag; Eichfaktor nur aus dem aktuellen Tag.
 - Inn bei Imst: Abfluss evtl. aus Landeck Perjen + Landeck Bruggen abschätzen.
