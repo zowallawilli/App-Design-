@@ -19,6 +19,11 @@ import { assess, captureNote, isGlacial, weatherBefore, type Basin, type Conditi
 import { catchmentFromRivers, type Catchment } from "./catchment";
 import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type Gauge, type GaugeMatch, type Reading } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
+import {
+  DEFAULT_PARAMS, describeSpots, findSpots, fitParams, labelFeature, orthoSourceFor, sampleStrip, whitewaterProfile,
+  type OrthoSource, type WhitewaterBin, type WhitewaterLabel, type WhitewaterParams, type WhitewaterSpot,
+} from "./whitewater";
+import { browserDecoder, exportJson, loadLabels, loadParams, mergeLabels, parseImport, saveLabels, saveParams } from "./whitewaterStore";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -34,6 +39,11 @@ const BASEMAPS = {
   esri: {
     tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
     attribution: "Bilder © Esri, Maxar, Earthstar Geographics u. a.",
+    maxzoom: 19,
+  },
+  ortho: {
+    tiles: ["https://mapsneu.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg"],
+    attribution: 'Orthofoto: <a href="https://basemap.at">basemap.at</a> (CC BY 4.0)',
     maxzoom: 19,
   },
   s2: {
@@ -66,6 +76,7 @@ const style: StyleSpecification = {
       attribution: "Höhen: AWS Terrain Tiles (SRTM, EU-DEM u. a.)",
     },
     river: { type: "geojson", data: empty },
+    "ww-labels": { type: "geojson", data: empty },
     narrows: { type: "geojson", data: empty },
     gauge: { type: "geojson", data: empty },
     imgsec: { type: "geojson", data: empty },
@@ -117,6 +128,10 @@ const style: StyleSpecification = {
         "circle-color": ["match", ["get", "kind"], "gauge", "#e63946", "#1f78b4"],
         "circle-stroke-color": "#fff", "circle-stroke-width": 2,
       },
+    },
+    {
+      id: "ww-labels", type: "circle", source: "ww-labels",
+      paint: { "circle-radius": 7, "circle-color": ["case", ["get", "schwall"], "#00b4d8", "#9e9e9e"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
     },
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
   ],
@@ -173,7 +188,7 @@ map.on("moveend", () => void updateImageDate());
 map.on("load", () => void updateImageDate());
 
 // ---------- Zustand ----------
-type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "route-in" | "route-out" | "draw" | "wave";
+type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "route-in" | "route-out" | "draw" | "wave" | "ww-label";
 let mode: Mode = "idle";
 let riverLine: LngLat[] | null = null;
 let riverName = "";
@@ -193,7 +208,20 @@ interface FlowInfo {
   gaugeErrors: string[];
   error?: string;
 }
-let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo } | null = null;
+/** Weißwasser-Suche im offenen Orthofoto */
+interface WwState {
+  status: "loading" | "done" | "none" | "error" | "off";
+  message?: string;
+  source?: OrthoSource;
+  bins?: WhitewaterBin[];
+  /** Stationierung und Lage der Abtastpunkte (für Kurven/Lage der Stellen) */
+  track?: { d: Float64Array; p: LngLat[] };
+  coverage?: number;
+  spots: WhitewaterSpot[];
+}
+let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo; ww?: WwState } | null = null;
+let wwParams: WhitewaterParams = loadParams();
+let wwLabels: WhitewaterLabel[] = loadLabels();
 
 /** Darstellung der Engstellen-Typen */
 export const NARROW_STYLE: Record<NarrowKind, { color: string; letter: string; label: string }> = {
@@ -242,6 +270,7 @@ const MODE_HELP: Record<Mode, string> = {
   "route-in": "Klicke auf den Einstieg am Fluss.",
   "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
   draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
+  "ww-label": "Bekannte Stellen im Luftbild anklicken und als „Schwall“ oder „kein Schwall“ bewerten. Klick auf eine vorhandene Markierung löscht sie. Esc oder erneut „Stellen markieren“ beendet.",
   wave: "Weit ins Luftbild zoomen und nacheinander die Kämme einer Wellenfolge anklicken (mind. 3). Doppelklick oder „Messung beenden“ wertet aus, Esc bricht ab.",
 };
 
@@ -254,6 +283,7 @@ function setMode(m: Mode) {
   $("undo-draw").hidden = m !== "draw" && m !== "wave";
   $("finish-draw").textContent = m === "wave" ? "Messung beenden" : "Zeichnen beenden";
   $("wave-btn").classList.toggle("on", m === "wave");
+  $("ww-label").classList.toggle("on", m === "ww-label");
   // Doppelklick beendet im Zeichenmodus die Linie statt zu zoomen
   if (m === "draw" || m === "wave") map.doubleClickZoom.disable();
   else map.doubleClickZoom.enable();
@@ -389,6 +419,8 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
       current.narrows = nr;
       showResults();
     }
+    await runWhitewater(a, id);
+    if (id !== runId) return false;
     const notes = [note, a.reversed ? "Fließrichtung wurde anhand der Höhen umgedreht." : ""].filter(Boolean);
     setStatus(notes.length ? `Hinweis: ${notes.join(" ")}` : "");
     return true;
@@ -541,6 +573,7 @@ function showResults() {
   });
 
   renderFlowInfo();
+  renderWhitewater(a);
   tourIndex = -1;
   $("tour-label").textContent = `${tourStops().length} markierte Stellen im Luftbild ansehen`;
   $("results").hidden = false;
@@ -549,6 +582,228 @@ function showResults() {
   requestAnimationFrame(drawChart);
 }
 
+// ---------- Schwallstellen: Weißwasser im offenen Orthofoto ----------
+const WW_STYLE = (s: WhitewaterSpot) => (s.hazard ? "#d62828" : "#0077b6");
+/** Wellensymbol (bewusst ohne Nummer/Stufe – keine Schwierigkeitsangabe) */
+export const WAVE_SVG = (color = "#fff", size = 16) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" aria-hidden="true">` +
+  `<path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg>`;
+const kmRange = (s: WhitewaterSpot) => `km ${(s.d0 / 1000).toFixed(2)}–${(s.d1 / 1000).toFixed(2)}`;
+
+const wwCache = new Map<string, WwState>();
+async function runWhitewater(a: Analysis, id: number) {
+  if (!current || current.analysis !== a) return;
+  if (!$<HTMLInputElement>("opt-ww").checked) {
+    current.ww = { status: "off", spots: [] };
+    return showResults();
+  }
+  const line = a.profile.map((p) => p.p);
+  const source = orthoSourceFor(line);
+  if (!source) {
+    current.ww = { status: "none", spots: [] };
+    return showResults();
+  }
+  // gleiche Strecke (z. B. nur Parameter geändert) → Profil wiederverwenden, keine neuen Bildabrufe
+  const key = `${source.id}|${line.length}|${line[0].join()}|${line[line.length - 1].join()}|${Math.round(a.length)}`;
+  const cached = wwCache.get(key);
+  if (cached) {
+    current.ww = { ...cached, spots: [] };
+    current.ww.spots = computeSpots();
+    return showResults();
+  }
+  current.ww = { status: "loading", source, spots: [] };
+  showResults();
+  const progress = progressFor(id);
+  try {
+    const strip = await sampleStrip(line, source, browserDecoder, {
+      maxTiles: 6000,
+      onProgress: (done, total) => progress(`Weißwasser-Suche im Orthofoto: Bildkacheln ${done}/${total} …`),
+    });
+    if (id !== runId || current?.analysis !== a) return;
+    progress("Weißwasser-Suche: Auswertung …");
+    await new Promise((r) => setTimeout(r, 0));
+    const prof = whitewaterProfile(strip);
+    current.ww = { status: "done", source, bins: prof.bins, track: { d: strip.d, p: strip.p }, coverage: prof.coverage, spots: [] };
+    wwCache.set(key, current.ww);
+    if (wwCache.size > 6) wwCache.delete(wwCache.keys().next().value!);
+    current.ww.spots = computeSpots();
+    setStatus("");
+  } catch (e) {
+    if (isCancel(e)) throw e;
+    if (current?.analysis === a) current.ww = { status: "error", source, message: (e as Error).message, spots: [] };
+  }
+  showResults();
+}
+
+/** Schwallstellen aus dem gespeicherten Weißwasserprofil (ohne neue Bildabrufe). */
+function computeSpots(): WhitewaterSpot[] {
+  const ww = current?.ww;
+  if (!current || !ww?.bins || !ww.track) return [];
+  const a = current.analysis;
+  const gradientAt = (d: number) => (a.segments.find((sg) => d >= sg.d0 && d <= sg.d1) ?? a.segments[a.segments.length - 1]).gradient;
+  return describeSpots(findSpots(ww.bins, wwParams), ww.track, ww.bins, { gradientAt, steps: a.steps });
+}
+
+/** Aufnahmetag des ausgewerteten Orthofotos an Stationierung d (über Esri-Metadaten desselben Bildflugs),
+ *  dazu – ohne Modellzahlen – gemessener Pegelwert bzw. Tendenz aus Wetter/Jahreszeit. */
+function wwImageAt(d: number): { date: string; measured?: number; tendency?: Conditions["tendency"] } | null {
+  const f = current?.flow, src0 = current?.ww?.source;
+  if (!f || !src0) return null;
+  const im = f.imagery.find((x) => d >= x.d0 - 1 && d <= x.d1 + 1 && src0.esriMatch.test(`${x.provider} ${x.name}`));
+  return im ? { date: im.date, measured: f.gauge?.onDates.get(im.date), tendency: f.conditions.get(im.date)?.tendency } : null;
+}
+
+const WATER_HINT: Record<Conditions["tendency"], string> = {
+  "eher niedrig": "Bild vermutlich bei eher niedrigem Wasserstand – bei mehr Wasser können weitere Schwälle entstehen, Blöcke liegen frei.",
+  "unauffällig": "Wasserstand beim Bildflug laut Wetter und Jahreszeit unauffällig.",
+  "eher erhöht": "Bild vermutlich bei eher erhöhtem Wasserstand – Weißwasser eher ausgeprägt.",
+  "eher hoch": "Bild vermutlich bei hohem Wasserstand – Weißwasser stark ausgeprägt, bei Normalwasser ruhiger.",
+};
+
+function renderWhitewater(a: Analysis) {
+  const ww = current?.ww;
+  const list = $("ww-list"), meta = $("ww-meta");
+  list.innerHTML = "";
+  const fmtDate = (iso: string) => iso.split("-").reverse().join(".");
+  if (!ww || ww.status === "loading") {
+    list.innerHTML = `<li class="hint">${ww ? `Wird im Orthofoto (${ww.source?.name}) gesucht …` : "Wird berechnet …"}</li>`;
+    meta.textContent = "";
+  } else if (ww.status === "off") {
+    list.innerHTML = `<li class="hint">Ausgeschaltet (Analyse-Parameter).</li>`;
+    meta.textContent = "";
+  } else if (ww.status === "none") {
+    list.innerHTML = `<li class="hint">Für diese Strecke gibt es kein offenes, auswertbares Orthofoto – keine Weißwasser-Suche möglich. Bitte im Luftbild selbst prüfen (Stellen-Tour ◀ ▶).</li>`;
+    meta.textContent = "Ausgewertet werden nur offen lizenzierte Orthofotos (derzeit Österreich: basemap.at, Slowenien: GURS DOF 2023). Esri, Google, Apple u. a. dürfen nur angezeigt werden.";
+  } else if (ww.status === "error") {
+    list.innerHTML = `<li class="hint">Weißwasser-Suche fehlgeschlagen: ${ww.message}</li>`;
+    meta.textContent = "";
+  } else {
+    if (!ww.spots.length) list.innerHTML = `<li class="hint">Keine Stellen über der Schwelle (${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter).</li>`;
+    ww.spots.forEach((s, i) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      const img = wwImageAt((s.d0 + s.d1) / 2);
+      b.innerHTML =
+        `<span class="id ww-id" style="background:${WW_STYLE(s)}">${WAVE_SVG("#fff", 14)}</span><span>${s.hazard ? "Gefahrenstelle" : "Schwallstelle"} · ${kmRange(s)}</span>` +
+        `<span class="meta">Weißwasser ${Math.round(s.area)} m² auf ${Math.round(s.d1 - s.d0)} m · ${Math.round(s.peakFrac * 100)} % der Wasserfläche${s.notes.length ? ` · ${s.notes.join(" · ")}` : ""}` +
+        `${img ? ` · Bild ${fmtDate(img.date)}${img.measured !== undefined ? ` (Pegel ${fmtQ1(img.measured)} m³/s)` : img.tendency ? ` (Wasserstand ${img.tendency})` : ""}` : ""}</span>`;
+      b.addEventListener("click", () => focusWw(i));
+      li.appendChild(b);
+      list.appendChild(li);
+    });
+    const img = wwImageAt(a.length / 2) ?? wwImageAt(0);
+    meta.innerHTML =
+      `Quelle: ${ww.source!.name} (${ww.source!.license}, ${ww.source!.attribution}), Bilddaten für ${Math.round((ww.coverage ?? 0) * 100)} % der Strecke. ` +
+      (img
+        ? `Aufnahmetag ${fmtDate(img.date)} (laut Metadaten desselben Bildflugs)${img.measured !== undefined ? `, am Pegel gemessen ${fmtQ1(img.measured)} m³/s` : ""}. ` +
+          (img.tendency ? `${WATER_HINT[img.tendency]} ` : "")
+        : current?.flow ? "Aufnahmetag unbekannt – Wasserstand beim Bildflug nicht bestimmbar. " : "") +
+      `Weißwasser hängt stark vom Abfluss ab; markiert werden helle, körnige Flächen im Wasser (auch Wehre). Ein Indikator, keine Schwierigkeitsbewertung – Stellen vor Ort besichtigen.`;
+  }
+  // Marker
+  ww?.spots.forEach((s, i) => {
+    const el = document.createElement("button");
+    el.className = "ww-marker";
+    el.style.cssText = `background:${WW_STYLE(s)};width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer;display:grid;place-items:center`;
+    el.innerHTML = WAVE_SVG("#fff", 15);
+    el.setAttribute("aria-label", s.hazard ? "Gefahrenstelle" : "Schwallstelle");
+    el.title = `${s.hazard ? "Gefahrenstelle" : "Schwallstelle"} ${kmRange(s)}: Weißwasser im Luftbild ${Math.round(s.area)} m²${s.notes.length ? `, ${s.notes.join(", ")}` : ""}`;
+    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusWw(i); });
+    markers.push(new maplibregl.Marker({ element: el }).setLngLat(s.center).addTo(map));
+  });
+  renderLabels();
+}
+
+function focusWw(i: number) {
+  const s = current?.ww?.spots[i];
+  if (!s) return;
+  map.flyTo({ center: s.center, zoom: DETAIL_ZOOM, duration: 900 });
+  chart?.highlight(s.dPeak);
+}
+
+// --- eigene Markierungen ---
+function renderLabels() {
+  src("ww-labels").setData({
+    type: "FeatureCollection",
+    features: wwLabels.map((l, i) => ({ type: "Feature", properties: { i, schwall: l.schwall }, geometry: { type: "Point", coordinates: l.p } })),
+  });
+  $("ww-learn-info").textContent =
+    `${wwLabels.length} eigene Markierung${wwLabels.length === 1 ? "" : "en"} (${wwLabels.filter((l) => l.schwall).length} Schwall, ${wwLabels.filter((l) => !l.schwall).length} kein Schwall) · ` +
+    `Schwelle ${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter${wwParams.spotDensity !== DEFAULT_PARAMS.spotDensity ? ` (gelernt, Standard ${DEFAULT_PARAMS.spotDensity.toString().replace(".", ",")})` : " (Standard)"}. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
+}
+
+let labelPopup: maplibregl.Popup | null = null;
+function addLabelAt(p: LngLat) {
+  // vorhandene Markierung in der Nähe → löschen
+  const near = wwLabels.findIndex((l) => haversine(l.p, p) < 12 * 2 ** (17 - Math.min(17, map.getZoom())));
+  if (near >= 0) {
+    wwLabels.splice(near, 1);
+    saveLabels(wwLabels);
+    return renderLabels();
+  }
+  labelPopup?.remove();
+  const box = document.createElement("div");
+  box.className = "ww-popup";
+  box.innerHTML = `<b>Diese Stelle ist …</b><div class="row"><button data-v="1">Schwall</button><button data-v="0" class="ghost">kein Schwall</button></div>`;
+  box.querySelectorAll("button").forEach((b) =>
+    b.addEventListener("click", () => {
+      wwLabels.push({ p, schwall: b.dataset.v === "1", date: new Date().toISOString().slice(0, 10) });
+      saveLabels(wwLabels);
+      labelPopup?.remove();
+      renderLabels();
+    }),
+  );
+  labelPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false }).setLngLat(p).setDOMContent(box).addTo(map);
+}
+
+$("ww-label").addEventListener("click", () => setMode(mode === "ww-label" ? "idle" : "ww-label"));
+$("ww-learn").addEventListener("click", () => {
+  const ww = current?.ww;
+  if (!current || !ww?.bins) return setStatus("Erst eine Strecke mit Weißwasser-Suche auswerten.", true);
+  const line = current.analysis.profile.map((p) => p.p);
+  const samples = wwLabels
+    .map((l) => ({ l, at: locateOnLine(line, l.p) }))
+    .filter((x) => x.at.offset < 60)
+    .map((x) => ({ f: labelFeature(ww.bins!, x.at.d), schwall: x.l.schwall }));
+  if (!samples.length) return setStatus("Keine eigenen Markierungen an dieser Strecke (max. 60 m neben der Flusslinie).", true);
+  const before = wwParams.spotDensity;
+  wwParams = fitParams(samples, wwParams);
+  saveParams(wwParams);
+  ww.spots = computeSpots();
+  showResults();
+  const hit = samples.filter((x) => (x.f >= wwParams.spotDensity) === x.schwall).length;
+  const f1 = (x: number) => x.toFixed(1).replace(".", ",");
+  setStatus(`Gelernt aus ${samples.length} Markierung${samples.length === 1 ? "" : "en"}: Schwelle ${f1(before)} → ${f1(wwParams.spotDensity)} m²/m; ${hit} von ${samples.length} Markierungen werden damit richtig erkannt.`);
+});
+$("ww-reset").addEventListener("click", () => {
+  wwParams = { ...DEFAULT_PARAMS };
+  saveParams(wwParams);
+  if (current?.ww?.bins) current.ww.spots = computeSpots();
+  if (current) showResults();
+  else renderLabels();
+});
+$("ww-export").addEventListener("click", () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, exportJson(wwLabels, wwParams), "application/json"));
+$("ww-import").addEventListener("click", () => $<HTMLInputElement>("ww-file").click());
+$("ww-file").addEventListener("change", async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  try {
+    const imp = parseImport(await file.text());
+    wwLabels = mergeLabels(wwLabels, imp.labels);
+    saveLabels(wwLabels);
+    if (imp.params) { wwParams = imp.params; saveParams(wwParams); }
+    if (current?.ww?.bins) current.ww.spots = computeSpots();
+    if (current) showResults();
+    else renderLabels();
+    setStatus(`${imp.labels.length} Markierungen importiert${imp.params ? " (inkl. gelernter Schwelle)" : ""}.`);
+  } catch (err) {
+    setStatus(`Import fehlgeschlagen: ${(err as Error).message}`, true);
+  }
+});
+map.on("load", () => renderLabels());
+
 function drawChart() {
   if (!current || $("profile-wrap").hidden) return;
   const a = rated() ?? current.analysis;
@@ -556,7 +811,7 @@ function drawChart() {
     if (d === null) return src("cursor").setData(empty);
     const p = a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
     src("cursor").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p.p } });
-  });
+  }, current.ww?.spots ?? []);
 }
 
 const TENDENCY_COLOR: Record<string, string> = { "eher niedrig": "#ef8a62", unauffällig: "#4d9221", "eher erhöht": "#4393c3", "eher hoch": "#2166ac" };
@@ -845,6 +1100,7 @@ function tourStops() {
     ...a.hotspots.map((h, i) => ({ d: (h.d0 + h.d1) / 2, label: `H${i + 1} · max. ${h.maxGradient.toFixed(0)} m/km`, go: () => focusHotspot(i) })),
     ...a.steps.map((st, i) => ({ d: (st.d0 + st.d1) / 2, label: `Stufe · ${st.drop.toFixed(0)} m`, go: () => focusStep(i) })),
     ...(current.narrows?.features ?? []).map((f, i) => ({ d: (f.d0 + f.d1) / 2, label: f.title, go: () => focusNarrow(i) })),
+    ...(current.ww?.spots ?? []).map((w, i) => ({ d: w.dPeak, label: w.hazard ? "Gefahrenstelle (Weißwasser + Stufe)" : "Schwallstelle", go: () => focusWw(i) })),
   ];
   return stops.sort((x, y) => x.d - y.d);
 }
@@ -886,7 +1142,7 @@ function focusHotspot(i: number) {
 new ResizeObserver(() => drawChart()).observe($("profile-wrap"));
 
 // Parameter geändert → neu rechnen
-["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf", "opt-narrows", "opt-width"].forEach((id) =>
+["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf", "opt-narrows", "opt-width", "opt-ww"].forEach((id) =>
   $(id).addEventListener("change", () => {
     if (lastSection && !busy) void runAnalysis(lastSection.line, lastSection.name, lastSection.source, "", lastSection.literature);
   }),
@@ -1103,6 +1359,9 @@ map.on("click", async (e) => {
       await runAnalysis(sec.line, "Eigene Strecke", sec.source, sec.note);
       break;
     }
+    case "ww-label":
+      addLabelAt(p);
+      break;
     case "draw":
     case "wave":
       drawPts.push(p);
@@ -1175,6 +1434,6 @@ const fileBase = () =>
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strecke";
-$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name, current.narrows), "application/gpx+xml"));
+$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name, current.narrows, current.ww?.spots), "application/gpx+xml"));
 $("exp-csv").addEventListener("click", () => current && download(`${fileBase()}.csv`, toCsv(current.analysis), "text/csv"));
-$("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name, current.narrows), "application/geo+json"));
+$("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name, current.narrows, current.ww?.spots), "application/geo+json"));

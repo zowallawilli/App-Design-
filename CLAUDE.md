@@ -14,6 +14,8 @@ Ausführliche Doku (Datenquellen, Verfahren, Referenzvergleiche): `README.md`.
 3. Ergebnisse, die der Nutzer abgleichen will, als Screenshots schicken
    (`tests/e2e/screenshot.cjs`, Kopfkommentar zeigt den Aufruf).
 4. Kontingent schonen: Arbeit bündeln, lange Testläufe nur wenn nötig.
+5. Koordinaten in Antworten immer als direkt klickbaren Google-Maps-Link ausgeben, z. B.
+   [47.13441, 10.51223](https://www.google.com/maps/search/?api=1&query=47.13441,10.51223) (Breite, Länge).
 
 ## Feste Vorgaben
 - **Keine Modell-Abflusszahlen anzeigen** (Nutzerentscheidung 25.11.2026): nur gemessene Pegelwerte bzw. klar
@@ -47,6 +49,9 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
 | `src/vectorWater.ts` | OSM-Gewässer aus OpenFreeMap-Vektorkacheln (Overpass nur Fallback) |
 | `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung je Abschnitt |
+| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023), Streifenbild, Textur, Lernen |
+| `src/whitewaterStore.ts` | eigene Markierungen + gelernte Schwelle (localStorage, JSON-Export/-Import), Browser-Dekoder |
+| `scripts/whitewater-eval.mts` | Messung gegen `tests/fixtures/schwallstellen.json`, Kontrollbilder (Fluss gerade gezogen) |
 | `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln, Archiv der Tagesmittel `tirol-archiv/` (≤ 400 Tage, Branch = 1 Commit) |
 | `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (41 Prüfungen), Screenshot-Skript |
 
@@ -73,9 +78,17 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   190 cm (eigener Datenzugang). App-Schätzung Magerbach 64–75 m³/s (Schwall).
 - **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
+## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
+- Nur markieren, nicht einschätzen. Gefahrenstelle nur bei Weißwasser + Steilstufe. Wehre ebenfalls markieren.
+- Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),
+  Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
+- Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
+  Zielregionen für später: Island, Skandinavien, Nordamerika, Zentralasien, Neuseeland (Recherche im README).
+- Kostenlose Schlüssel (MML Finnland, LINZ) erst später, wenn der Nutzer es will.
+
 ## Offene Punkte / Ideen
-- Verblockung („Schiefes S“, „Pianser Schwall“ an der Sanna) ist mit Gefälle/Höhenmodell nicht
-  erkennbar – bräuchte Bildauswertung (z. B. Weißwasser-Erkennung im hochaufgelösten Luftbild).
+- Weißwasser: Kalkblöcke am Ufer vs. Schaum, Weißwasser im Schatten; weitere offene Orthofotos;
+  Gefahrenstellen künftig aus Abbruchkante im Bild + Höhenverlust (Training an Wasserfällen, z. B. Island).
 - Tirol: Archiv der Tagesmittel erst ab 24.11.2026 → Eichung ab ~10 Tagen, Aufnahmetage älterer Luftbilder
   bleiben ohne Messwert (eHYD-Jahrbuch nur bis Vorjahr−1, kein dokumentierter Endpunkt).
 - Inn bei Imst/Magerbach: geschätzt aus Innsbruck (unterhalb), weil Landeck Perjen in der Restwasserstrecke liegt

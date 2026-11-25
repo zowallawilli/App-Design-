@@ -26,6 +26,7 @@ export function renderProfile(
   a: Analysis,
   narrows: NarrowsResult | undefined,
   onHover: (d: number | null) => void,
+  whitewater: { d0: number; d1: number; strong: boolean; hazard?: boolean }[] = [],
 ): { highlight: (d: number | null) => void } {
   container.innerHTML = "";
   const W = container.clientWidth || 600;
@@ -64,6 +65,12 @@ export function renderProfile(
   // Steilstufen als dunkle Linien
   for (const st of a.steps ?? []) {
     el("rect", { x: x(st.d0), y: m.t, width: Math.max(2, x(st.d1) - x(st.d0)), height: ih, fill: "#1d3557", opacity: 0.25 }, svg);
+  }
+
+  // Schwallstellen (Weißwasser im Luftbild) als Marken am oberen Rand
+  for (const w of whitewater) {
+    el("rect", { x: x(w.d0), y: m.t, width: Math.max(3, x(w.d1) - x(w.d0)), height: ih, fill: "#00b4d8", opacity: w.strong ? 0.28 : 0.16 }, svg);
+    el("rect", { x: x(w.d0), y: m.t, width: Math.max(3, x(w.d1) - x(w.d0)), height: 8, fill: w.hazard ? "#d62828" : "#0077b6", class: "ww-mark" }, svg);
   }
 
   // Hotspots

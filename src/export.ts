@@ -2,11 +2,18 @@
 
 import type { Analysis } from "./analysis";
 import type { NarrowsResult } from "./narrows";
+import type { WhitewaterSpot } from "./whitewater";
+
+/** Kurzbeschreibung einer Schwallstelle (Indikator) für Wegpunkte/Export */
+export function spotText(s: WhitewaterSpot): string {
+  return `km ${km(s.d0)}–${km(s.d1)}: Weißwasser im Luftbild (Indikator) – ${s.area.toFixed(0)} m², ${s.peakDensity.toFixed(1)} m² je Flussmeter, ${Math.round(s.peakFrac * 100)} % der Wasserfläche` +
+    (s.notes.length ? `; ${s.notes.join("; ")}` : "") + ". Vor Ort besichtigen.";
+}
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const km = (m: number) => (m / 1000).toFixed(2);
 
-export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult): string {
+export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = []): string {
   const wpts = a.hotspots
     .map(
       (h, i) =>
@@ -30,6 +37,13 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult): strin
         `    <name>${esc(f.title)}</name>\n    <desc>${esc(f.detail)}</desc>\n    <sym>${f.kind === "engstelle" ? "Caution" : "Danger Area"}</sym>\n  </wpt>`,
     )
     .join("\n");
+  const wwWpts = whitewater
+    .map(
+      (s) =>
+        `  <wpt lat="${s.center[1].toFixed(6)}" lon="${s.center[0].toFixed(6)}">\n` +
+        `    <name>${esc(`${s.hazard ? "Gefahrenstelle" : "Schwall"} km ${km(s.dPeak)}`)}</name>\n    <desc>${esc(spotText(s))}</desc>\n    <sym>${s.hazard ? "Danger Area" : "Caution"}</sym>\n  </wpt>`,
+    )
+    .join("\n");
   const trkpts = a.profile
     .map((p) => `      <trkpt lat="${p.p[1].toFixed(6)}" lon="${p.p[0].toFixed(6)}"><ele>${p.z.toFixed(1)}</ele></trkpt>`)
     .join("\n");
@@ -39,6 +53,7 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult): strin
 ${wpts}
 ${stWpts}
 ${nrWpts}
+${wwWpts}
   <trk>
     <name>${esc(name)}</name>
     <trkseg>
@@ -59,7 +74,7 @@ export function toCsv(a: Analysis): string {
   return rows.join("\n") + "\n";
 }
 
-export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult): string {
+export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = []): string {
   return JSON.stringify({
     type: "FeatureCollection",
     properties: { name, length_m: a.length, drop_m: a.drop, mean_gradient_m_per_km: a.meanGradient },
@@ -78,6 +93,14 @@ export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult): s
         type: "Feature",
         properties: { kind: f.kind, title: f.title, detail: f.detail, km_from: f.d0 / 1000, km_to: f.d1 / 1000 },
         geometry: { type: "LineString", coordinates: a.profile.filter((p) => p.d >= f.d0 && p.d <= f.d1).map((p) => p.p).concat(f.d1 - f.d0 < 30 ? [f.center, f.center] : []) },
+      })),
+      ...whitewater.map((s) => ({
+        type: "Feature",
+        properties: {
+          kind: "schwall", hazard: !!s.hazard, strong: s.strong, km_from: s.d0 / 1000, km_to: s.d1 / 1000,
+          whitewater_m2: Math.round(s.area), density_m2_per_m: +s.peakDensity.toFixed(2), whitewater_share: +s.peakFrac.toFixed(3), notes: s.notes, text: spotText(s),
+        },
+        geometry: { type: "Point", coordinates: s.center },
       })),
     ],
   });
