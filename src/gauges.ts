@@ -9,13 +9,15 @@
 //   PEGELONLINE  Deutschland nein       ja       31 Tage              ja (nur Bundeswasserstraßen)
 //   BAFU         Schweiz     nein       ja       –                    ja (über api.existenz.ch)
 //   ARSO         Slowenien   nein       ja       –                    ja
+//   HD Tirol     Österreich  nein       ja       –                    über Spiegel (GitHub Action,
+//                (Tirol)                                              alle 30 min, Branch "pegeldaten")
 //
 // RiverApp, Rivermap & Co. beziehen ihre Daten ebenfalls von diesen Behörden; eine offene
 // Schnittstelle bieten sie nicht an.
 
 import type { LngLat } from "./geo";
 
-export type Provider = "SMHI" | "SYKE" | "NVE" | "PEGELONLINE" | "BAFU" | "ARSO";
+export type Provider = "SMHI" | "SYKE" | "NVE" | "PEGELONLINE" | "BAFU" | "ARSO" | "TIROL";
 
 export interface Gauge {
   provider: Provider;
@@ -316,7 +318,56 @@ const arso: ProviderImpl = {
   },
 };
 
-const PROVIDERS: Record<Provider, ProviderImpl> = { SMHI: smhi, SYKE: syke, NVE: nve, PEGELONLINE: pegelonline, BAFU: bafu, ARSO: arso };
+// ---------------------------------------------------------------------------
+// Hydrographischer Dienst Tirol: hydro.tirol.gv.at sendet keinen CORS-Header. Eine GitHub Action
+// (.github/workflows/pegel-tirol.yml) spiegelt die Abflusspegel alle 30 min nach
+// raw.githubusercontent.com, das jeder Browser abrufen darf. Manche Pegel (z. B. Inn bei Imst)
+// veröffentlichen nur eine Wasserstandsklasse, keinen Abfluss.
+export const TIROL_MIRROR = "https://raw.githubusercontent.com/zowallawilli/App-Design-/pegeldaten/tirol.json";
+interface TirolStation {
+  id: string; name: string; river: string | null; lat: number; lon: number;
+  q: number | null; time: string | null; dayMean: number | null;
+  nnq: number | null; nqt: number | null; hhq: number | null; level: string | null;
+}
+let tirolDoc: Promise<{ fetched: string; stations: TirolStation[] }> | null = null;
+function tirolData(f: typeof fetch) {
+  if (!tirolDoc) {
+    tirolDoc = f(TIROL_MIRROR).then(json) as Promise<{ fetched: string; stations: TirolStation[] }>;
+    tirolDoc.catch(() => (tirolDoc = null));
+  }
+  return tirolDoc;
+}
+const fmtNum = (v: number) => (v < 10 ? v.toFixed(1) : v.toFixed(0)).replace(".", ",");
+const tirol: ProviderImpl = {
+  bbox: [10.0, 46.6, 12.97, 47.75],
+  async stations(f) {
+    const d = await tirolData(f);
+    return d.stations.map((s) => ({
+      provider: "TIROL" as const,
+      id: s.id,
+      name: s.name,
+      river: s.river ?? undefined,
+      lat: s.lat,
+      lon: s.lon,
+      url: "https://hydro.tirol.gv.at/",
+      note: [
+        s.q === null ? "kein Abfluss veröffentlicht" : "",
+        s.level && s.level !== "keine Klassifizierung" ? `Wasserstand ${s.level}` : "",
+        s.nqt !== null ? `NQT ${fmtNum(s.nqt)} m³/s` : "",
+        s.hhq !== null ? `HHQ ${fmtNum(s.hhq)} m³/s` : "",
+      ].filter(Boolean).join(" · "),
+    }));
+  },
+  async latest(g, f) {
+    const s = (await tirolData(f)).stations.find((x) => x.id === g.id);
+    return s && s.q !== null && s.time ? { time: s.time, q: s.q } : null;
+  },
+  async daily() {
+    return new Map();
+  },
+};
+
+const PROVIDERS: Record<Provider, ProviderImpl> = { SMHI: smhi, SYKE: syke, NVE: nve, PEGELONLINE: pegelonline, BAFU: bafu, ARSO: arso, TIROL: tirol };
 
 const stationCache = new Map<Provider, Promise<Gauge[]>>();
 function stationsOf(p: Provider, f: typeof fetch): Promise<Gauge[]> {
@@ -330,7 +381,9 @@ function stationsOf(p: Provider, f: typeof fetch): Promise<Gauge[]> {
 }
 /** NVE-Stationen nach Eingabe eines neuen Schlüssels neu laden */
 export function resetGaugeCache() {
-  stationCache.delete("NVE");
+  stationCache.clear();
+  tirolDoc = null;
+  arsoDoc = null;
 }
 
 const distKm = (a: LngLat, b: LngLat) => {
@@ -448,7 +501,9 @@ export async function matchGauge(
       // Pegel direkt auf der Linie (< 300 m) gilt immer – das Modell kann für kleine Flüsse um
       // ein Vielfaches danebenliegen (Oulankajoki: Modell 1–7 m³/s, gemessen 16–20 m³/s)
       const plausible = g.distanceKm < 0.3 || factor === null || (factor > 0.2 && factor < 5);
-      const score = (plausible ? 0 : 10) + (r === null ? 1 : 1 - r) + g.distanceKm / 5;
+      // Pegel ohne aktuellen Wert und ohne Historie (nur Wasserstandsklasse) nur notfalls wählen
+      const empty = !latest && !recent.size ? 2 : 0;
+      const score = (plausible ? 0 : 10) + empty + (r === null ? 1 : 1 - r) + g.distanceKm / 5;
       cands.push({ g, r, factor: plausible ? factor : null, latest, score });
     } catch (e) {
       errors.push(`${g.provider} ${g.name}: ${(e as Error).message}`);

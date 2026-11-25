@@ -154,7 +154,13 @@ export function officialGauges(p: LngLat): { label: string; url: string }[] {
       { label: "SYKE (Finnland)", url: "https://wwwi2.ymparisto.fi/i2/index_en.html" },
     ];
   if (lat > 45.4 && lat < 46.9 && lon > 13.3 && lon < 16.6) return [{ label: "ARSO Pegel (Slowenien)", url: "https://www.arso.gov.si/vode/podatki/" }];
-  if (lat > 45.8 && lat < 47.9 && lon > 5.9 && lon < 10.5) return [{ label: "BAFU Hydrodaten (Schweiz)", url: "https://www.hydrodaten.admin.ch/" }];
-  if (lat > 46.3 && lat < 49.1 && lon > 9.5 && lon < 17.2) return [{ label: "eHYD (Österreich)", url: "https://ehyd.gv.at/" }];
+  // Schweiz und Österreich überlappen im Rechteck (Graubünden ↔ Vorarlberg/Tirol): beide Links zeigen
+  const out: { label: string; url: string }[] = [];
+  const at = lat > 46.3 && lat < 49.1 && lon > 9.5 && lon < 17.2;
+  const ch = lat > 45.8 && lat < 47.9 && lon > 5.9 && lon < 10.5;
+  if (at && lon > 10.0 && lon < 12.97 && lat > 46.6 && lat < 47.75) out.push({ label: "Hydrographischer Dienst Tirol", url: "https://hydro.tirol.gv.at/" });
+  if (at) out.push({ label: "eHYD (Österreich)", url: "https://ehyd.gv.at/" });
+  if (ch) out.push({ label: "BAFU Hydrodaten (Schweiz)", url: "https://www.hydrodaten.admin.ch/" });
+  if (out.length) return out;
   return [];
 }
