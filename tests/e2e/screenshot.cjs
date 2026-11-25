@@ -38,8 +38,14 @@ const { chromium } = require('playwright');
   console.log('NARROWS', (await t('#narrows-list')).slice(0, 300));
   console.log('STUFEN', (await t('#steps-list')).slice(0, 400));
   console.log('HOTSPOTS', (await t('#hotspots')).slice(0, 300));
+  console.log('SCHWALL', (await t('#ww-list')).slice(0, 1500));
+  console.log('SCHWALL-INFO', (await t('#ww-meta')).slice(0, 600));
   // Panel so scrollen, dass Kennzahlen + Schwierigkeit oben stehen
-  await page.evaluate(() => document.querySelector('#res-title').scrollIntoView());
+  // FOCUS=<n> springt zur n-ten Schwallstelle (Detailansicht), BASE=<esri|ortho|s2|topo> wählt den Hintergrund
+  if (process.env.BASE) { await page.click(`#basemap button[data-base="${process.env.BASE}"]`); await page.waitForTimeout(500); }
+  if (process.env.FOCUS) { await page.click(`#ww-list li:nth-child(${process.env.FOCUS}) button`); await page.waitForTimeout(6000); }
+  // SCROLL=<CSS-Selektor> scrollt das Panel zu einem anderen Abschnitt (z. B. '#ww-list')
+  await page.evaluate((sel) => document.querySelector(sel).scrollIntoView(), process.env.SCROLL || '#res-title');
   await page.waitForTimeout(500);
   // SHOT=flow: nur die Abfluss-Tabelle (#flow-info) aufnehmen
   if (process.env.SHOT === 'flow') await page.locator('#flow-info').screenshot({ path: out });

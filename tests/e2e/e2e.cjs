@@ -158,6 +158,10 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Koritnica: Klamm unterhalb Kluže markiert', /Klamm/.test(korNr), korNr.slice(0, 160));
   check('Koritnica: Marker K auf Karte', (await page.locator('.nr-marker').count()) > 0);
   check('Koritnica: Band im Profil', (await page.locator('#profile .narrow-band').count()) > 0);
+  const wwTxt = (await page.textContent('#ww-list')).replace(/\s+/g, ' ');
+  check('Koritnica: Schwallstellen im Orthofoto (GURS) gesucht', /Schwallstelle|Gefahrenstelle/.test(wwTxt) && /21\.08\.2023/.test(await page.textContent('#ww-meta')), wwTxt.slice(0, 160));
+  check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
+  check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
   check('Koritnica: Steilstufe am Schluchtausgang', /Höhenverlust/.test(await page.textContent('#steps-list')), (await page.textContent('#steps-list')).replace(/\s+/g, ' ').slice(0, 100));
   check('Wucht nur mit Pegel, sonst Hinweis', /kein Pegel/.test(fi) ? /braucht einen Abfluss/.test(await page.textContent('#rate-note')) : /Strömungsleistung/.test(await page.textContent('#rate-note')), await page.textContent('#rate-note'));
   await page.selectOption('#q-src', 'own'); await page.fill('#q-own', '150'); await page.dispatchEvent('#q-own', 'change'); await page.waitForTimeout(500);
@@ -200,6 +204,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const p = await dl.path(); const txt = fs.readFileSync(p, 'utf8');
     check(`Export ${ext}`, txt.length > 200 && dl.suggestedFilename().endsWith(ext), `${dl.suggestedFilename()} ${txt.length} B`);
     if (ext !== 'csv' && /Klamm/.test(await page.textContent('#narrows-list'))) check(`Export ${ext} enthält Klamm`, /Klamm/.test(txt));
+    if (ext !== 'csv' && (await page.locator('#ww-list .ww-id').count()) > 0) check(`Export ${ext} enthält Schwallstellen`, /Schwall|schwall/.test(txt));
   }
 
   // 15 Profil-Hover

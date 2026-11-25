@@ -151,3 +151,12 @@ button.danger { background: #c0392b; color: #fff; }
 .flow-info .day-row .k { color: var(--muted); font-size: 0.8rem; padding-top: 2px; }
 .flow-info .day-row .q { white-space: normal; }
 .flow-info .stale { color: #b2182b; font-size: 0.8rem; }
+
+/* Schwallstellen */
+.ww-tools { flex-wrap: wrap; gap: 6px; }
+.ww-tools button { font-size: 0.8rem; padding: 4px 8px; }
+.ww-tools button.on { background: #0077b6; color: #fff; border-color: #0077b6; }
+.ww-popup { font: 13px system-ui; color: #111; }
+.ww-popup .row { display: flex; gap: 6px; margin-top: 6px; }
+.ww-popup button { padding: 4px 10px; cursor: pointer; }
+.hotspots .ww-id { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; }
