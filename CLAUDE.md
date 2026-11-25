@@ -82,7 +82,9 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 
 ## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
 - Nur markieren, nicht einschätzen; Schwallstellen mit Wellensymbol ohne Nummer. Wehre ebenfalls markieren.
-- Gefahrenstelle (Warndreieck) nur bei Abbruchkante im Bild **und** Höhenverlust (`findBreaklines`),
+- Gefahrenstelle = **rote Welle** (einziges Gefahrensymbol, `hazards()` in main.ts): Abbruchkante im Bild **und**
+  Höhenverlust (`findBreaklines`), Stufe nur im Höhenmodell, oder nicht einsehbare steile Klamm. Keine ▼- und K-Marker
+  mehr (Klammen erscheinen als Schlucht S). Abbruchkanten
   trainiert an Selfoss/Dettifoss/Hafragilsfoss (NÁTT); Messung `scripts/breakline-eval.mts` (3/5, 0 Fehlalarme;
   Krimml im Schatten nicht erkannt). Hotspot-Marker entfernt (Gefälle zeigen die Abschnittsfarben).
 - Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),

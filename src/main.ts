@@ -237,7 +237,8 @@ let wwLabels: WhitewaterLabel[] = loadLabels();
 export const NARROW_STYLE: Record<NarrowKind, { color: string; letter: string; label: string }> = {
   engstelle: { color: "#ff9f1c", letter: "E", label: "Engstelle (Flussbreite, Sentinel-2)" },
   schlucht: { color: "#8e44ad", letter: "S", label: "Schlucht (Talquerschnitt, Höhenmodell)" },
-  klamm: { color: "#111111", letter: "K", label: "Mögliche Klamm (Fluss im Satellitenbild verdeckt, steile Hänge)" },
+  // Klammen werden als Schlucht gezeigt; sehr steile, im Bild verdeckte Abschnitte zusätzlich als Gefahrenstelle
+  klamm: { color: "#8e44ad", letter: "S", label: "Schlucht (Fluss im Luftbild verdeckt, steile Hänge)" },
 };
 let lastSection: { line: LngLat[]; name: string; source: string; literature?: string } | null = null;
 let markers: maplibregl.Marker[] = [];
@@ -464,27 +465,7 @@ function showResults() {
   clearMarkers();
   endpointMarker(a.profile[0].p, "Einstieg", "#2a9d8f");
   endpointMarker(a.profile[a.profile.length - 1].p, "Ausstieg", "#264653");
-  // Steilstufen / mögliche Wasserfälle
-  a.steps.forEach((st, i) => {
-    const el = document.createElement("button");
-    el.className = "st-marker";
-    el.style.cssText = "background:#1d3557;color:#fff;font:700 12px system-ui;width:24px;height:24px;border-radius:4px;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer";
-    el.textContent = "▼";
-    el.title = `Steilstufe: ${st.drop.toFixed(0)} m auf ${Math.round(st.d1 - st.d0)} m (km ${(st.d0 / 1000).toFixed(2)})`;
-    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusStep(i); });
-    markers.push(new maplibregl.Marker({ element: el }).setLngLat(st.center).addTo(map));
-  });
-  const stList = $("steps-list");
-  stList.innerHTML = a.steps.length ? "" : `<li class="hint">Keine Stufen ≥ 8 m auf 100 m im Höhenmodell.</li>`;
-  a.steps.forEach((st, i) => {
-    const li = document.createElement("li");
-    const b = document.createElement("button");
-    b.innerHTML = `<span class="id" style="color:#1d3557">▼</span><span>${st.drop.toFixed(0)} m Höhenverlust auf ${Math.round(st.d1 - st.d0)} m</span>` +
-      `<span class="meta">km ${(st.d0 / 1000).toFixed(2)}–${(st.d1 / 1000).toFixed(2)} · möglicher Wasserfall, Katarakt oder Wehr – im Luftbild prüfen</span>`;
-    b.addEventListener("click", () => focusStep(i));
-    li.appendChild(b);
-    stList.appendChild(li);
-  });
+  renderHazards();
 
   // Engstellen, Schluchten, Klammen
   const nr = current.narrows;
@@ -535,9 +516,9 @@ function showResults() {
     ["Höhenverlust", `${a.drop.toFixed(0)} m`],
     ["Ø Gefälle", `${a.meanGradient.toFixed(1)} m/km`],
     ["Steilster Abschnitt", `${a.maxSegmentGradient.toFixed(1)} m/km`],
-    ["Steilstufen", a.steps.length ? `${a.steps.length} (größte ${Math.max(...a.steps.map((x) => x.drop)).toFixed(0)} m)` : "–"],
+    ["Gefahrenstellen", `${hazards().length || "–"}`],
     ["Talenge", a.confinedLength > 0 ? fmtKm(a.confinedLength) : "–"],
-    ...(nr ? ([["Engstellen/Schluchten", nr.features.length ? (["engstelle", "schlucht", "klamm"] as NarrowKind[]).map((k) => `${nr.features.filter((f) => f.kind === k).length} ${NARROW_STYLE[k].letter}`).join(" · ") : "–"]] as [string, string][]) : []),
+    ...(nr ? ([["Engstellen/Schluchten", nr.features.length ? `${nr.features.filter((f) => f.kind === "engstelle").length} E · ${nr.features.filter((f) => f.kind !== "engstelle").length} S` : "–"]] as [string, string][]) : []),
   ];
   $("stats").innerHTML = stats.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 
@@ -563,11 +544,66 @@ function showResults() {
   requestAnimationFrame(drawChart);
 }
 
+// ---------- Gefahrenstellen (rote Welle) ----------
+/** Allgemeine Gefahrenstelle: Abbruchkante (Bild + Höhenmodell), Stufe nur im Höhenmodell oder nicht einsehbarer,
+ *  steiler Abschnitt (Fluss im Luftbild verdeckt, enge Klamm). */
+interface Hazard { d: number; center: LngLat; kind: "kante" | "uneinsehbar" | "stufe"; title: string; text: string }
+function hazards(): Hazard[] {
+  if (!current) return [];
+  const a = current.analysis;
+  const out: Hazard[] = [];
+  for (const b of current.ww?.breaks ?? [])
+    out.push({ d: b.d, center: b.center, kind: "kante", title: "mögliche Abbruchkante (Wasserfall, Stufe, Wehr)", text: `${breakText(b)} · Erkennung ${b.confidence} – unbedingt vorher besichtigen` });
+  for (const f of current.narrows?.features ?? []) {
+    if (f.kind !== "klamm") continue;
+    if (out.some((h) => h.kind === "kante" && h.d >= f.d0 - 50 && h.d <= f.d1 + 50)) continue;
+    const g = Math.max(0, ...a.segments.filter((sg) => sg.d1 >= f.d0 && sg.d0 <= f.d1).map((sg) => sg.gradient));
+    const step = a.steps.find((st) => st.d1 >= f.d0 - 50 && st.d0 <= f.d1 + 50);
+    if (g < 30 && !step) continue;
+    out.push({
+      d: (f.d0 + f.d1) / 2, center: f.center, kind: "uneinsehbar", title: "nicht einsehbar – enge Klamm mit viel Gefälle",
+      text: `km ${(f.d0 / 1000).toFixed(2)}–${(f.d1 / 1000).toFixed(2)}: Fluss im Luftbild verdeckt, beidseitig steil, Gefälle bis ${g.toFixed(0)} m/km${step ? `, Stufe ${step.drop.toFixed(0)} m im Höhenmodell` : ""} – Befahrbarkeit, Ausstiege und Umtragen vor Ort klären`,
+    });
+  }
+  for (const st of a.steps) {
+    const d = (st.d0 + st.d1) / 2;
+    if (out.some((h) => Math.abs(h.d - d) < 150 || (h.kind === "uneinsehbar" && st.d1 >= h.d - 300 && st.d0 <= h.d + 300))) continue;
+    out.push({ d, center: st.center, kind: "stufe", title: "Stufe im Höhenmodell", text: `${st.drop.toFixed(0)} m Höhenverlust auf ${Math.round(st.d1 - st.d0)} m – möglicher Wasserfall, Katarakt oder Wehr; im Luftbild nicht bestätigt, prüfen` });
+  }
+  return out.sort((x, y) => x.d - y.d);
+}
+
+function renderHazards() {
+  const list = $("hz-list");
+  const hz = hazards();
+  list.innerHTML = hz.length ? "" : `<li class="hint">Keine Gefahrenstellen gefunden (Abbruchkanten, Stufen ≥ 8 m auf 100 m, nicht einsehbare steile Klammen).</li>`;
+  hz.forEach((h, i) => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.innerHTML = `<span class="id ww-id" style="background:#d62828">${WAVE_SVG("#fff", 14)}</span><span>Gefahrenstelle · ${h.title} · km ${(h.d / 1000).toFixed(2)}</span><span class="meta">${h.text}</span>`;
+    b.addEventListener("click", () => focusHazard(i));
+    li.appendChild(b);
+    list.appendChild(li);
+    const el = document.createElement("button");
+    el.className = "hz-marker";
+    el.style.cssText = "background:#d62828;width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 2px #d62828,0 1px 4px #0009;padding:0;cursor:pointer;display:grid;place-items:center";
+    el.innerHTML = WAVE_SVG("#fff", 16);
+    el.setAttribute("aria-label", "Gefahrenstelle");
+    el.title = `Gefahrenstelle km ${(h.d / 1000).toFixed(2)}: ${h.title} – ${h.text}`;
+    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusHazard(i); });
+    markers.push(new maplibregl.Marker({ element: el }).setLngLat(h.center).addTo(map));
+  });
+}
+
+function focusHazard(i: number) {
+  const h = hazards()[i];
+  if (!h) return;
+  map.flyTo({ center: h.center, zoom: DETAIL_ZOOM, duration: 900 });
+  chart?.highlight(h.d);
+}
+
 // ---------- Schwallstellen: Weißwasser im offenen Orthofoto ----------
 const WW_STYLE = (s: WhitewaterSpot) => (s.hazard ? "#d62828" : "#0077b6");
-/** Warndreieck für Gefahrenstellen (Abbruchkante) */
-const WARN_SVG = (size = 16) =>
-  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20z" fill="#fff"/><path d="M12 9v6M12 17.5v.5" stroke="#d62828" stroke-width="2.6" stroke-linecap="round"/></svg>`;
 const breakText = (b: Breakline) =>
   `Weißwasser/Gischt setzt schlagartig ein (${Math.round(b.above * 100)} % → ${Math.round(b.below * 100)} % der Flussmitte), Höhenmodell ${b.drop.toFixed(0)} m Höhenverlust`;
 /** Wellensymbol (bewusst ohne Nummer/Stufe – keine Schwierigkeitsangabe) */
@@ -680,17 +716,7 @@ function renderWhitewater(a: Analysis) {
     list.innerHTML = `<li class="hint">Weißwasser-Suche fehlgeschlagen: ${ww.message}</li>`;
     meta.textContent = "";
   } else {
-    (ww.breaks ?? []).forEach((bk, i) => {
-      const li = document.createElement("li");
-      const b = document.createElement("button");
-      b.innerHTML =
-        `<span class="id ww-id" style="background:#d62828;border-radius:4px">${WARN_SVG(14)}</span><span>Gefahrenstelle · mögliche Abbruchkante · km ${(bk.d / 1000).toFixed(2)}</span>` +
-        `<span class="meta">${breakText(bk)} · Erkennung ${bk.confidence} · Wasserfall, Stufe oder Wehr – unbedingt vorher besichtigen</span>`;
-      b.addEventListener("click", () => focusBreak(i));
-      li.appendChild(b);
-      list.appendChild(li);
-    });
-    if (!ww.spots.length && !ww.breaks?.length) list.innerHTML = `<li class="hint">Keine Stellen über der Schwelle (${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter).</li>`;
+    if (!ww.spots.length) list.innerHTML = `<li class="hint">Keine Stellen über der Schwelle (${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter).</li>`;
     ww.spots.forEach((s, i) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
@@ -713,18 +739,8 @@ function renderWhitewater(a: Analysis) {
       `Weißwasser hängt stark vom Abfluss ab; markiert werden helle, körnige Flächen im Wasser (auch Wehre). Ein Indikator, keine Schwierigkeitsbewertung – Stellen vor Ort besichtigen.`;
   }
   // Marker
-  ww?.breaks?.forEach((bk, i) => {
-    const el = document.createElement("button");
-    el.className = "break-marker";
-    el.style.cssText = "background:#d62828;width:26px;height:26px;border-radius:5px;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer;display:grid;place-items:center";
-    el.innerHTML = WARN_SVG(17);
-    el.setAttribute("aria-label", "Gefahrenstelle");
-    el.title = `Gefahrenstelle km ${(bk.d / 1000).toFixed(2)}: mögliche Abbruchkante – ${breakText(bk)}`;
-    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusBreak(i); });
-    markers.push(new maplibregl.Marker({ element: el }).setLngLat(bk.center).addTo(map));
-  });
   ww?.spots.forEach((s, i) => {
-    if (s.hazard) return; // dort steht schon das Warndreieck
+    if (s.hazard) return; // dort steht schon die rote Welle (Gefahrenstelle)
     const el = document.createElement("button");
     el.className = "ww-marker";
     el.style.cssText = `background:${WW_STYLE(s)};width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px #0008;padding:0;cursor:pointer;display:grid;place-items:center`;
@@ -735,13 +751,6 @@ function renderWhitewater(a: Analysis) {
     markers.push(new maplibregl.Marker({ element: el }).setLngLat(s.center).addTo(map));
   });
   renderLabels();
-}
-
-function focusBreak(i: number) {
-  const b = current?.ww?.breaks?.[i];
-  if (!b) return;
-  map.flyTo({ center: b.center, zoom: DETAIL_ZOOM, duration: 900 });
-  chart?.highlight(b.d);
 }
 
 function focusWw(i: number) {
@@ -841,7 +850,7 @@ function drawChart() {
     if (d === null) return src("cursor").setData(empty);
     const p = a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
     src("cursor").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p.p } });
-  }, [...(current.ww?.spots ?? []).filter((w) => !w.hazard), ...(current.ww?.breaks ?? []).map((b) => ({ d0: b.d - 15, d1: b.d + 15, strong: true, hazard: true }))]);
+  }, [...(current.ww?.spots ?? []).filter((w) => !w.hazard), ...hazards().map((h) => ({ d0: h.d - 20, d1: h.d + 20, strong: true, hazard: true }))]);
 }
 
 const TENDENCY_COLOR: Record<string, string> = { "eher niedrig": "#ef8a62", unauffällig: "#4d9221", "eher erhöht": "#4393c3", "eher hoch": "#2166ac" };
@@ -1044,15 +1053,13 @@ function renderFlowInfo() {
 /** Zoom für die Detailansicht einzelner Stellen im Luftbild (Blöcke, Stufen erkennbar). */
 const DETAIL_ZOOM = 17.5;
 
-/** Alle markierten Stellen (Gefahren-, Schwallstellen, Stufen, Engstellen, Schluchten) entlang der Strecke zum Durchblättern. */
+/** Alle markierten Stellen (Gefahren-, Schwallstellen, Engstellen, Schluchten) entlang der Strecke zum Durchblättern. */
 let tourIndex = -1;
 function tourStops() {
   if (!current) return [];
-  const a = current.analysis;
   const stops = [
-    ...a.steps.map((st, i) => ({ d: (st.d0 + st.d1) / 2, label: `Stufe · ${st.drop.toFixed(0)} m`, go: () => focusStep(i) })),
+    ...hazards().map((h, i) => ({ d: h.d, label: `Gefahrenstelle · ${h.title}`, go: () => focusHazard(i) })),
     ...(current.narrows?.features ?? []).map((f, i) => ({ d: (f.d0 + f.d1) / 2, label: f.title, go: () => focusNarrow(i) })),
-    ...(current.ww?.breaks ?? []).map((b, i) => ({ d: b.d, label: `Gefahrenstelle · mögliche Abbruchkante (${b.drop.toFixed(0)} m)`, go: () => focusBreak(i) })),
     ...(current.ww?.spots ?? []).flatMap((w, i) => (w.hazard ? [] : [{ d: w.dPeak, label: "Schwallstelle", go: () => focusWw(i) }])),
   ];
   return stops.sort((x, y) => x.d - y.d);
@@ -1069,13 +1076,6 @@ function tour(step: number) {
 }
 $("tour-prev").addEventListener("click", () => tour(-1));
 $("tour-next").addEventListener("click", () => tour(1));
-
-function focusStep(i: number) {
-  const st = current?.analysis.steps[i];
-  if (!st) return;
-  map.flyTo({ center: st.center, zoom: DETAIL_ZOOM, duration: 900 });
-  chart?.highlight((st.d0 + st.d1) / 2);
-}
 
 function focusNarrow(i: number) {
   const f = current?.narrows?.features[i];
@@ -1381,6 +1381,6 @@ const fileBase = () =>
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strecke";
-$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name, current.narrows, current.ww?.spots, current.ww?.breaks), "application/gpx+xml"));
+$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name, current.narrows, current.ww?.spots, hazards()), "application/gpx+xml"));
 $("exp-csv").addEventListener("click", () => current && download(`${fileBase()}.csv`, toCsv(current.analysis), "text/csv"));
-$("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name, current.narrows, current.ww?.spots, current.ww?.breaks), "application/geo+json"));
+$("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name, current.narrows, current.ww?.spots, hazards()), "application/geo+json"));

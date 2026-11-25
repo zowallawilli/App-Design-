@@ -140,7 +140,7 @@ bis ein eigener Abfluss eingetragen ist.
 
 Die 300-m-Glättung des Profils verteilt einen Wasserfall auf mehrere hundert Meter. Steilstufen werden
 deshalb im monoton angepassten, aber ungeglätteten Profil gesucht: **≥ 8 m Höhenverlust auf 100 m**
-(Marker ▼). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
+(als **Gefahrenstelle** „Stufe im Höhenmodell“, rote Welle). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
 erkannt; in tiefen Schluchten liefert das Höhenmodell teils Werte vom Rand, daher „im Luftbild prüfen“.
 
 ## Wellen messen
@@ -229,7 +229,7 @@ Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen ges
 |---|---|---|
 | **E** (orange) | **Engstelle** (optional, standardmäßig aus) | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
 | **S** (violett) | **Schlucht** | Talquerschnitt alle 50 m aus dem Höhenmodell: Talbreite 5 m und 20 m über dem Wasserspiegel und Tiefe (Anstieg innerhalb 250 m, schwächere Seite). Schlucht, wenn das Tal 20 m über Wasser ≤ 90 m breit und ≥ 30 m tief ist (Kartverket 1 m), bzw. ≤ 140 m / ≥ 60 m mit dem groben globalen Modell. |
-| **K** (schwarz) | **Mögliche Klamm** | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
+| **S** (violett) | **Fluss verdeckt** (früher eigenes „K“) – wird als Schlucht gezeigt; ist der Abschnitt zusätzlich steil (≥ 30 m/km oder Stufe), erscheint er als **Gefahrenstelle „nicht einsehbar“** (rote Welle) | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
 
 Schlucht- und Klamm-Hinweise, die weniger als 1 km auseinanderliegen, werden zu einer
 **Schluchtstrecke** zusammengefasst – helle Felswände sehen im Satellitenbild wie Flussbett aus,
@@ -265,7 +265,7 @@ Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher un
 ### Gefahrenstellen: mögliche Abbruchkanten (Wasserfall, Stufe, Wehr)
 
 Steilstufen allein aus dem Höhenmodell sind unscharf (Schluchtränder, 30-m-Raster). Eine **Gefahrenstelle**
-(rotes Warndreieck) wird deshalb nur markiert, wenn **beides** zutrifft:
+(rote Welle) vom Typ „mögliche Abbruchkante“ wird deshalb nur markiert, wenn **beides** zutrifft:
 
 1. **Kante im Luftbild:** In der Flussmitte (±8 m) setzt Weißwasser/Gischt entlang des Flusses
    schlagartig ein – Anteil heller, ungesättigter Pixel (Minimum-Kanal ≥ 165) auf den 15 m unterhalb
@@ -276,7 +276,7 @@ Steilstufen allein aus dem Höhenmodell sind unscharf (Schluchtränder, 30-m-Ras
    unterhalb der Kante, davon ≥ 4,8 m mehr als das örtliche Gefälle (±500 m) erwarten lässt.
 
 „Deutlich“ bei einem Sprung ≥ 60 Prozentpunkte und ≥ 10 m Höhenverlust, sonst „möglich“. Steilstufen,
-die das Bild nicht bestätigt, bleiben als ▼ „nur Höhenmodell“ stehen. Wehre und Stufen unter ~8 m erscheinen
+die das Bild nicht bestätigt, erscheinen als Gefahrenstelle „Stufe im Höhenmodell“ (ebenfalls rote Welle, Text nennt den Grund); verdeckte, steile Klammen als „nicht einsehbar“. Wehre und Stufen unter ~8 m erscheinen
 als Schwallstelle: Mit 5 m ließen sich auch kleine Stufen fassen, dann markierten aber helle Kalkkiesbänke
 an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter 8 m ist das Höhenmodell zu ungenau.
 
@@ -288,7 +288,7 @@ an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter
 | Dettifoss | NÁTT | Kante | ✅ erkannt (50 m, „deutlich“) |
 | Hafragilsfoss | NÁTT | Kante | ✅ erkannt (96 m inkl. Schlucht darunter, „deutlich“) |
 | Stromschnellen zwischen Selfoss und Dettifoss (Höhenmodell meldet 35 m) | NÁTT | keine | ✅ keine Kante |
-| Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten, keine einzelne Kante (▼ Steilstufe bleibt) |
+| Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten, keine einzelne Kante (bleibt als Gefahrenstelle „Stufe im Höhenmodell“) |
 | Sanna: Schiefes Eck, Pianser Schwall, Oberlauf | basemap.at | keine | ✅ keine Kante |
 | Soča: Blockwerk vor Trnovo, Kalkkiesbänke | GURS | keine | ✅ keine Kante |
 

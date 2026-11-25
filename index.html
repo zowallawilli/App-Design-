@@ -130,10 +130,14 @@
           </div>
           <h3>Luftbild &amp; Wasserstand</h3>
           <div id="flow-info" class="flow-info"><p class="hint">Wird geladen …</p></div>
+          <h3>Gefahrenstellen <span class="hint">(Indikator – vor Ort prüfen)</span></h3>
+          <ul class="legend">
+            <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Gefahrenstelle: mögliche Abbruchkante (Weißwasser setzt im Luftbild schlagartig ein + Höhenverlust), Stufe im Höhenmodell oder nicht einsehbare, steile Klamm</li>
+          </ul>
+          <ol id="hz-list" class="hotspots"></ol>
           <h3>Schwallstellen <span class="hint">(Weißwasser im Luftbild – Indikator)</span></h3>
           <ul class="legend">
             <li><span class="dia" style="background:#0077b6;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Schwallstelle – auffällig viel Weißwasser im Luftbild (Schwall, Walze, Blockstrecke oder Wehr). Nur Markierung, keine Schwierigkeitsangabe.</li>
-            <li><span class="dia" style="background:#d62828"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20z" fill="#fff"/><path d="M12 9v6M12 17.5v.5" stroke="#d62828" stroke-width="2.6" stroke-linecap="round"/></svg></span> Gefahrenstelle – mögliche Abbruchkante (Wasserfall, Stufe, Wehr): Weißwasser/Gischt setzt im Luftbild schlagartig ein <b>und</b> das Höhenmodell zeigt dort Höhenverlust</li>
           </ul>
           <ol id="ww-list" class="hotspots"></ol>
           <p id="ww-meta" class="hint"></p>
@@ -149,13 +153,10 @@
           <h3>Engstellen &amp; Schluchten</h3>
           <ul class="legend">
             <li><span class="dia" style="background:#ff9f1c">E</span> Engstelle – Flussbett deutlich schmaler als sonst (Sentinel-2, optional)</li>
-            <li><span class="dia" style="background:#8e44ad">S</span> Schlucht – Tal 20 m über Wasser schmal und tief (Höhenmodell)</li>
-            <li><span class="dia" style="background:#111">K</span> Mögliche Klamm – Fluss im Satellitenbild verdeckt, beidseitig steil</li>
+            <li><span class="dia" style="background:#8e44ad">S</span> Schlucht – Tal 20 m über Wasser schmal und tief (Höhenmodell) oder Fluss im Luftbild verdeckt zwischen steilen Hängen</li>
           </ul>
           <ol id="narrows-list" class="hotspots"></ol>
           <p id="narrows-meta" class="hint"></p>
-          <h3>Steilstufen <span class="hint">(nur Höhenmodell, im Luftbild nicht bestätigt)</span></h3>
-          <ol id="steps-list" class="hotspots"></ol>
           <div class="row exports">
             <button id="exp-gpx">GPX</button>
             <button id="exp-csv">CSV</button>
