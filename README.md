@@ -116,9 +116,24 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
   Lahn gegen die Pegel Leun und Gießen (31 Tage): **Verlauf sehr gut (r = 0,94–0,95)**, absolut aber
   **30–35 % zu niedrig**, bei Niedrigwasser bis Faktor 3–4. Die jahreszeitliche Einordnung (niedrig/mittel/hoch)
   ist deshalb verlässlicher als die m³/s-Zahl. Bei kleinen Flüssen kann die Rasterzelle danebenliegen (blauer Punkt).
-- **Gemessene Pegel (PEGELONLINE)**: Liegt ein Bundespegel mit Abfluss ≤ 15 km entfernt (Lahn, Main, Mosel,
-  Neckar, Ruhr, Saar, Fulda, Werra, Donau, Elbe …), eicht die App das Modell mit dem Verhältnis der letzten
-  31 Tage und zeigt den aktuellen Messwert. Weitere Länder: siehe Links in der App (NVE, ARSO, SMHI, BAFU, eHYD).
+- **Gemessene Pegel (offizielle, geeichte Messstellen):** Die App sucht Pegel mit Abfluss, die höchstens
+  1,5 km von der Flusslinie entfernt sind. Bei mehreren Kandidaten gewinnt der, dessen Verlauf zum Modell
+  passt (gleicher Fluss, kein Seitenbach). Gemessene Werte haben überall Vorrang vor dem Modell; das Modell
+  wird am Pegel geeicht, wenn der Verlauf passt.
+
+| Anbieter | Land | Schlüssel | aktuell | Tageswerte der Vergangenheit (Aufnahmetag) |
+|---|---|---|---|---|
+| SMHI | Schweden | – | ✓ | ✓ (Archiv bis gestern) |
+| SYKE | Finnland | – | ✓ | ✓ |
+| NVE HydAPI | Norwegen | kostenlos, persönlich ([hydapi.nve.no/Users](https://hydapi.nve.no/Users)), in der App eintragen | ✓ | ✓ |
+| PEGELONLINE | Deutschland (Bundeswasserstraßen) | – | ✓ | nur 31 Tage |
+| BAFU (über api.existenz.ch) | Schweiz | – | ✓ | – |
+| ARSO | Slowenien | – | ✓ (mit Hochwasserstufen) | – |
+| Veðurstofa Íslands | Island | – | keine offene Schnittstelle gefunden – nur Link | – |
+
+Beispiel Oulankajoki (Finnland): Pegel direkt an der Strecke, gemessen am Luftbild-Tag 22.07.2016
+17 m³/s, heute 21 m³/s – das Modell lag hier bei 1–7 m³/s und damit um ein Vielfaches daneben.
+RiverApp, Rivermap & Co. beziehen ihre Werte von denselben Behörden, bieten aber keine offene Schnittstelle.
 
 ## Engstellen, Schluchten und verdeckte Klammen
 

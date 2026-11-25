@@ -14,7 +14,8 @@ import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
-import { calibrateWithGauge, flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, summerMean, type DischargeSeries, type FlowState, type GaugeCalibration } from "./discharge";
+import { flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, summerMean, type DischargeSeries, type FlowState } from "./discharge";
+import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, type GaugeMatch } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 
 // ---------- DOM ----------
@@ -93,7 +94,14 @@ const style: StyleSpecification = {
     },
     { id: "draft-line", type: "line", source: "draft", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#ffd166", "line-width": 3, "line-dasharray": [2, 1] } },
     { id: "draft-pts", type: "circle", source: "draft", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 4, "circle-color": "#ffd166", "circle-stroke-color": "#000", "circle-stroke-width": 1 } },
-    { id: "gauge", type: "circle", source: "gauge", paint: { "circle-radius": 6, "circle-color": "#1f78b4", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } },
+    {
+      id: "gauge", type: "circle", source: "gauge",
+      paint: {
+        "circle-radius": ["match", ["get", "kind"], "gauge", 8, 6],
+        "circle-color": ["match", ["get", "kind"], "gauge", "#e63946", "#1f78b4"],
+        "circle-stroke-color": "#fff", "circle-stroke-width": 2,
+      },
+    },
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
   ],
 };
@@ -161,7 +169,9 @@ interface FlowInfo {
   mq: number;
   summer: number;
   /** Eichung an einem gemessenen Pegel (Faktor gemessen ÷ Modell) */
-  cal: GaugeCalibration | null;
+  /** offizieller Pegel an der Strecke (gemessene Werte, Eichfaktor fürs Modell) */
+  gauge: GaugeMatch | null;
+  gaugeErrors: string[];
   error?: string;
 }
 let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo } | null = null;
@@ -537,17 +547,18 @@ async function loadFlowInfo(a: Analysis, id: number) {
     const [imagery, cell] = await Promise.all([imageryAlong(pts).catch(() => []), riverCell(line).catch(() => null)]);
     const series = cell ? await seriesFor(cell).catch(() => null) : null;
     const ld = series ? latestDate(series) : null;
-    const cal = series ? await calibrateWithGauge(line, series).catch(() => null) : null;
+    const { match: gauge, errors: gaugeErrors } = await matchGauge(line, series, imagery.map((im) => im.date)).catch((e) => ({ match: null, errors: [String(e)] }));
     info = {
       imagery: imagery.map((im) => ({ ...im, flow: series ? flowOn(series, im.date) : null })),
       series,
       today: series && ld ? flowOn(series, ld) : null,
       mq: series ? meanFlow(series) : NaN,
       summer: series ? summerMean(series) : NaN,
-      cal,
+      gauge,
+      gaugeErrors,
     };
   } catch (e) {
-    info = { imagery: [], series: null, today: null, mq: NaN, summer: NaN, cal: null, error: (e as Error).message };
+    info = { imagery: [], series: null, today: null, mq: NaN, summer: NaN, gauge: null, gaugeErrors: [], error: (e as Error).message };
   }
   if (id !== runId && current?.analysis !== a) return;
   if (current?.analysis !== a) return;
@@ -568,9 +579,10 @@ function ratingQ(): { q: number | null; label: string } {
     return v > 0 ? { q: v, label: `eigener Wert ${v} m³/s` } : { q: null, label: "eigenen Abfluss eingeben" };
   }
   if (!f?.series) return { q: null, label: "Abfluss nicht verfügbar" };
-  const k = f.cal?.factor ?? 1;
-  const tag = f.cal ? ` (geeicht an Pegel ${f.cal.station})` : " (Modell)";
-  if (src === "gauge" && f.cal) return { q: f.cal.latestQ, label: `Pegel ${f.cal.station} gemessen: ${f.cal.latestQ} m³/s` };
+  const k = f.gauge?.factor ?? 1;
+  const tag = f.gauge?.factor ? ` (geeicht an Pegel ${f.gauge.gauge.name})` : " (Modell)";
+  // „heute“ und „Pegel“: gemessener Wert hat Vorrang vor dem Modell
+  if ((src === "gauge" || src === "today") && f.gauge?.latest) return { q: f.gauge.latest.q, label: `heute gemessen am Pegel ${f.gauge.gauge.name}: ${f.gauge.latest.q} m³/s` };
   if (src === "mq") return { q: f.mq * k, label: `Mittel MQ ≈ ${(f.mq * k).toFixed(0)} m³/s${tag}` };
   if (src === "summer") return { q: f.summer * k, label: `Sommer-Mittel ≈ ${(f.summer * k).toFixed(0)} m³/s${tag}` };
   return f.today ? { q: f.today.q * k, label: `heute ≈ ${(f.today.q * k).toFixed(1)} m³/s${tag}` } : { q: null, label: "kein Wert für heute" };
@@ -578,7 +590,7 @@ function ratingQ(): { q: number | null; label: string } {
 
 function updateQOptions() {
   const opt = $<HTMLSelectElement>("q-src").querySelector<HTMLOptionElement>('option[value="gauge"]');
-  if (opt) opt.hidden = !current?.flow?.cal;
+  if (opt) opt.hidden = !current?.flow?.gauge?.latest;
 }
 
 /** Analyse mit der gewählten Bewertung (Gefälle / Wucht / kombiniert). */
@@ -588,6 +600,14 @@ function rated(): Analysis | null {
 }
 
 $("rate-mode").addEventListener("change", () => current && showResults());
+
+// NVE-Schlüssel (persönlich, kostenlos) – bleibt nur in diesem Browser gespeichert
+$<HTMLInputElement>("nve-key").value = nveKey();
+$("nve-key").addEventListener("change", () => {
+  setNveKey($<HTMLInputElement>("nve-key").value);
+  resetGaugeCache();
+  if (current) void loadFlowInfo(current.analysis, runId);
+});
 $("q-src").addEventListener("change", () => {
   $("q-own").hidden = $<HTMLSelectElement>("q-src").value !== "own";
   if (current) showResults();
@@ -605,40 +625,64 @@ function renderFlowInfo() {
   const fmtQ = (q: number) => (q >= 10 ? q.toFixed(0) : q.toFixed(1)).replace(".", ",");
   const lvl = (s: FlowState | null) =>
     s ? `<span class="lvl" style="background:${LEVEL_COLOR[s.label]}">${s.label}</span>` : "–";
+  const gm = f.gauge;
+  const measured = (d: string) => {
+    const q = gm?.onDates.get(d);
+    return q !== undefined ? `<b>${fmtQ(q)} m³/s</b>` : gm && !hasHistory(gm.gauge.provider) ? "<span class=\"hint\">keine Historie</span>" : "–";
+  };
   const rows = f.imagery
     .map(
       (im) =>
         `<tr><td>km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)}</td>` +
         `<td><b>${fmtDate(im.date)}</b><br>${im.provider} · ${im.resolution.toString().replace(".", ",")} m</td>` +
-        `<td class="q">${im.flow ? `${fmtQ(im.flow.q)} m³/s<br>${lvl(im.flow)}` : "–"}</td></tr>`,
+        `<td class="q">${im.flow ? `${fmtQ(im.flow.q)} m³/s<br>${lvl(im.flow)}` : "–"}</td>` +
+        (gm ? `<td class="q">${measured(im.date)}</td>` : "") +
+        `</tr>`,
     )
     .join("");
   const today = f.today
-    ? `<tr><td>heute</td><td><b>${fmtDate(f.today.date)}</b><br>Modell GloFAS</td><td class="q">${fmtQ(f.today.q)} m³/s<br>${lvl(f.today)}</td></tr>`
+    ? `<tr><td>heute</td><td><b>${fmtDate(f.today.date)}</b></td><td class="q">${fmtQ(f.today.q)} m³/s<br>${lvl(f.today)}</td>` +
+      (gm ? `<td class="q">${gm.latest ? `<b>${fmtQ(gm.latest.q)} m³/s</b><br><span class="hint">${gm.latest.time.slice(0, 16).replace("T", " ")}</span>` : "–"}</td>` : "") +
+      `</tr>`
     : "";
   const first = f.imagery.find((im) => im.flow);
+  // Verhältnis heute ÷ Aufnahmetag: gemessen, wenn möglich – sonst Modell
+  const measuredFirst = f.imagery.map((im) => ({ im, q: gm?.onDates.get(im.date) })).find((x) => x.q !== undefined);
   const ratio =
-    first?.flow && f.today
-      ? `<p class="hint">Heute fließt etwa <b>${(f.today.q / first.flow.q).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(first.date)}). Mittlerer Abfluss (MQ): ~${fmtQ(f.mq)} m³/s.</p>`
-      : "";
-  const cal = f.cal
-    ? `<p class="hint"><b>Gemessener Pegel:</b> <a href="${f.cal.url}" target="_blank" rel="noopener">${f.cal.station}</a> (${f.cal.water.toLowerCase().replace(/^./, (c) => c.toUpperCase())}, ${f.cal.distanceKm.toFixed(0)} km entfernt) – zuletzt <b>${fmtQ(f.cal.latestQ)} m³/s</b> (${f.cal.latestTime.slice(0, 16).replace("T", " ")}). ` +
-      `Das Modell lag in den letzten ${f.cal.days} Tagen um den Faktor ${f.cal.factor.toFixed(2).replace(".", ",")} daneben (Verlauf r = ${f.cal.correlation.toFixed(2).replace(".", ",")}); geeichte Werte: Aufnahmetag ≈ ${first?.flow ? fmtQ(first.flow.q * f.cal.factor) : "–"} m³/s, MQ ≈ ${fmtQ(f.mq * f.cal.factor)} m³/s.</p>`
-    : "";
-  const gauges = officialGauges(current.analysis.profile[0].p)
+    measuredFirst && gm?.latest
+      ? `<p class="hint">Heute fließt laut Pegel etwa <b>${(gm.latest.q / measuredFirst.q!).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(measuredFirst.im.date)}: ${fmtQ(measuredFirst.q!)} m³/s gemessen).</p>`
+      : first?.flow && f.today
+        ? `<p class="hint">Heute fließt etwa <b>${(f.today.q / first.flow.q).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(first.date)}, Modell). Mittlerer Abfluss (MQ, Modell): ~${fmtQ(f.mq)} m³/s.</p>`
+        : "";
+  const PROVIDER_LABEL: Record<string, string> = { SMHI: "SMHI (Schweden)", SYKE: "SYKE (Finnland)", NVE: "NVE (Norwegen)", PEGELONLINE: "PEGELONLINE (WSV)", BAFU: "BAFU (Schweiz)", ARSO: "ARSO (Slowenien)" };
+  const cal = gm
+    ? `<p class="hint"><b>Offizieller Pegel:</b> <a href="${gm.gauge.url}" target="_blank" rel="noopener">${gm.gauge.name}</a>${gm.gauge.river ? ` (${gm.gauge.river})` : ""} · ${PROVIDER_LABEL[gm.gauge.provider]} · ${gm.gauge.distanceKm < 0.1 ? "an der Strecke" : `${gm.gauge.distanceKm.toFixed(1).replace(".", ",")} km von der Linie`}` +
+      `${gm.gauge.note ? ` · ${gm.gauge.note}` : ""}. ` +
+      (gm.factor
+        ? `Das Modell lag zuletzt um den Faktor ${gm.factor.toFixed(2).replace(".", ",")} daneben${gm.correlation !== null ? ` (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")})` : ""} – Wucht-Bewertung und MQ (≈ ${fmtQ(f.mq * gm.factor)} m³/s) sind damit geeicht.`
+        : gm.correlation !== null
+          ? `Das Modell passt hier schlecht zum Pegel (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")}) – die gemessenen Werte sind maßgeblich.`
+          : "Das Modell lässt sich an diesem Pegel nicht eichen (keine Tageswerte der letzten Wochen) – die gemessenen Werte sind maßgeblich.") +
+      `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o) => `<a href="${o.url}" target="_blank" rel="noopener">${o.name}</a>`).join(", ")}.` : ""}</p>`
+    : `<p class="hint">Kein offizieller Pegel mit Abfluss an dieser Strecke gefunden${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " – für Norwegen bitte den kostenlosen NVE-Schlüssel unter „Analyse-Parameter“ eintragen" : ""}.</p>`;
+  const gauges = (gm ? [] : officialGauges(current.analysis.profile[0].p))
     .map((g) => `<a href="${g.url}" target="_blank" rel="noopener">${g.label}</a>`)
     .join(" · ");
   el.innerHTML =
     (f.imagery.length || today
-      ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Abfluss*</th></tr>${rows}${today}</table>`
+      ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Modell*</th>${gm ? "<th>gemessen</th>" : ""}</tr>${rows}${today}</table>`
       : `<p class="hint">Keine Bild- oder Abflussdaten verfügbar${f.error ? ` (${f.error})` : ""}.</p>`) +
     ratio +
     cal +
     `<p class="hint">* Modellabfluss GloFAS (Copernicus, über Open-Meteo), Rasterpunkt ${f.series ? `${f.series.cell.lat.toFixed(3)}, ${f.series.cell.lon.toFixed(3)}` : "–"} (5-km-Raster, auf der Karte als blauer Punkt). ` +
     `Einordnung im Vergleich zu allen Jahren um dieselbe Jahreszeit. Für kleine Flüsse und nahe Mündungen nur grob – mit dem Pegel vor Ort vergleichen${gauges ? `: ${gauges}` : ""}.</p>`;
-  src("gauge").setData(
-    f.series ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [f.series.cell.lon, f.series.cell.lat] } } : empty,
-  );
+  src("gauge").setData({
+    type: "FeatureCollection",
+    features: [
+      ...(f.series ? [{ type: "Feature" as const, properties: { kind: "model" }, geometry: { type: "Point" as const, coordinates: [f.series.cell.lon, f.series.cell.lat] } }] : []),
+      ...(gm ? [{ type: "Feature" as const, properties: { kind: "gauge", name: gm.gauge.name }, geometry: { type: "Point" as const, coordinates: [gm.gauge.lon, gm.gauge.lat] } }] : []),
+    ],
+  });
 }
 
 /** Zoom für die Detailansicht einzelner Stellen im Luftbild (Blöcke, Stufen erkennbar). */
@@ -756,8 +800,12 @@ function finishWave() {
     const near = prof.reduce((b, q) => (haversine(q.p, pts[0]) < haversine(b.p, pts[0]) ? q : b));
     const st = current.flow.imagery.find((im) => near.d >= im.d0 && near.d <= im.d1);
     if (st?.flow && haversine(near.p, pts[0]) < 500) {
-      const k = current.flow.cal?.factor ?? 1;
-      imgFlow = `${(st.flow.q * k).toFixed(st.flow.q * k < 10 ? 1 : 0)} (${st.flow.label}, ${current.flow.cal ? "geeicht" : "Modell"})`;
+      const measuredQ = current.flow.gauge?.onDates.get(st.date);
+      const k = current.flow.gauge?.factor ?? 1;
+      imgFlow =
+        measuredQ !== undefined
+          ? `${measuredQ.toFixed(measuredQ < 10 ? 1 : 0)} (gemessen, Pegel ${current.flow.gauge!.gauge.name})`
+          : `${(st.flow.q * k).toFixed(st.flow.q * k < 10 ? 1 : 0)} (${st.flow.label}, ${current.flow.gauge?.factor ? "geeicht" : "Modell"})`;
     }
   }
   const html =
