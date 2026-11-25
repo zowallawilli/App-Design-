@@ -15,6 +15,8 @@ const { chromium } = require('playwright');
     const f = require('path').join(process.env.TIROL_DIR, new URL(r.request().url()).pathname.split('/pegeldaten/')[1]);
     return require('fs').existsSync(f) ? r.fulfill({ path: f, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' } }) : r.fulfill({ status: 404, body: '' });
   });
+  // Optional WEATHER_FILE=<json>: Antwort für archive-api.open-meteo.com (z. B. bei erreichtem Tageslimit)
+  if (process.env.WEATHER_FILE) await page.route(/archive-api\.open-meteo\.com/, (r) => r.fulfill({ path: process.env.WEATHER_FILE, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' } }));
   page.on('pageerror', e => console.log('pageerror', e.message)); page.on('console', m => m.type() === 'error' && console.log('console', m.text().slice(0, 200)));
   await page.goto('http://localhost:5173/');
   await page.waitForFunction(() => window.__map && window.__map.loaded());

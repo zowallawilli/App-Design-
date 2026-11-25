@@ -70,12 +70,30 @@ Slowenien das GURS-Orthofoto 2023 (25 cm), an der Sjoa Vantor/Maxar „Vivid“ 
 dazu den Esri-Metadatendienst ab und zeigt **Quelle, Aufnahmedatum und Auflösung** an (oben in der
 Karte für die Kartenmitte, im Ergebnis je Streckenabschnitt).
 
-Für jedes Aufnahmedatum wird der **Abfluss an diesem Tag** aus dem Copernicus-Hochwassermodell
-GloFAS (Open-Meteo Flood API, Tageswerte seit 1984, Raster ~5 km) ermittelt und mit allen Jahren zur
-gleichen Jahreszeit verglichen (sehr niedrig … sehr hoch). Daneben steht der heutige Modellabfluss:
-„Heute fließt etwa 1,2× so viel wie am Aufnahmetag“. So lässt sich einschätzen, wie die im Luftbild
-sichtbaren Stufen und Blöcke beim aktuellen Pegel vor Ort aussehen. Links führen zu den offiziellen
-Pegeln (NVE, ARSO, SMHI, BAFU, eHYD).
+Für jedes Aufnahmedatum zeigt die App **nur gemessene Pegelwerte** (offizielle Messstellen; „≈“ = aus
+Nachbarpegeln geschätzt, siehe unten) und, wo kein Pegelwert vorliegt, **Hinweise aus Wetter und Jahreszeit**:
+
+- **Aufnahmedatum und -art:** Esri veröffentlicht nur das Datum, keine Uhrzeit. Satellitenbilder (Vantor/Maxar,
+  Airbus) entstehen meist vormittags (~10–12 Uhr Ortszeit); Orthofotos aus Befliegungen bei hohem Sonnenstand,
+  das Datum gilt jeweils für den Bildteil.
+- **Regen, Schnee, Schneeschmelze** in den zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo,
+  Wetter-Reanalyse ERA5, `src/weather.ts`): kräftiger Regen in den 3 Tagen davor, Starkregen 4–13 Tage davor
+  (Fluss evtl. noch erhöht), nasse Woche, zwei Wochen trocken, schrumpfende Schneedecke bei Plusgraden
+  (Schneeschmelze), Schneefall bei Frost.
+- **Übliche Jahreszeit** der Region (Alpen, Norden, Island, Mittelgebirge), z. B. Schneeschmelze April–Juni in den
+  Alpen, „vårflom“ Mai/Juni in Skandinavien.
+- Daraus eine **Tendenz** (eher niedrig / unauffällig / eher erhöht / eher hoch) – ausdrücklich keine Messung.
+
+Mit Pegel-Historie steht zusätzlich „Heute fließt laut Pegel etwa 1,2× so viel wie am Aufnahmetag“.
+
+**Warum keine Modellzahl mehr?** Früher zeigte die App den Abfluss des Copernicus-Modells GloFAS (5-km-Raster).
+Abgleich am 25.11.2026: An 223 Pegeln (Tirol, Südtirol, Slowenien) lag das Modell nur bei 13 % innerhalb ±30 %,
+bei 44 % mehr als fünffach daneben (kleine Flüsse < 5 m³/s: 63 %). In Zeitreihen über 1–2 Jahre an 25 Pegeln
+(französische Alpen, Südtirol, Piteälven, Oulankajoki) traf die m³/s-Zahl an 15 % der Tage ±30 %, „heute X× so
+viel wie am Aufnahmetag“ in 49 % der Fälle ±50 %, die Klasse niedrig/mittel/hoch in 44 % exakt; auch ein am Pegel
+geeichtes Modell lag an anderen Tagen nur zu 35 % innerhalb ±30 %. Gründe: Die Rasterzelle trifft oft einen
+anderen Fluss oder Hang, Kraftwerksausleitungen und Speicher fehlen. Eine solche Zahl würde mehr in die Irre
+führen als helfen. GloFAS wird nur noch intern genutzt, um bei mehreren Pegeln den am richtigen Fluss zu wählen.
 
 **Stellen im Luftbild ansehen:** Mit ◀ ▶ springt die Karte nacheinander zu allen markierten Stellen
 (Hotspots, Schluchten) und zoomt so weit ins Luftbild, dass Blöcke und Stufen erkennbar sind.
@@ -94,8 +112,9 @@ Deshalb wird je Abschnitt die **Strömungsleistung** Ω = ρ·g·Q·S (W/m) bere
 
 Kalibriert an Nahe (WW I, ~360 W/m), Soča Srpenica–Trnovo (WW II–III+, ~1 700 W/m) und Markarfljót
 oberhalb der Schlucht (WW II–III, ~2 300 W/m bei Mittelwasser, ~5 300 W/m im Sommer). Standard ist
-„Gefälle + Wucht“: es gilt die schwierigere der beiden Einstufungen. Der Abfluss ist wählbar:
-heute, gemessener Pegel, Mittel (MQ), Sommer-Mittel oder ein eigener Wert (z. B. vom Pegel vor Ort).
+„Gefälle + Wucht“: es gilt die schwierigere der beiden Einstufungen. Der Abfluss ist wählbar: heute am Pegel,
+am Aufnahmetag (wenn der Pegel Historie hat) oder ein eigener Wert. Ohne Pegel bewertet die App nur nach Gefälle,
+bis ein eigener Abfluss eingetragen ist.
 
 ## Steilstufen und Wasserfälle
 
@@ -112,14 +131,9 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
 
 ## Wie verlässlich sind die Abflussdaten?
 
-- **Modell GloFAS** (Copernicus, über Open-Meteo): weltweit, täglich seit 1984, ~5-km-Raster. Geprüft an der
-  Lahn gegen die Pegel Leun und Gießen (31 Tage): **Verlauf sehr gut (r = 0,94–0,95)**, absolut aber
-  **30–35 % zu niedrig**, bei Niedrigwasser bis Faktor 3–4. Die jahreszeitliche Einordnung (niedrig/mittel/hoch)
-  ist deshalb verlässlicher als die m³/s-Zahl. Bei kleinen Flüssen kann die Rasterzelle danebenliegen (blauer Punkt).
 - **Gemessene Pegel (offizielle, geeichte Messstellen):** Die App sucht Pegel mit Abfluss, die höchstens
   1,5 km von der Flusslinie entfernt sind. Bei mehreren Kandidaten gewinnt der, dessen Verlauf zum Modell
-  passt (gleicher Fluss, kein Seitenbach). Gemessene Werte haben überall Vorrang vor dem Modell; das Modell
-  wird am Pegel geeicht, wenn der Verlauf passt (Korrelation r ≥ 0,6 über die letzten 45 Tage, mind. 10 Tage).
+  passt (gleicher Fluss, kein Seitenbach; das Modell dient nur dieser Auswahl und wird nicht angezeigt).
 - **Pegel knapp neben der Strecke:** Liegt keiner innerhalb von 1,5 km, sucht die App bis 5 km oberhalb des
   Einstiegs und unterhalb des Ausstiegs. Je ein Pegel ober- und unterhalb am selben Fluss → Wert nach Lage
   interpoliert („geschätzt aus Pegeln ober- und unterhalb“, z. B. Soča Srpenica–Trnovo zwischen Log Čezsoški und
@@ -133,7 +147,7 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
   Beispiel Inn bei Imst (25.11.2026): *Landeck Perjen* liegt **unterhalb** der Sanna-Mündung (3 503 km², enthält
   die 727 km² der Sanna) und in der Restwasserstrecke des Kraftwerks Imst – Perjen + Landeck Bruggen würde die
   Sanna doppelt zählen und die ausgeleitete Wassermenge übersehen (~13 m³/s). Geschätzt aus Innsbruck − Ötztaler
-  Ache (Tumpen) − Gurglbach (Nassereith), nach Fläche: **~61 m³/s** (Modell 76 m³/s). Magerbach: ~75 m³/s.
+  Ache (Tumpen) − Gurglbach (Nassereith), nach Fläche: **~61 m³/s**. Magerbach: ~75 m³/s.
 
 | Anbieter | Land | Schlüssel | aktuell | Tageswerte der Vergangenheit (Aufnahmetag) |
 |---|---|---|---|---|
@@ -164,7 +178,7 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
 **Skandinavien geprüft (25.11.2026):** SMHI (Piteälven, z. B. Stenudden, Sikfors) und SYKE (Oulankajoki, Paikka
 1426) liefern weiter Daten mit CORS `*`. NVE HydAPI antwortet ohne Schlüssel mit 401 und erlaubt den Header
 `X-API-Key` per CORS – mit dem eigenen Schlüssel im Browser funktioniert die Sjoa also; ohne ihn zeigt die App
-nur das Modell und den Hinweis auf den Schlüssel.
+nur die Hinweise aus Wetter/Jahreszeit und den Hinweis auf den Schlüssel.
 
 **Tirol:** hydro.tirol.gv.at erlaubt keinen direkten Abruf aus dem Browser (kein CORS). Die GitHub Action
 `.github/workflows/pegel-tirol.yml` holt die Daten deshalb alle 30 Minuten, kürzt sie auf die Abflusspegel
@@ -174,14 +188,13 @@ außerdem je Pegel ein **Archiv der Tagesmittel** an (`tirol-archiv/<nummer>.jso
 (Q „Day.Mean“, am Folgetag veröffentlicht) und – für Pegel ohne Tagesmittel wie Landeck Perjen – ein eigenes
 Mittel aus den Halbstunden-Abrufen. Gespeichert werden höchstens 400 Tage (~10 kB je Pegel, gesamt < 1 MB);
 der Branch wird bei jedem Lauf als einzelner Commit neu geschrieben und wächst nicht. Nach etwa 10 Tagen
-berechnet die App daraus Verlauf (r) und Eichfaktor zum Modell, nach Wochen auch Werte am Aufnahmetag neuer
-Luftbilder. Kann das bestehende Archiv nicht geladen werden, bricht die Action ab, statt es zu überschreiben. Einige Pegel (z. B. Inn bei Imst
+liefert das Archiv gemessene Werte am Aufnahmetag neuer Luftbilder. Kann das bestehende Archiv nicht geladen werden, bricht die Action ab, statt es zu überschreiben. Einige Pegel (z. B. Inn bei Imst
 und Magerbach, unterhalb der Kraftwerksausleitungen) veröffentlichen nur eine Wasserstandsklasse
 („niedrig“, „< MW“ …), keinen Abfluss. Hinweis: GitHub pausiert zeitgesteuerte Actions nach 60 Tagen ohne
 Commit im Repository – dann unter *Actions → Pegel Tirol spiegeln* wieder aktivieren.
 
-Beispiel Sanna (Tirol): Pegel Landeck Bruggen an der Ausstiegsstelle, gemessen 4,9 m³/s; das Modell lag
-mit 49 m³/s zehnfach zu hoch (die GloFAS-Zelle erfasst den Inn mit).
+Beispiel Sanna (Tirol): Pegel Landeck Bruggen an der Ausstiegsstelle, gemessen 4,9 m³/s; das frühere Modell
+lag mit 49 m³/s zehnfach zu hoch (die GloFAS-Zelle erfasst den Inn mit).
 
 Beispiel Oulankajoki (Finnland): Pegel direkt an der Strecke, gemessen am Luftbild-Tag 22.07.2016
 17 m³/s, heute 21 m³/s – das Modell lag hier bei 1–7 m³/s und damit um ein Vielfaches daneben.
@@ -249,6 +262,7 @@ Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit ei
 |---|---|---|
 | Höhen Norwegen | [Kartverket, Nasjonal høydemodell DTM](https://www.geonorge.no/) über WCS | Laserscanning, 1 m; CC BY 4.0; in EPSG:3857-Kacheln abgefragt. Bei Störung automatisch globales Modell |
 | Höhen weltweit | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium) | SRTM, EU-DEM, nationale DGMs; Auflösung regional 3–90 m |
+| Wetter (Hinweise ohne Pegel) | [Open-Meteo Historical Weather](https://open-meteo.com/en/docs/historical-weather-api) (ERA5) und Forecast-API für die letzten Tage | frei, ohne Schlüssel, CC BY 4.0; 10 000 Abfragen/Tag je IP |
 | Satellitendaten | [Sentinel-2 L2A](https://registry.opendata.aws/sentinel-2-l2a-cogs/) (ESA Copernicus) über den STAC-Katalog von Element 84 | Bänder Grün, Rot, NIR; nur das benötigte Fenster wird gelesen (Cloud-Optimized GeoTIFF) |
 | Gewässer | OpenStreetMap über Overpass API (3 Server, gestaffelt) | © OSM-Mitwirkende, ODbL |
 | Ortssuche | Nominatim | Nutzungsbedingungen beachten (sparsame Nutzung) |
@@ -316,7 +330,7 @@ scripts/           Prüfskript mit echten Höhendaten
 ## Nächste Schritte (Roadmap)
 
 - **Phase 2 – Abfluss & Zeitreihen:** Pegel anbinden (NVE Norwegen, SMHI Schweden, SYKE Finnland,
-  ARSO Slowenien, BAFU) sowie GloFAS-Modellabfluss für Gebiete ohne Pegel. Sentinel-2-Szenen mit
+  ARSO Slowenien, BAFU); ohne Pegel Hinweise aus Wetter und Jahreszeit (kein Modellabfluss). Sentinel-2-Szenen mit
   dem Abfluss am Aufnahmetag verknüpfen und per Schieberegler vergleichen.
 - **Höhenmodelle Skandinavien:** Lantmäteriet (Schweden) und Maanmittauslaitos (Finnland) analog zu Kartverket.
 - **Blöcke und Weißwasser automatisch erkennen:** Ein Prototyp auf dem slowenischen 25-cm-Orthofoto

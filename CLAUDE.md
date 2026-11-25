@@ -16,6 +16,9 @@ Ausführliche Doku (Datenquellen, Verfahren, Referenzvergleiche): `README.md`.
 4. Kontingent schonen: Arbeit bündeln, lange Testläufe nur wenn nötig.
 
 ## Feste Vorgaben
+- **Keine Modell-Abflusszahlen anzeigen** (Nutzerentscheidung 25.11.2026): nur gemessene Pegelwerte bzw. klar
+  gekennzeichnete Schätzungen aus Nachbarpegeln; sonst Hinweise aus Wetter/Jahreszeit ohne Zahl zum Abfluss.
+  Begründung: GloFAS-Abgleich an 223 Pegeln – meist um ein Mehrfaches daneben (README).
 - **Keine Kosten:** kein eigener Server, keine kostenpflichtigen APIs. Statische App auf GitHub
   Pages; Hilfsjobs nur als GitHub Actions (öffentliches Repo → kostenlos).
 - **Schlüssel nie ins Repo oder in die Umgebung:** NVE-HydAPI-Schlüssel ist persönlich und liegt
@@ -34,7 +37,8 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/analysis.ts` | Profil (isoton, geglättet), Gefälleklassen, Hotspots, Steilstufen (≥ 8 m / 100 m) |
 | `src/narrows.ts` | Schluchten (Talquerschnitt), verdeckte Klammen, optionale Sentinel-Engstellen |
 | `src/power.ts` | Wucht = Strömungsleistung Ω = ρ·g·Q·S, kombinierte Bewertung, Wellen → Fließgeschwindigkeit |
-| `src/discharge.ts` | GloFAS-Modellabfluss (Open-Meteo Flood API), Länderlinks zu offiziellen Pegeln |
+| `src/discharge.ts` | GloFAS (Open-Meteo Flood API) – nur noch intern zur Pegelauswahl, nicht anzeigen; Länderlinks zu Pegeln |
+| `src/weather.ts` | Hinweise ohne Pegel: Regen/Schnee/Schneeschmelze vor dem Tag (Open-Meteo ERA5) + Jahreszeit → Tendenz |
 | `src/gauges.ts` | Offizielle Pegel: SMHI, SYKE, NVE, PEGELONLINE, BAFU, ARSO, HD Tirol, Hub'Eau (FR), Südtirol; `matchGauge` (auch Pegel bis 5 km ober-/unterhalb, interpoliert) |
 | `src/estimate.ts` | Abfluss für Pegel ohne Q aus Nachbarpegeln (Einzugsgebiet, Flusskilometer, Ausleitungs-Erkennung) |
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |

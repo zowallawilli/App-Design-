@@ -14,7 +14,8 @@ import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
-import { flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, summerMean, type DischargeSeries, type FlowState } from "./discharge";
+import { officialGauges, riverCell, seriesFor } from "./discharge";
+import { assess, captureNote, samplePoints, weatherBefore, type Conditions } from "./weather";
 import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type GaugeMatch } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 
@@ -163,14 +164,12 @@ let riverName = "";
 let putIn: LngLat | null = null;
 let drawPts: LngLat[] = [];
 interface FlowInfo {
-  imagery: (ImageryStretch & { flow: FlowState | null })[];
-  series: DischargeSeries | null;
-  today: FlowState | null;
-  mq: number;
-  summer: number;
-  /** Eichung an einem gemessenen Pegel (Faktor gemessen ÷ Modell) */
-  /** offizieller Pegel an der Strecke (gemessene Werte, Eichfaktor fürs Modell) */
+  imagery: ImageryStretch[];
+  /** offizieller Pegel an der Strecke (gemessene Werte) */
   gauge: GaugeMatch | null;
+  /** Hinweise aus Wetter und Jahreszeit je Tag (Aufnahmetage und heute) */
+  conditions: Map<string, Conditions>;
+  today: string;
   gaugeErrors: string[];
   error?: string;
 }
@@ -388,7 +387,7 @@ function showResults() {
     mode === "gradient"
       ? "Farben nach Gefälle allein."
       : rq.q === null
-        ? `Wucht-Bewertung wartet auf Abflussdaten (${rq.label}) – bis dahin nach Gefälle.`
+        ? `Wucht-Bewertung braucht einen Abfluss (${rq.label}) – bis dahin nach Gefälle.`
         : `${mode === "power" ? "Farben nach Wucht" : "Farben nach der schwierigeren Einstufung aus Gefälle und Wucht"} · Abfluss: ${rq.label} · Strömungsleistung Ø ${Math.round(streamPower(rq.q, current.analysis.meanGradient))} W/m.`;
 
   src("section").setData({
@@ -537,28 +536,27 @@ function drawChart() {
   });
 }
 
-const LEVEL_COLOR: Record<string, string> = { "sehr niedrig": "#b2182b", niedrig: "#ef8a62", mittel: "#4d9221", hoch: "#2166ac", "sehr hoch": "#053061" };
+const TENDENCY_COLOR: Record<string, string> = { "eher niedrig": "#ef8a62", unauffällig: "#4d9221", "eher erhöht": "#4393c3", "eher hoch": "#2166ac" };
 
 async function loadFlowInfo(a: Analysis, id: number) {
   const pts = a.profile.map((p) => ({ d: p.d, p: p.p }));
   const line = a.profile.map((p) => p.p);
   let info: FlowInfo;
   try {
+    // GloFAS-Modell nur noch intern: hilft beim Auswählen des richtigen Pegels (gleicher Fluss,
+    // kein Seitenbach) – angezeigt wird es nicht, dafür ist es zu ungenau.
     const [imagery, cell] = await Promise.all([imageryAlong(pts).catch(() => []), riverCell(line).catch(() => null)]);
     const series = cell ? await seriesFor(cell).catch(() => null) : null;
-    const ld = series ? latestDate(series) : null;
-    const { match: gauge, errors: gaugeErrors } = await matchGauge(line, series, imagery.map((im) => im.date)).catch((e) => ({ match: null, errors: [String(e)] }));
-    info = {
-      imagery: imagery.map((im) => ({ ...im, flow: series ? flowOn(series, im.date) : null })),
-      series,
-      today: series && ld ? flowOn(series, ld) : null,
-      mq: series ? meanFlow(series) : NaN,
-      summer: series ? summerMean(series) : NaN,
-      gauge,
-      gaugeErrors,
-    };
+    const dates = [...new Set(imagery.map((im) => im.date))];
+    const today = new Date().toISOString().slice(0, 10);
+    const wpts = samplePoints(line);
+    const [{ match: gauge, errors: gaugeErrors }, conds] = await Promise.all([
+      matchGauge(line, series, dates).catch((e) => ({ match: null, errors: [String(e)] })),
+      Promise.all([...dates, today].map(async (d) => [d, assess(d, line[0], await weatherBefore(wpts, d).catch(() => null))] as const)),
+    ]);
+    info = { imagery, gauge, gaugeErrors, conditions: new Map(conds), today };
   } catch (e) {
-    info = { imagery: [], series: null, today: null, mq: NaN, summer: NaN, gauge: null, gaugeErrors: [], error: (e as Error).message };
+    info = { imagery: [], gauge: null, gaugeErrors: [], conditions: new Map(), today: new Date().toISOString().slice(0, 10), error: (e as Error).message };
   }
   if (id !== runId && current?.analysis !== a) return;
   if (current?.analysis !== a) return;
@@ -570,7 +568,7 @@ async function loadFlowInfo(a: Analysis, id: number) {
 // ---------- Wucht-Bewertung ----------
 const rateMode = () => $<HTMLSelectElement>("rate-mode").value as RatingMode;
 
-/** Abfluss für die Wucht-Bewertung je nach Auswahl (m³/s), mit Pegel-Eichung falls vorhanden. */
+/** Abfluss für die Wucht-Bewertung: nur gemessene (oder aus Pegeln geschätzte) bzw. selbst eingetragene Werte. */
 function ratingQ(): { q: number | null; label: string } {
   const f = current?.flow;
   const src = $<HTMLSelectElement>("q-src").value;
@@ -578,20 +576,23 @@ function ratingQ(): { q: number | null; label: string } {
     const v = Number($<HTMLInputElement>("q-own").value.replace(",", "."));
     return v > 0 ? { q: v, label: `eigener Wert ${v} m³/s` } : { q: null, label: "eigenen Abfluss eingeben" };
   }
-  // „heute“ und „Pegel“: gemessener Wert hat Vorrang vor dem Modell – auch wenn das Modell fehlt
-  if ((src === "gauge" || src === "today") && f?.gauge?.latest)
+  const g = f?.gauge;
+  if (src === "image" && g) {
+    const im = f!.imagery.find((x) => g.onDates.has(x.date));
+    if (im) {
+      const q = g.onDates.get(im.date)!;
+      return { q, label: `am Aufnahmetag ${im.date.split("-").reverse().join(".")} ${g.gauge.estimate ? "≈" : "gemessen"} ${fmtQ1(q)} m³/s (Pegel ${g.gauge.name})` };
+    }
+    return { q: null, label: "kein Pegelwert am Aufnahmetag" };
+  }
+  if (g?.latest)
     return {
-      q: f.gauge.latest.q,
-      label: f.gauge.gauge.estimate
-        ? `heute ≈ ${fmtQ1(f.gauge.latest.q)} m³/s am Pegel ${f.gauge.gauge.name} (${f.gauge.gauge.estimate.label})`
-        : `heute gemessen am Pegel ${f.gauge.gauge.name}: ${fmtQ1(f.gauge.latest.q)} m³/s`,
+      q: g.latest.q,
+      label: g.gauge.estimate
+        ? `heute ≈ ${fmtQ1(g.latest.q)} m³/s am Pegel ${g.gauge.name} (${g.gauge.estimate.label})`
+        : `heute gemessen am Pegel ${g.gauge.name}: ${fmtQ1(g.latest.q)} m³/s`,
     };
-  if (!f?.series) return { q: null, label: "Abfluss nicht verfügbar" };
-  const k = f.gauge?.factor ?? 1;
-  const tag = f.gauge?.factor ? ` (geeicht an Pegel ${f.gauge.gauge.name})` : " (Modell)";
-  if (src === "mq") return { q: f.mq * k, label: `Mittel MQ ≈ ${fmtQ1(f.mq * k)} m³/s${tag}` };
-  if (src === "summer") return { q: f.summer * k, label: `Sommer-Mittel ≈ ${fmtQ1(f.summer * k)} m³/s${tag}` };
-  return f.today ? { q: f.today.q * k, label: `heute ≈ ${fmtQ1(f.today.q * k)} m³/s${tag}` } : { q: null, label: "kein Wert für heute" };
+  return { q: null, label: f ? "kein Pegel – eigenen Abfluss eintragen" : "Pegel werden gesucht" };
 }
 
 function fmtQ1(q: number) {
@@ -599,8 +600,9 @@ function fmtQ1(q: number) {
 }
 
 function updateQOptions() {
-  const opt = $<HTMLSelectElement>("q-src").querySelector<HTMLOptionElement>('option[value="gauge"]');
-  if (opt) opt.hidden = !current?.flow?.gauge?.latest;
+  const opt = $<HTMLSelectElement>("q-src").querySelector<HTMLOptionElement>('option[value="image"]');
+  const g = current?.flow?.gauge;
+  if (opt) opt.hidden = !(g && current!.flow!.imagery.some((im) => g.onDates.has(im.date)));
 }
 
 /** Analyse mit der gewählten Bewertung (Gefälle / Wucht / kombiniert). */
@@ -633,77 +635,67 @@ function renderFlowInfo() {
   }
   const fmtDate = (iso: string) => iso.split("-").reverse().join(".");
   const fmtQ = (q: number) => (q >= 10 ? q.toFixed(0) : q.toFixed(1)).replace(".", ",");
-  const lvl = (s: FlowState | null) =>
-    s ? `<span class="lvl" style="background:${LEVEL_COLOR[s.label]}">${s.label}</span>` : "–";
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const gm = f.gauge;
   const est = gm?.gauge.estimate;
   const estHint = est ? `<br><span class="hint">${{ oberhalb: "geschätzt aus Pegeln oberhalb", unterhalb: "geschätzt aus Pegel unterhalb", zwischen: "geschätzt aus Pegeln ober- und unterhalb" }[est.method]}</span>` : "";
-  const measured = (d: string, model?: number) => {
+  const measured = (d: string) => {
     const q = gm?.onDates.get(d);
-    if (q !== undefined) return est ? `≈ <b>${fmtQ(q)} m³/s</b>${estHint}` : `<b>${fmtQ(q)} m³/s</b>`;
-    // Pegel ohne Historie, aber Modell geeicht: Schätzung für den Aufnahmetag
-    if (gm?.factor && model !== undefined) return `≈ ${fmtQ(model * gm.factor)} m³/s<br><span class="hint">geschätzt (Modell × ${gm.factor.toFixed(2).replace(".", ",")})</span>`;
-    if (gm && gm.gauge.provider === "TIROL") return `<span class="hint">nicht im Archiv (Tagesmittel erst ab ${fmtDate(TIROL_ARCHIVE_START)})</span>`;
-    return gm && !hasHistory(gm.gauge.provider) ? "<span class=\"hint\">keine Historie</span>" : "–";
+    if (q !== undefined) return `${est ? "≈ " : ""}<b>${fmtQ(q)} m³/s</b>${estHint}`;
+    if (!gm) return `<span class="hint">kein Pegel</span>`;
+    if (gm.gauge.provider === "TIROL") return `<span class="hint">kein Wert (Tiroler Archiv erst ab ${fmtDate(TIROL_ARCHIVE_START)})</span>`;
+    return `<span class="hint">${hasHistory(gm.gauge.provider) ? "kein Wert für diesen Tag" : "Anbieter hat keine Werte der Vergangenheit"}</span>`;
+  };
+  const hints = (d: string) => {
+    const c = f.conditions.get(d);
+    if (!c) return `<span class="hint">Wetterdaten nicht abrufbar</span>`;
+    return (
+      `<span class="lvl" style="background:${TENDENCY_COLOR[c.tendency]}">${c.tendency}</span>` +
+      `<ul class="wx">${c.hints.map((h) => `<li>${h.effect > 0 ? "▲" : h.effect < 0 ? "▼" : "•"} ${esc(h.text)}</li>`).join("")}` +
+      `${c.weather ? "" : "<li>• Wetterdaten gerade nicht abrufbar – Tendenz nur aus der Jahreszeit.</li>"}</ul>`
+    );
   };
   const rows = f.imagery
     .map(
       (im) =>
-        `<tr><td>km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)}</td>` +
-        `<td><b>${fmtDate(im.date)}</b><br>${im.provider} · ${im.resolution.toString().replace(".", ",")} m</td>` +
-        `<td class="q">${im.flow ? `${fmtQ(im.flow.q)} m³/s<br>${lvl(im.flow)}` : "–"}</td>` +
-        (gm ? `<td class="q">${measured(im.date, im.flow?.q)}</td>` : "") +
-        `</tr>`,
+        `<tr><td><b>${fmtDate(im.date)}</b><br><span class="hint">km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)}</span></td>` +
+        `<td>${esc(im.provider)} · ${im.resolution.toString().replace(".", ",")} m<br><span class="hint">${esc(captureNote(im.provider, im.name))}</span></td>` +
+        `<td class="q">${measured(im.date)}</td>` +
+        `<td>${hints(im.date)}</td></tr>`,
     )
     .join("");
-  const today = f.today || gm?.latest
-    ? `<tr><td>heute</td><td><b>${fmtDate(f.today?.date ?? gm!.latest!.time.slice(0, 10))}</b></td><td class="q">${f.today ? `${fmtQ(f.today.q)} m³/s<br>${lvl(f.today)}` : "–"}</td>` +
-      (gm ? `<td class="q">${gm.latest ? `${est ? "≈ " : ""}<b>${fmtQ(gm.latest.q)} m³/s</b>${estHint}<br><span class="hint">${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""}</span>` : "–"}</td>` : "") +
-      `</tr>`
-    : "";
-  const first = f.imagery.find((im) => im.flow);
-  // Verhältnis heute ÷ Aufnahmetag: gemessen, wenn möglich – sonst Modell
+  const today =
+    `<tr><td><b>heute</b><br><span class="hint">${fmtDate(f.today)}</span></td><td>–</td>` +
+    `<td class="q">${gm?.latest ? `${est ? "≈ " : ""}<b>${fmtQ(gm.latest.q)} m³/s</b>${estHint}<br><span class="hint">${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""}</span>` : `<span class="hint">${gm ? "kein aktueller Wert" : "kein Pegel"}</span>`}</td>` +
+    `<td>${hints(f.today)}</td></tr>`;
+  // Verhältnis heute ÷ Aufnahmetag nur aus gemessenen Werten
   const measuredFirst = f.imagery.map((im) => ({ im, q: gm?.onDates.get(im.date) })).find((x) => x.q !== undefined);
   const ratio =
     measuredFirst && gm?.latest
       ? `<p class="hint">Heute fließt laut Pegel etwa <b>${(gm.latest.q / measuredFirst.q!).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(measuredFirst.im.date)}: ${fmtQ(measuredFirst.q!)} m³/s ${est ? "geschätzt aus Nachbarpegeln" : "gemessen"}).</p>`
-      : first?.flow && f.today
-        ? `<p class="hint">Heute fließt etwa <b>${(f.today.q / first.flow.q).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(first.date)}, Modell). ${gm?.factor ? `Mittlerer Abfluss geeicht: ~${fmtQ(f.mq * gm.factor)} m³/s (Modell allein: ~${fmtQ(f.mq)} m³/s).` : `Mittlerer Abfluss (MQ, Modell): ~${fmtQ(f.mq)} m³/s.`}</p>`
-        : "";
+      : "";
   const PROVIDER_LABEL: Record<string, string> = { SMHI: "SMHI (Schweden)", SYKE: "SYKE (Finnland)", NVE: "NVE (Norwegen)", PEGELONLINE: "PEGELONLINE (WSV)", BAFU: "BAFU (Schweiz)", ARSO: "ARSO (Slowenien)", TIROL: "Hydrographischer Dienst Tirol", HUBEAU: "Hub'Eau (Frankreich)", BZ: "Hydrographisches Amt Südtirol" };
   const cal = gm
-    ? `<p class="hint"><b>Offizieller Pegel:</b> <a href="${gm.gauge.url}" target="_blank" rel="noopener">${gm.gauge.name}</a>${gm.gauge.river ? ` (${gm.gauge.river})` : ""} · ${PROVIDER_LABEL[gm.gauge.provider]} · ${gm.gauge.distanceKm < 0.1 ? "an der Strecke" : `${gm.gauge.distanceKm.toFixed(1).replace(".", ",")} km von der Linie`}` +
-      `${gm.gauge.note ? ` · ${gm.gauge.note.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}` : ""}. ` +
-      (gm.factor
-        ? `Das Modell lag zuletzt um den Faktor ${gm.factor.toFixed(2).replace(".", ",")} daneben${gm.correlation !== null ? ` (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")})` : ""} – Wucht-Bewertung und MQ (≈ ${fmtQ(f.mq * gm.factor)} m³/s) sind damit geeicht.`
-        : gm.correlation !== null
-          ? `Das Modell passt hier schlecht zum Pegel (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")}) – die gemessenen Werte sind maßgeblich.`
-          : !f.series
-            ? "Modellabfluss gerade nicht abrufbar – es zählen die gemessenen Werte."
-            : !gm.latest
-            ? "Dieser Pegel veröffentlicht keinen Abfluss (nur die Wasserstandsklasse) – die Wucht-Bewertung nutzt deshalb das Modell. Für kleinere oder ausgeleitete Flüsse liegt es oft deutlich zu hoch; bei Bedarf unter „Abfluss für Wucht“ einen eigenen Wert eintragen."
-            : gm.gauge.provider === "TIROL"
-              ? `Das Modell lässt sich hier noch nicht eichen: Tirol veröffentlicht keine Tageswerte der Vergangenheit, das eigene Archiv wird seit ${fmtDate(TIROL_ARCHIVE_START)} täglich ergänzt – ab etwa 10 Tagen werden Verlauf und Eichfaktor berechnet. Bis dahin sind die ${est ? "geschätzten" : "gemessenen"} Werte maßgeblich.`
-              : "Das Modell lässt sich an diesem Pegel nicht eichen (keine Tageswerte der letzten Wochen) – die gemessenen Werte sind maßgeblich.") +
-      `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o) => `<a href="${o.url}" target="_blank" rel="noopener">${o.name}</a>`).join(", ")}.` : ""}</p>`
-    : `<p class="hint">Kein offizieller Pegel mit Abfluss an dieser Strecke gefunden${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " – für Norwegen bitte den kostenlosen NVE-Schlüssel unter „Analyse-Parameter“ eintragen" : ""}.</p>`;
-  const gauges = (gm ? [] : officialGauges(current.analysis.profile[0].p))
+    ? `<p class="hint"><b>Offizieller Pegel:</b> <a href="${gm.gauge.url}" target="_blank" rel="noopener">${esc(gm.gauge.name)}</a>${gm.gauge.river ? ` (${esc(gm.gauge.river)})` : ""} · ${PROVIDER_LABEL[gm.gauge.provider]} · ${gm.gauge.distanceKm < 0.1 ? "an der Strecke" : `${gm.gauge.distanceKm.toFixed(1).replace(".", ",")} km von der Linie`}` +
+      `${gm.gauge.note ? ` · ${esc(gm.gauge.note)}` : ""}.` +
+      (!gm.latest ? " Dieser Pegel veröffentlicht keinen Abfluss (nur die Wasserstandsklasse) – für die Wucht-Bewertung bitte einen eigenen Wert eintragen." : "") +
+      `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o) => `<a href="${o.url}" target="_blank" rel="noopener">${esc(o.name)}</a>`).join(", ")}.` : ""}</p>`
+    : `<p class="hint">Kein offizieller Pegel mit Abfluss an dieser Strecke gefunden${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " – für Norwegen bitte den kostenlosen NVE-Schlüssel unter „Analyse-Parameter“ eintragen" : ""}. Der Wasserstand lässt sich dann nur grob aus Wetter und Jahreszeit einschätzen (Spalte „Hinweise“).</p>`;
+  const links = (gm ? [] : officialGauges(current.analysis.profile[0].p))
     .map((g) => `<a href="${g.url}" target="_blank" rel="noopener">${g.label}</a>`)
     .join(" · ");
   el.innerHTML =
-    (f.imagery.length || today
-      ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Modell*</th>${gm ? `<th>${est ? "Pegel (geschätzt)" : "gemessen"}</th>` : ""}</tr>${rows}${today}</table>`
-      : `<p class="hint">Keine Bild- oder Abflussdaten verfügbar${f.error ? ` (${f.error})` : ""}.</p>`) +
+    (f.imagery.length || gm
+      ? `<table><tr><th>Aufnahmetag</th><th>Luftbild</th><th>Pegel</th><th>Hinweise (keine Messung)</th></tr>${rows}${today}</table>`
+      : `<p class="hint">Keine Bilddaten verfügbar${f.error ? ` (${esc(f.error)})` : ""}.</p>`) +
     ratio +
     cal +
-    `<p class="hint">* Modellabfluss GloFAS (Copernicus, über Open-Meteo), Rasterpunkt ${f.series ? `${f.series.cell.lat.toFixed(3)}, ${f.series.cell.lon.toFixed(3)}` : "–"} (5-km-Raster, auf der Karte als blauer Punkt). ` +
-    `Einordnung im Vergleich zu allen Jahren um dieselbe Jahreszeit. Für kleine Flüsse und nahe Mündungen nur grob – mit dem Pegel vor Ort vergleichen${gauges ? `: ${gauges}` : ""}.</p>`;
+    `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen („≈“ = aus Nachbarpegeln geschätzt). ` +
+    `Hinweise: Regen, Schneefall und Schneehöhe der zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit der Region – eine Tendenz, keine Abflussmessung.` +
+    `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p>`;
   src("gauge").setData({
     type: "FeatureCollection",
-    features: [
-      ...(f.series ? [{ type: "Feature" as const, properties: { kind: "model" }, geometry: { type: "Point" as const, coordinates: [f.series.cell.lon, f.series.cell.lat] } }] : []),
-      ...(gm ? [{ type: "Feature" as const, properties: { kind: "gauge", name: gm.gauge.name }, geometry: { type: "Point" as const, coordinates: [gm.gauge.lon, gm.gauge.lat] } }] : []),
-    ],
+    features: gm ? [{ type: "Feature" as const, properties: { kind: "gauge", name: gm.gauge.name }, geometry: { type: "Point" as const, coordinates: [gm.gauge.lon, gm.gauge.lat] } }] : [],
   });
 }
 
@@ -821,20 +813,22 @@ function finishWave() {
     const prof = current.analysis.profile;
     const near = prof.reduce((b, q) => (haversine(q.p, pts[0]) < haversine(b.p, pts[0]) ? q : b));
     const st = current.flow.imagery.find((im) => near.d >= im.d0 && near.d <= im.d1);
-    if (st?.flow && haversine(near.p, pts[0]) < 500) {
+    if (st && haversine(near.p, pts[0]) < 500) {
       const measuredQ = current.flow.gauge?.onDates.get(st.date);
-      const k = current.flow.gauge?.factor ?? 1;
+      const c = current.flow.conditions.get(st.date);
       imgFlow =
         measuredQ !== undefined
-          ? `${measuredQ.toFixed(measuredQ < 10 ? 1 : 0)} (${current.flow.gauge!.gauge.estimate ? "geschätzt aus Nachbarpegeln" : "gemessen"}, Pegel ${current.flow.gauge!.gauge.name})`
-          : `${(st.flow.q * k).toFixed(st.flow.q * k < 10 ? 1 : 0)} (${st.flow.label}, ${current.flow.gauge?.factor ? "geeicht" : "Modell"})`;
+          ? `Abfluss am Aufnahmetag ${current.flow.gauge!.gauge.estimate ? "≈" : ""} ${measuredQ.toFixed(measuredQ < 10 ? 1 : 0)} m³/s (${current.flow.gauge!.gauge.estimate ? "geschätzt aus Nachbarpegeln" : "gemessen"}, Pegel ${current.flow.gauge!.gauge.name})`
+          : c
+            ? `kein Pegelwert am Aufnahmetag – Wasserstand laut Wetter/Jahreszeit ${c.tendency}`
+            : "";
     }
   }
   const html =
     `<strong>Wellenabstand Ø ${lambda.toFixed(1).replace(".", ",")} m</strong> (${pts.length} Kämme, Streuung ${spread.toFixed(1).replace(".", ",")} m)<br>` +
     `→ Strömung ≈ <b>${v.toFixed(1).replace(".", ",")} m/s</b> (${(v * 3.6).toFixed(0)} km/h)<br>` +
     `Wellenhöhe höchstens ≈ ${(lambda / 7).toFixed(1).replace(".", ",")} m (steilere Wellen brechen)<br>` +
-    `<span style="color:var(--muted)">Gilt für stehende Wellen. ${img ? `Bild ${img}` : ""}${imgFlow ? ` · Abfluss am Aufnahmetag ≈ ${imgFlow} m³/s` : ""}</span>`;
+    `<span style="color:var(--muted)">Gilt für stehende Wellen. ${img ? `Bild ${img}` : ""}${imgFlow ? ` · ${imgFlow}` : ""}</span>`;
   new maplibregl.Popup({ maxWidth: "320px" }).setLngLat(pts[pts.length - 1]).setHTML(html).addTo(map);
   setStatus(`Wellen: Ø ${lambda.toFixed(1)} m Abstand → ca. ${v.toFixed(1)} m/s Strömung.`);
   drawPts = [];
