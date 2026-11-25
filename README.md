@@ -119,7 +119,21 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
 - **Gemessene Pegel (offizielle, geeichte Messstellen):** Die App sucht Pegel mit Abfluss, die höchstens
   1,5 km von der Flusslinie entfernt sind. Bei mehreren Kandidaten gewinnt der, dessen Verlauf zum Modell
   passt (gleicher Fluss, kein Seitenbach). Gemessene Werte haben überall Vorrang vor dem Modell; das Modell
-  wird am Pegel geeicht, wenn der Verlauf passt.
+  wird am Pegel geeicht, wenn der Verlauf passt (Korrelation r ≥ 0,6 über die letzten 45 Tage, mind. 10 Tage).
+- **Pegel knapp neben der Strecke:** Liegt keiner innerhalb von 1,5 km, sucht die App bis 5 km oberhalb des
+  Einstiegs und unterhalb des Ausstiegs. Je ein Pegel ober- und unterhalb am selben Fluss → Wert nach Lage
+  interpoliert („geschätzt aus Pegeln ober- und unterhalb“, z. B. Soča Srpenica–Trnovo zwischen Log Čezsoški und
+  Kobarid). Ein einzelner Pegel wird nur genommen, wenn seine Wassermenge zum Modell passt (Faktor 0,2–5).
+- **Geschätzt aus Nachbarpegeln (Tirol):** Pegel ohne veröffentlichten Abfluss (Inn bei Imst und Magerbach)
+  bekommen einen Schätzwert aus Einzugsgebiet und Flusskilometer der Nachbarpegel (`src/estimate.ts`):
+  Hauptfluss-Pegel oberhalb + Zubringer, die dazwischen münden, Rest nach Fläche; Gegenprobe mit dem Pegel
+  unterhalb (abzüglich gemessener Zubringer). Ist die Abflussspende oberhalb weniger als halb so groß, liegt
+  dort eine Restwasserstrecke (Kraftwerksausleitung) – dann gilt der Wert von unterhalb. In der Tabelle steht
+  immer „≈ … geschätzt aus Pegeln oberhalb / Pegel unterhalb“.
+  Beispiel Inn bei Imst (25.11.2026): *Landeck Perjen* liegt **unterhalb** der Sanna-Mündung (3 503 km², enthält
+  die 727 km² der Sanna) und in der Restwasserstrecke des Kraftwerks Imst – Perjen + Landeck Bruggen würde die
+  Sanna doppelt zählen und die ausgeleitete Wassermenge übersehen (~13 m³/s). Geschätzt aus Innsbruck − Ötztaler
+  Ache (Tumpen) − Gurglbach (Nassereith), nach Fläche: **~61 m³/s** (Modell 76 m³/s). Magerbach: ~75 m³/s.
 
 | Anbieter | Land | Schlüssel | aktuell | Tageswerte der Vergangenheit (Aufnahmetag) |
 |---|---|---|---|---|
@@ -129,13 +143,39 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
 | PEGELONLINE | Deutschland (Bundeswasserstraßen) | – | ✓ | nur 31 Tage |
 | BAFU (über api.existenz.ch) | Schweiz | – | ✓ | – |
 | ARSO | Slowenien | – | ✓ (mit Hochwasserstufen) | – |
-| Hydrographischer Dienst Tirol | Österreich (Tirol) | – | ✓ (über Spiegel, alle 30 min) | – |
+| Hydrographischer Dienst Tirol | Österreich (Tirol) | – | ✓ (über Spiegel, alle 30 min) | eigenes Archiv ab 24.11.2026 (bis 400 Tage) |
+| Hub'Eau Hydrométrie | Frankreich | – | ✓ (observations_tr) | ✓ Tagesmittel QmnJ, Jahrzehnte |
+| Amt für Hydrologie Südtirol | Italien (Prov. Bozen) | – | ✓ | ✓ 10-min-Werte über Jahre (Tagesmittel daraus) |
 | Veðurstofa Íslands | Island | – | keine offene Schnittstelle gefunden – nur Link | – |
+
+**Geprüfte Quellen (Stand 25.11.2026):**
+
+| Quelle | Abdeckung | aktuell / Historie | CORS | Nutzungsbedingungen | Stand in der App |
+|---|---|---|---|---|---|
+| [Hub'Eau Hydrométrie](https://hubeau.eaufrance.fr/page/api-hydrometrie) (`hubeau.eaufrance.fr`) | Frankreich, ~4 200 Stationen in Betrieb | Echtzeit ~1 Monat, Tagesmittel seit Jahrzehnten; Werte in l/s | ✓ `*` | Licence Ouverte Etalab 2.0, ohne Schlüssel | eingebunden |
+| [Open Data Südtirol, Meteo/Hydro-Webservice](https://data.civis.bz.it/de/dataset/misure-meteo-e-idrografiche) (`geoservices.buergernetz.bz.it/services/meteo/v1`) | Südtirol, 27 Abflusspegel | aktuell (`sensors`), 10-min-Zeitreihen über Jahre (`timeseries`) | ✓ `*` | offenes Datenportal der Provinz Bozen; alter Host `daten.buergernetz.bz.it` ist abgeschaltet | eingebunden |
+| Hydrographischer Dienst Tirol (`hydro.tirol.gv.at`) | Tirol, 44 Pegel mit aktuellem Q | nur aktueller Stand + Tagesmittel von gestern | ✗ | öffentlich, keine dokumentierte API | Spiegel + Archiv per Action |
+| [GKD Bayern](https://www.gkd.bayern.de/) | Bayern | Downloads je Station (CSV/ZIP), CC BY 4.0 | ✗, automatisierte Abrufe werden abgewiesen („Request Rejected“) | keine dokumentierte Schnittstelle | nur Link; Bundeswasserstraßen über PEGELONLINE |
+| Vorarlberg (vowis) / Salzburg | Landespegel | nur Webseiten/PDF | – | keine offene Schnittstelle gefunden | – |
+| ARPA Piemonte (WebGIS-REST) | Piemont | nur Monats-/Jahresmittel ausgewählter Stationen | ✓ | – | nicht nutzbar für aktuelle Werte |
+| Valle d'Aosta (Centro Funzionale) | Aostatal | Bulletins als PDF | – | keine offene Schnittstelle | – |
+| Veðurstofa Íslands (`api.vedur.is`) | Island | API nur für Wetter, Gletscher, Beben, Vulkane – **kein Abfluss** | – | – | weiter nur Link |
+
+**Skandinavien geprüft (25.11.2026):** SMHI (Piteälven, z. B. Stenudden, Sikfors) und SYKE (Oulankajoki, Paikka
+1426) liefern weiter Daten mit CORS `*`. NVE HydAPI antwortet ohne Schlüssel mit 401 und erlaubt den Header
+`X-API-Key` per CORS – mit dem eigenen Schlüssel im Browser funktioniert die Sjoa also; ohne ihn zeigt die App
+nur das Modell und den Hinweis auf den Schlüssel.
 
 **Tirol:** hydro.tirol.gv.at erlaubt keinen direkten Abruf aus dem Browser (kein CORS). Die GitHub Action
 `.github/workflows/pegel-tirol.yml` holt die Daten deshalb alle 30 Minuten, kürzt sie auf die Abflusspegel
 (`scripts/tirol-mirror.mjs`) und legt sie als `tirol.json` in den Branch `pegeldaten`; die App liest sie von
-raw.githubusercontent.com. Kostenlos, weil das Repository öffentlich ist. Einige Pegel (z. B. Inn bei Imst
+raw.githubusercontent.com. Kostenlos, weil das Repository öffentlich ist. Seit 24.11.2026 legt die Action
+außerdem je Pegel ein **Archiv der Tagesmittel** an (`tirol-archiv/<nummer>.json`): das offizielle Tagesmittel
+(Q „Day.Mean“, am Folgetag veröffentlicht) und – für Pegel ohne Tagesmittel wie Landeck Perjen – ein eigenes
+Mittel aus den Halbstunden-Abrufen. Gespeichert werden höchstens 400 Tage (~10 kB je Pegel, gesamt < 1 MB);
+der Branch wird bei jedem Lauf als einzelner Commit neu geschrieben und wächst nicht. Nach etwa 10 Tagen
+berechnet die App daraus Verlauf (r) und Eichfaktor zum Modell, nach Wochen auch Werte am Aufnahmetag neuer
+Luftbilder. Kann das bestehende Archiv nicht geladen werden, bricht die Action ab, statt es zu überschreiben. Einige Pegel (z. B. Inn bei Imst
 und Magerbach, unterhalb der Kraftwerksausleitungen) veröffentlichen nur eine Wasserstandsklasse
 („niedrig“, „< MW“ …), keinen Abfluss. Hinweis: GitHub pausiert zeitgesteuerte Actions nach 60 Tagen ohne
 Commit im Repository – dann unter *Actions → Pegel Tirol spiegeln* wieder aktivieren.

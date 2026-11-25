@@ -15,7 +15,7 @@ import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
 import { flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, summerMean, type DischargeSeries, type FlowState } from "./discharge";
-import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, type GaugeMatch } from "./gauges";
+import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type GaugeMatch } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 
 // ---------- DOM ----------
@@ -579,7 +579,13 @@ function ratingQ(): { q: number | null; label: string } {
     return v > 0 ? { q: v, label: `eigener Wert ${v} m³/s` } : { q: null, label: "eigenen Abfluss eingeben" };
   }
   // „heute“ und „Pegel“: gemessener Wert hat Vorrang vor dem Modell – auch wenn das Modell fehlt
-  if ((src === "gauge" || src === "today") && f?.gauge?.latest) return { q: f.gauge.latest.q, label: `heute gemessen am Pegel ${f.gauge.gauge.name}: ${fmtQ1(f.gauge.latest.q)} m³/s` };
+  if ((src === "gauge" || src === "today") && f?.gauge?.latest)
+    return {
+      q: f.gauge.latest.q,
+      label: f.gauge.gauge.estimate
+        ? `heute ≈ ${fmtQ1(f.gauge.latest.q)} m³/s am Pegel ${f.gauge.gauge.name} (${f.gauge.gauge.estimate.label})`
+        : `heute gemessen am Pegel ${f.gauge.gauge.name}: ${fmtQ1(f.gauge.latest.q)} m³/s`,
+    };
   if (!f?.series) return { q: null, label: "Abfluss nicht verfügbar" };
   const k = f.gauge?.factor ?? 1;
   const tag = f.gauge?.factor ? ` (geeicht an Pegel ${f.gauge.gauge.name})` : " (Modell)";
@@ -630,11 +636,14 @@ function renderFlowInfo() {
   const lvl = (s: FlowState | null) =>
     s ? `<span class="lvl" style="background:${LEVEL_COLOR[s.label]}">${s.label}</span>` : "–";
   const gm = f.gauge;
+  const est = gm?.gauge.estimate;
+  const estHint = est ? `<br><span class="hint">${{ oberhalb: "geschätzt aus Pegeln oberhalb", unterhalb: "geschätzt aus Pegel unterhalb", zwischen: "geschätzt aus Pegeln ober- und unterhalb" }[est.method]}</span>` : "";
   const measured = (d: string, model?: number) => {
     const q = gm?.onDates.get(d);
-    if (q !== undefined) return `<b>${fmtQ(q)} m³/s</b>`;
+    if (q !== undefined) return est ? `≈ <b>${fmtQ(q)} m³/s</b>${estHint}` : `<b>${fmtQ(q)} m³/s</b>`;
     // Pegel ohne Historie, aber Modell geeicht: Schätzung für den Aufnahmetag
     if (gm?.factor && model !== undefined) return `≈ ${fmtQ(model * gm.factor)} m³/s<br><span class="hint">geschätzt (Modell × ${gm.factor.toFixed(2).replace(".", ",")})</span>`;
+    if (gm && gm.gauge.provider === "TIROL") return `<span class="hint">nicht im Archiv (Tagesmittel erst ab ${fmtDate(TIROL_ARCHIVE_START)})</span>`;
     return gm && !hasHistory(gm.gauge.provider) ? "<span class=\"hint\">keine Historie</span>" : "–";
   };
   const rows = f.imagery
@@ -649,7 +658,7 @@ function renderFlowInfo() {
     .join("");
   const today = f.today || gm?.latest
     ? `<tr><td>heute</td><td><b>${fmtDate(f.today?.date ?? gm!.latest!.time.slice(0, 10))}</b></td><td class="q">${f.today ? `${fmtQ(f.today.q)} m³/s<br>${lvl(f.today)}` : "–"}</td>` +
-      (gm ? `<td class="q">${gm.latest ? `<b>${fmtQ(gm.latest.q)} m³/s</b><br><span class="hint">${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""}</span>` : "–"}</td>` : "") +
+      (gm ? `<td class="q">${gm.latest ? `${est ? "≈ " : ""}<b>${fmtQ(gm.latest.q)} m³/s</b>${estHint}<br><span class="hint">${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""}</span>` : "–"}</td>` : "") +
       `</tr>`
     : "";
   const first = f.imagery.find((im) => im.flow);
@@ -657,14 +666,14 @@ function renderFlowInfo() {
   const measuredFirst = f.imagery.map((im) => ({ im, q: gm?.onDates.get(im.date) })).find((x) => x.q !== undefined);
   const ratio =
     measuredFirst && gm?.latest
-      ? `<p class="hint">Heute fließt laut Pegel etwa <b>${(gm.latest.q / measuredFirst.q!).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(measuredFirst.im.date)}: ${fmtQ(measuredFirst.q!)} m³/s gemessen).</p>`
+      ? `<p class="hint">Heute fließt laut Pegel etwa <b>${(gm.latest.q / measuredFirst.q!).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(measuredFirst.im.date)}: ${fmtQ(measuredFirst.q!)} m³/s ${est ? "geschätzt aus Nachbarpegeln" : "gemessen"}).</p>`
       : first?.flow && f.today
         ? `<p class="hint">Heute fließt etwa <b>${(f.today.q / first.flow.q).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(first.date)}, Modell). ${gm?.factor ? `Mittlerer Abfluss geeicht: ~${fmtQ(f.mq * gm.factor)} m³/s (Modell allein: ~${fmtQ(f.mq)} m³/s).` : `Mittlerer Abfluss (MQ, Modell): ~${fmtQ(f.mq)} m³/s.`}</p>`
         : "";
-  const PROVIDER_LABEL: Record<string, string> = { SMHI: "SMHI (Schweden)", SYKE: "SYKE (Finnland)", NVE: "NVE (Norwegen)", PEGELONLINE: "PEGELONLINE (WSV)", BAFU: "BAFU (Schweiz)", ARSO: "ARSO (Slowenien)", TIROL: "Hydrographischer Dienst Tirol" };
+  const PROVIDER_LABEL: Record<string, string> = { SMHI: "SMHI (Schweden)", SYKE: "SYKE (Finnland)", NVE: "NVE (Norwegen)", PEGELONLINE: "PEGELONLINE (WSV)", BAFU: "BAFU (Schweiz)", ARSO: "ARSO (Slowenien)", TIROL: "Hydrographischer Dienst Tirol", HUBEAU: "Hub'Eau (Frankreich)", BZ: "Hydrographisches Amt Südtirol" };
   const cal = gm
     ? `<p class="hint"><b>Offizieller Pegel:</b> <a href="${gm.gauge.url}" target="_blank" rel="noopener">${gm.gauge.name}</a>${gm.gauge.river ? ` (${gm.gauge.river})` : ""} · ${PROVIDER_LABEL[gm.gauge.provider]} · ${gm.gauge.distanceKm < 0.1 ? "an der Strecke" : `${gm.gauge.distanceKm.toFixed(1).replace(".", ",")} km von der Linie`}` +
-      `${gm.gauge.note ? ` · ${gm.gauge.note}` : ""}. ` +
+      `${gm.gauge.note ? ` · ${gm.gauge.note.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}` : ""}. ` +
       (gm.factor
         ? `Das Modell lag zuletzt um den Faktor ${gm.factor.toFixed(2).replace(".", ",")} daneben${gm.correlation !== null ? ` (Verlauf r = ${gm.correlation.toFixed(2).replace(".", ",")})` : ""} – Wucht-Bewertung und MQ (≈ ${fmtQ(f.mq * gm.factor)} m³/s) sind damit geeicht.`
         : gm.correlation !== null
@@ -673,7 +682,9 @@ function renderFlowInfo() {
             ? "Modellabfluss gerade nicht abrufbar – es zählen die gemessenen Werte."
             : !gm.latest
             ? "Dieser Pegel veröffentlicht keinen Abfluss (nur die Wasserstandsklasse) – die Wucht-Bewertung nutzt deshalb das Modell. Für kleinere oder ausgeleitete Flüsse liegt es oft deutlich zu hoch; bei Bedarf unter „Abfluss für Wucht“ einen eigenen Wert eintragen."
-            : "Das Modell lässt sich an diesem Pegel nicht eichen (keine Tageswerte der letzten Wochen) – die gemessenen Werte sind maßgeblich.") +
+            : gm.gauge.provider === "TIROL"
+              ? `Das Modell lässt sich hier noch nicht eichen: Tirol veröffentlicht keine Tageswerte der Vergangenheit, das eigene Archiv wird seit ${fmtDate(TIROL_ARCHIVE_START)} täglich ergänzt – ab etwa 10 Tagen werden Verlauf und Eichfaktor berechnet. Bis dahin sind die ${est ? "geschätzten" : "gemessenen"} Werte maßgeblich.`
+              : "Das Modell lässt sich an diesem Pegel nicht eichen (keine Tageswerte der letzten Wochen) – die gemessenen Werte sind maßgeblich.") +
       `${gm.others.length ? ` Weitere Pegel an der Strecke: ${gm.others.map((o) => `<a href="${o.url}" target="_blank" rel="noopener">${o.name}</a>`).join(", ")}.` : ""}</p>`
     : `<p class="hint">Kein offizieller Pegel mit Abfluss an dieser Strecke gefunden${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " – für Norwegen bitte den kostenlosen NVE-Schlüssel unter „Analyse-Parameter“ eintragen" : ""}.</p>`;
   const gauges = (gm ? [] : officialGauges(current.analysis.profile[0].p))
@@ -681,7 +692,7 @@ function renderFlowInfo() {
     .join(" · ");
   el.innerHTML =
     (f.imagery.length || today
-      ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Modell*</th>${gm ? "<th>gemessen</th>" : ""}</tr>${rows}${today}</table>`
+      ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Modell*</th>${gm ? `<th>${est ? "Pegel (geschätzt)" : "gemessen"}</th>` : ""}</tr>${rows}${today}</table>`
       : `<p class="hint">Keine Bild- oder Abflussdaten verfügbar${f.error ? ` (${f.error})` : ""}.</p>`) +
     ratio +
     cal +
@@ -815,7 +826,7 @@ function finishWave() {
       const k = current.flow.gauge?.factor ?? 1;
       imgFlow =
         measuredQ !== undefined
-          ? `${measuredQ.toFixed(measuredQ < 10 ? 1 : 0)} (gemessen, Pegel ${current.flow.gauge!.gauge.name})`
+          ? `${measuredQ.toFixed(measuredQ < 10 ? 1 : 0)} (${current.flow.gauge!.gauge.estimate ? "geschätzt aus Nachbarpegeln" : "gemessen"}, Pegel ${current.flow.gauge!.gauge.name})`
           : `${(st.flow.q * k).toFixed(st.flow.q * k < 10 ? 1 : 0)} (${st.flow.label}, ${current.flow.gauge?.factor ? "geeicht" : "Modell"})`;
     }
   }

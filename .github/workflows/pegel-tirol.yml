@@ -1,5 +1,7 @@
 # Spiegelt die Tiroler Abflusspegel (hydro.tirol.gv.at, ohne CORS) in den Branch "pegeldaten",
 # damit die App sie über raw.githubusercontent.com abrufen kann. Kostenlos (öffentliches Repo).
+# Zusätzlich wächst ein Archiv der Tagesmittel (tirol-archiv/<station>.json, höchstens 400 Tage).
+# Der Branch wird jedes Mal als einzelner Commit neu geschrieben – er wächst also nicht.
 name: Pegel Tirol spiegeln
 
 on:
@@ -25,17 +27,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Abrufen und kürzen
+      - name: Bisheriges Archiv holen
+        env:
+          REPO: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
-          curl -sSf --retry 3 --max-time 60 "https://hydro.tirol.gv.at/stationdata/data.json?parameter=Wasserstand" -o /tmp/raw.json
-          mkdir -p /tmp/out
-          node scripts/tirol-mirror.mjs /tmp/raw.json > /tmp/out/tirol.json
+          mkdir -p /tmp/out/tirol-archiv
+          # Branch vorhanden → Archiv muss sich laden lassen, sonst abbrechen (nie leeres Archiv pushen)
+          if git ls-remote --exit-code --heads "$REPO" pegeldaten > /dev/null; then
+            git clone -q --depth 1 --branch pegeldaten "$REPO" /tmp/prev
+            if [ -d /tmp/prev/tirol-archiv ]; then cp /tmp/prev/tirol-archiv/*.json /tmp/out/tirol-archiv/ || true; fi
+          fi
+          echo "Archiv: $(ls /tmp/out/tirol-archiv | wc -l) Dateien, $(du -sh /tmp/out/tirol-archiv | cut -f1)"
+      - name: Abrufen, kürzen, Archiv ergänzen
+        run: |
+          curl -sSf --compressed --retry 3 --retry-all-errors --max-time 90 "https://hydro.tirol.gv.at/stationdata/data.json?parameter=Wasserstand" -o /tmp/raw.json
+          node scripts/tirol-mirror.mjs /tmp/raw.json /tmp/out/tirol-archiv > /tmp/out/tirol.json
       - name: In Branch pegeldaten ablegen
+        env:
+          REPO: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
           cd /tmp/out
           git init -q -b pegeldaten
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tirol.json
+          git add tirol.json tirol-archiv
           git commit -qm "Pegel Tirol $(date -u +%FT%TZ)"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" pegeldaten
+          git push -qf "$REPO" pegeldaten

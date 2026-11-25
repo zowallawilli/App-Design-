@@ -135,6 +135,7 @@ button.danger { background: #c0392b; color: #fff; }
 .flow-info td, .flow-info th { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .flow-info th { color: var(--muted); font-weight: 500; }
 .flow-info .q { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.flow-info .q .hint { white-space: normal; }
 .flow-info .lvl { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 0.78rem; color: #fff; }
 .flow-info a { color: var(--accent); }
 @media (max-width: 760px) { .img-date { display: none; } }

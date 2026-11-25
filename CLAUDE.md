@@ -35,11 +35,12 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/narrows.ts` | Schluchten (Talquerschnitt), verdeckte Klammen, optionale Sentinel-Engstellen |
 | `src/power.ts` | Wucht = Strömungsleistung Ω = ρ·g·Q·S, kombinierte Bewertung, Wellen → Fließgeschwindigkeit |
 | `src/discharge.ts` | GloFAS-Modellabfluss (Open-Meteo Flood API), Länderlinks zu offiziellen Pegeln |
-| `src/gauges.ts` | Offizielle Pegel: SMHI, SYKE, NVE, PEGELONLINE, BAFU, ARSO, HD Tirol; `matchGauge` |
+| `src/gauges.ts` | Offizielle Pegel: SMHI, SYKE, NVE, PEGELONLINE, BAFU, ARSO, HD Tirol, Hub'Eau (FR), Südtirol; `matchGauge` (auch Pegel bis 5 km ober-/unterhalb, interpoliert) |
+| `src/estimate.ts` | Abfluss für Pegel ohne Q aus Nachbarpegeln (Einzugsgebiet, Flusskilometer, Ausleitungs-Erkennung) |
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
 | `src/vectorWater.ts` | OSM-Gewässer aus OpenFreeMap-Vektorkacheln (Overpass nur Fallback) |
 | `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung je Abschnitt |
-| `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln |
+| `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln, Archiv der Tagesmittel `tirol-archiv/` (≤ 400 Tage, Branch = 1 Commit) |
 | `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (41 Prüfungen), Screenshot-Skript |
 
 Netzwerk in der Cloud-Umgebung „Packraft-Planer“: erlaubte Hosts sind dort hinterlegt; neue
@@ -66,8 +67,10 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 ## Offene Punkte / Ideen
 - Verblockung („Schiefes S“, „Pianser Schwall“ an der Sanna) ist mit Gefälle/Höhenmodell nicht
   erkennbar – bräuchte Bildauswertung (z. B. Weißwasser-Erkennung im hochaufgelösten Luftbild).
-- Tirol: keine Tageswerte der Vergangenheit (eHYD nur als PDF/ohne nutzbaren Endpunkt) → kein
-  gemessener Wert am Aufnahmetag; Eichfaktor nur aus dem aktuellen Tag.
-- Inn bei Imst: Abfluss evtl. aus Landeck Perjen + Landeck Bruggen abschätzen.
-- Weitere Regionen: übrige Alpen (Bayern GKD, Südtirol, Frankreich), Zentralasien, weltweit.
+- Tirol: Archiv der Tagesmittel erst ab 24.11.2026 → Eichung ab ~10 Tagen, Aufnahmetage älterer Luftbilder
+  bleiben ohne Messwert (eHYD-Jahrbuch nur bis Vorjahr−1, kein dokumentierter Endpunkt).
+- Inn bei Imst/Magerbach: geschätzt aus Innsbruck (unterhalb), weil Landeck Perjen in der Restwasserstrecke liegt
+  (Perjen enthält die Sanna – nie zu Bruggen addieren). Imst ~61, Magerbach ~75 m³/s am 25.11.2026.
+- Weitere Regionen: Bayern GKD (keine API, blockt Abrufe), Vorarlberg/Salzburg/Aosta (keine offene API), Zentralasien, weltweit.
+- Tests mit lokalem Tirol-Spiegel: `TIROL_DIR=<ordner> SHOT=flow node tests/e2e/screenshot.cjs …` (siehe Kopf des Skripts).
 - GitHub pausiert die Tirol-Action nach 60 Tagen ohne Commit → in Actions wieder aktivieren.

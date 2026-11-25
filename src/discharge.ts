@@ -161,6 +161,8 @@ export function officialGauges(p: LngLat): { label: string; url: string }[] {
   if (at && lon > 10.0 && lon < 12.97 && lat > 46.6 && lat < 47.75) out.push({ label: "Hydrographischer Dienst Tirol", url: "https://hydro.tirol.gv.at/" });
   if (at) out.push({ label: "eHYD (Österreich)", url: "https://ehyd.gv.at/" });
   if (ch) out.push({ label: "BAFU Hydrodaten (Schweiz)", url: "https://www.hydrodaten.admin.ch/" });
-  if (out.length) return out;
-  return [];
+  if (lat > 46.2 && lat < 47.1 && lon > 10.38 && lon < 12.48) out.push({ label: "Hydrographisches Amt Südtirol", url: "https://weather.province.bz.it/en/gauging-stations/" });
+  if (lat > 47.25 && lat < 50.6 && lon > 8.95 && lon < 13.9) out.push({ label: "GKD Bayern", url: "https://www.gkd.bayern.de/de/fluesse/abfluss" });
+  if (lat > 41.3 && lat < 51.1 && lon > -5.2 && lon < 7.7 && !ch) out.push({ label: "Hydroportail (Frankreich)", url: "https://www.hydro.eaufrance.fr/" });
+  return out;
 }
