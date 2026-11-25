@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { matchGauge, titleCase } from "../src/gauges";
+import { matchGauge, titleCase, TIROL_MIRROR, resetGaugeCache } from "../src/gauges";
+import { officialGauges } from "../src/discharge";
 
 const SMHI = "https://opendata-download-hydroobs.smhi.se/api/version/1.0/parameter/1";
 const days = (n: number) => Array.from({ length: n }, (_, i) => new Date(Date.now() - (n - i) * 864e5).toISOString().slice(0, 10));
@@ -47,5 +48,44 @@ describe("Pegel", () => {
     const model = new Map(days(20).map((d) => [d, 10]));
     const { match } = await matchGauge([[14.0, 61.0], [14.01, 61.0]], { time: [...model.keys()], q: [...model.values()] }, [], fakeFetch(model));
     expect(match).toBeNull();
+  });
+});
+
+describe("Pegel Tirol (Spiegel)", () => {
+  const mirror = {
+    fetched: new Date().toISOString(),
+    stations: [
+      { id: "202036", name: "Landeck Bruggen", river: "Sanna", lat: 47.14338, lon: 10.5628, q: 4.872, time: "2026-11-25T12:00:00.000Z", dayMean: 5.12, nnq: 1.88, nqt: 3.38, hhq: 491, level: "niedrig" },
+      { id: "201319", name: "Imst (Bahnhof)", river: "Inn", lat: 47.1437, lon: 10.5528, q: null, time: null, dayMean: null, nnq: 2.44, nqt: 16.2, hhq: 1085, level: "niedrig" },
+    ],
+  };
+  const f = (async (url: string) =>
+    url === TIROL_MIRROR ? new Response(JSON.stringify(mirror), { status: 200 }) : new Response("", { status: 404 })) as unknown as typeof fetch;
+
+  it("nimmt den gemessenen Pegel an der Strecke, auch wenn das Modell 10× daneben liegt", async () => {
+    resetGaugeCache();
+    const t = days(10);
+    const model = { time: t, q: t.map(() => 49) };
+    const line: [number, number][] = [[10.54, 47.14], [10.5628, 47.1434]];
+    const { match } = await matchGauge(line, model, [], f);
+    expect(match?.gauge.name).toBe("Landeck Bruggen");
+    expect(match?.latest?.q).toBe(4.872);
+    expect(match?.gauge.note).toContain("NQT 3,4 m³/s");
+  });
+
+  it("Pegel ohne Abfluss (nur Wasserstandsklasse) wird angezeigt, wenn kein anderer da ist", async () => {
+    resetGaugeCache();
+    const { match } = await matchGauge([[10.55, 47.1437], [10.553, 47.1437]], null, [], (async (url: string) =>
+      new Response(JSON.stringify({ ...mirror, stations: [mirror.stations[1]] }), { status: url === TIROL_MIRROR ? 200 : 404 })) as unknown as typeof fetch);
+    expect(match?.gauge.name).toBe("Imst (Bahnhof)");
+    expect(match?.latest).toBeNull();
+    expect(match?.gauge.note).toContain("kein Abfluss veröffentlicht");
+  });
+
+  it("Länderlinks: Sanna (Tirol) zeigt Tirol und eHYD, nicht nur BAFU", () => {
+    const labels = officialGauges([10.49, 47.12]).map((x) => x.label);
+    expect(labels[0]).toBe("Hydrographischer Dienst Tirol");
+    expect(labels).toContain("eHYD (Österreich)");
+    expect(officialGauges([7.5, 46.9]).map((x) => x.label)).toEqual(["BAFU Hydrodaten (Schweiz)"]);
   });
 });

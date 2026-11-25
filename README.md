@@ -129,7 +129,19 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
 | PEGELONLINE | Deutschland (Bundeswasserstraßen) | – | ✓ | nur 31 Tage |
 | BAFU (über api.existenz.ch) | Schweiz | – | ✓ | – |
 | ARSO | Slowenien | – | ✓ (mit Hochwasserstufen) | – |
+| Hydrographischer Dienst Tirol | Österreich (Tirol) | – | ✓ (über Spiegel, alle 30 min) | – |
 | Veðurstofa Íslands | Island | – | keine offene Schnittstelle gefunden – nur Link | – |
+
+**Tirol:** hydro.tirol.gv.at erlaubt keinen direkten Abruf aus dem Browser (kein CORS). Die GitHub Action
+`.github/workflows/pegel-tirol.yml` holt die Daten deshalb alle 30 Minuten, kürzt sie auf die Abflusspegel
+(`scripts/tirol-mirror.mjs`) und legt sie als `tirol.json` in den Branch `pegeldaten`; die App liest sie von
+raw.githubusercontent.com. Kostenlos, weil das Repository öffentlich ist. Einige Pegel (z. B. Inn bei Imst
+und Magerbach, unterhalb der Kraftwerksausleitungen) veröffentlichen nur eine Wasserstandsklasse
+(„niedrig“, „< MW“ …), keinen Abfluss. Hinweis: GitHub pausiert zeitgesteuerte Actions nach 60 Tagen ohne
+Commit im Repository – dann unter *Actions → Pegel Tirol spiegeln* wieder aktivieren.
+
+Beispiel Sanna (Tirol): Pegel Landeck Bruggen an der Ausstiegsstelle, gemessen 4,9 m³/s; das Modell lag
+mit 49 m³/s zehnfach zu hoch (die GloFAS-Zelle erfasst den Inn mit).
 
 Beispiel Oulankajoki (Finnland): Pegel direkt an der Strecke, gemessen am Luftbild-Tag 22.07.2016
 17 m³/s, heute 21 m³/s – das Modell lag hier bei 1–7 m³/s und damit um ein Vielfaches daneben.
