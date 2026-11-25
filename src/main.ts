@@ -563,6 +563,7 @@ function showResults() {
 // ---------- Schwallstellen: Weißwasser im offenen Orthofoto ----------
 const WW_STYLE = (s: WhitewaterSpot) => (s.hazard ? "#d62828" : "#0077b6");
 
+const wwCache = new Map<string, WwState>();
 async function runWhitewater(a: Analysis, id: number) {
   if (!current || current.analysis !== a) return;
   if (!$<HTMLInputElement>("opt-ww").checked) {
@@ -573,6 +574,14 @@ async function runWhitewater(a: Analysis, id: number) {
   const source = orthoSourceFor(line);
   if (!source) {
     current.ww = { status: "none", spots: [] };
+    return showResults();
+  }
+  // gleiche Strecke (z. B. nur Parameter geändert) → Profil wiederverwenden, keine neuen Bildabrufe
+  const key = `${source.id}|${line.length}|${line[0].join()}|${line[line.length - 1].join()}|${Math.round(a.length)}`;
+  const cached = wwCache.get(key);
+  if (cached) {
+    current.ww = { ...cached, spots: [] };
+    current.ww.spots = computeSpots();
     return showResults();
   }
   current.ww = { status: "loading", source, spots: [] };
@@ -588,6 +597,8 @@ async function runWhitewater(a: Analysis, id: number) {
     await new Promise((r) => setTimeout(r, 0));
     const prof = whitewaterProfile(strip);
     current.ww = { status: "done", source, bins: prof.bins, track: { d: strip.d, p: strip.p }, coverage: prof.coverage, spots: [] };
+    wwCache.set(key, current.ww);
+    if (wwCache.size > 6) wwCache.delete(wwCache.keys().next().value!);
     current.ww.spots = computeSpots();
     setStatus("");
   } catch (e) {
