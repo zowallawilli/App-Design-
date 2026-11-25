@@ -83,6 +83,43 @@ Pegeln (NVE, ARSO, SMHI, BAFU, eHYD).
 Grenzen: GloFAS ist ein Modell; für kleine Flüsse (< ~500 km² Einzugsgebiet) und nahe Mündungen
 kann der gewählte Rasterpunkt am falschen Fluss liegen (er wird auf der Karte blau angezeigt).
 
+## Wucht: Gefälle × Abfluss
+
+Gefälle allein unterschätzt wasserreiche Flüsse (Wuchtwasser) und überschätzt wasserarme Bäche.
+Deshalb wird je Abschnitt die **Strömungsleistung** Ω = ρ·g·Q·S (W/m) berechnet:
+
+| Ω (W/m) | < 300 | 300–1 000 | 1 000–2 500 | 2 500–6 000 | 6 000–15 000 | > 15 000 |
+|---|---|---|---|---|---|---|
+| Einstufung | Zahmwasser | WW I | WW II | WW II–III | WW III–IV | WW IV+ |
+
+Kalibriert an Nahe (WW I, ~360 W/m), Soča Srpenica–Trnovo (WW II–III+, ~1 700 W/m) und Markarfljót
+oberhalb der Schlucht (WW II–III, ~2 300 W/m bei Mittelwasser, ~5 300 W/m im Sommer). Standard ist
+„Gefälle + Wucht“: es gilt die schwierigere der beiden Einstufungen. Der Abfluss ist wählbar:
+heute, gemessener Pegel, Mittel (MQ), Sommer-Mittel oder ein eigener Wert (z. B. vom Pegel vor Ort).
+
+## Steilstufen und Wasserfälle
+
+Die 300-m-Glättung des Profils verteilt einen Wasserfall auf mehrere hundert Meter. Steilstufen werden
+deshalb im monoton angepassten, aber ungeglätteten Profil gesucht: **≥ 8 m Höhenverlust auf 100 m**
+(Marker ▼). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
+erkannt; in tiefen Schluchten liefert das Höhenmodell teils Werte vom Rand, daher „im Luftbild prüfen“.
+
+## Wellen messen
+
+Werkzeug „Wellen messen“: im Luftbild die Kämme einer Wellenfolge anklicken. Für stehende Wellen gilt
+λ = 2π·v²/g, also v = √(g·λ/2π): 2 m Abstand ≈ 1,8 m/s, 4 m ≈ 2,5 m/s, 10 m ≈ 4 m/s. Dazu zeigt die
+App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem heutigen Wasserstand vergleichbar.
+
+## Wie verlässlich sind die Abflussdaten?
+
+- **Modell GloFAS** (Copernicus, über Open-Meteo): weltweit, täglich seit 1984, ~5-km-Raster. Geprüft an der
+  Lahn gegen die Pegel Leun und Gießen (31 Tage): **Verlauf sehr gut (r = 0,94–0,95)**, absolut aber
+  **30–35 % zu niedrig**, bei Niedrigwasser bis Faktor 3–4. Die jahreszeitliche Einordnung (niedrig/mittel/hoch)
+  ist deshalb verlässlicher als die m³/s-Zahl. Bei kleinen Flüssen kann die Rasterzelle danebenliegen (blauer Punkt).
+- **Gemessene Pegel (PEGELONLINE)**: Liegt ein Bundespegel mit Abfluss ≤ 15 km entfernt (Lahn, Main, Mosel,
+  Neckar, Ruhr, Saar, Fulda, Werra, Donau, Elbe …), eicht die App das Modell mit dem Verhältnis der letzten
+  31 Tage und zeigt den aktuellen Messwert. Weitere Länder: siehe Links in der App (NVE, ARSO, SMHI, BAFU, eHYD).
+
 ## Engstellen, Schluchten und verdeckte Klammen
 
 Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen gesucht

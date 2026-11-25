@@ -44,6 +44,7 @@
             <button id="finish-draw" hidden>Zeichnen beenden</button>
             <button id="undo-draw" class="ghost" hidden>Letzten Punkt löschen</button>
             <button id="reset" class="ghost">Zurücksetzen</button>
+            <button id="wave-btn" class="ghost" title="Kämme einer Wellenfolge im Luftbild anklicken → Wellenabstand und Fließgeschwindigkeit">Wellen messen</button>
             <button id="cancel" class="danger" hidden>Berechnung abbrechen</button>
           </div>
         </section>
@@ -102,7 +103,27 @@
         <section id="results" hidden>
           <h2 id="res-title"></h2>
           <dl class="stats" id="stats"></dl>
-          <h3>Gefälleklassen</h3>
+          <h3>Schwierigkeit: Gefälle &amp; Wucht</h3>
+          <div class="grid2 rating">
+            <label>Bewertung
+              <select id="rate-mode">
+                <option value="combined" selected>Gefälle + Wucht (schwierigere)</option>
+                <option value="gradient">nur Gefälle</option>
+                <option value="power">nur Wucht (Gefälle × Abfluss)</option>
+              </select>
+            </label>
+            <label>Abfluss für Wucht
+              <select id="q-src">
+                <option value="today" selected>heute</option>
+                <option value="gauge" hidden>gemessener Pegel</option>
+                <option value="mq">Mittel (MQ)</option>
+                <option value="summer">Sommer-Mittel</option>
+                <option value="own">eigener Wert …</option>
+              </select>
+            </label>
+            <input id="q-own" type="text" inputmode="decimal" placeholder="Abfluss in m³/s" hidden />
+          </div>
+          <p id="rate-note" class="hint"></p>
           <ul id="classes" class="classes"></ul>
           <h3>Stellen im Luftbild ansehen</h3>
           <div class="row tour">
@@ -120,6 +141,8 @@
           </ul>
           <ol id="narrows-list" class="hotspots"></ol>
           <p id="narrows-meta" class="hint"></p>
+          <h3>Steilstufen <span class="hint">(mögliche Wasserfälle, Katarakte, Wehre)</span></h3>
+          <ol id="steps-list" class="hotspots"></ol>
           <h3>Hotspots <span class="hint">(steilste Stellen)</span></h3>
           <ol id="hotspots" class="hotspots"></ol>
           <div class="row exports">

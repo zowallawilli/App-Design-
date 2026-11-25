@@ -75,3 +75,19 @@ describe("analyzeRiver", () => {
     expect(gorge.confinedLength).toBeCloseTo(gorge.length, -2);
   });
 });
+
+import { findSteps } from "../src/analysis";
+describe("findSteps", () => {
+  it("findet eine 20-m-Stufe, aber kein gleichmäßiges Gefälle", () => {
+    const d = Array.from({ length: 81 }, (_, i) => i * 25); // 2 km
+    const pts = d.map((x) => [13 + x * 1e-5, 46] as [number, number]);
+    const even = d.map((x) => 300 - x * 0.02); // 20 m/km, keine Stufe
+    expect(findSteps(d, even, pts, 25)).toHaveLength(0);
+    const fall = d.map((x) => 300 - x * 0.005 - (x >= 1000 ? 20 : 0)); // 20-m-Fall bei km 1
+    const st = findSteps(d, fall, pts, 25);
+    expect(st).toHaveLength(1);
+    expect(st[0].d0).toBeLessThanOrEqual(1000);
+    expect(st[0].d1).toBeGreaterThanOrEqual(1000);
+    expect(st[0].drop).toBeGreaterThan(19);
+  });
+});
