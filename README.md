@@ -49,10 +49,17 @@ Die Kosten je Zelle kombinieren drei Quellen:
 | Quelle | Wirkung |
 |---|---|
 | **Sentinel-2** (10 m, wolkenarme Sommerszene der letzten 3 Jahre) | Wasser (NDWI > 0) und unbewachsenes Flussbett – Kies, Fels, Wildwasser (NDVI < 0,4) – sind billig, dichter Wald teurer. Liegt der Ausschnitt über einer Kachelgrenze, werden mehrere Szenen kombiniert. |
-| **OpenStreetMap** | Kartierte Gewässerlinien werden ins Raster eingebrannt (der Fluss am Ein-/Ausstieg stark, Nebenbäche schwach). |
+| **OpenStreetMap** | Gewässerlinien und Wasserflächen (aus hochauflösenden Luftbildern kartiert) werden ins Raster eingebrannt – der Fluss am Ein-/Ausstieg stark, Nebenbäche schwach. Quelle sind die Vektorkacheln von OpenFreeMap (CDN, kostenlos, ohne Schlüssel), Overpass nur noch als Ersatz. |
 | **Höhenmodell** | Zellen weit über dem lokalen Talboden und bergauf fließen kosten extra. Wo Satellit oder OSM eindeutig ein Gewässer zeigen, wird dem Höhenmodell weniger vertraut – in engen Schluchten ist es oft um 20–80 m verschoben. |
 
-Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann Mäander abschneiden. Lange Strecken
+Unbewachsene Flächen gelten nur nahe an bekanntem Wasser (≤ 60 m) als Flussbett – sonst würden im
+Mittelgebirge Straßen, Bahnschotter, Dächer und abgeerntete Felder angezogen (so geschehen an der
+Nahe). Schmale, baumgesäumte Flüsse wie die Nahe sind für Sentinel-2 (10–20 m) praktisch unsichtbar;
+dort trägt OSM. Fehlen OSM und ein klares Satellitensignal, warnt die App „Flusslauf unsicher“.
+Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann Mäander abschneiden.
+
+Geprüft (Luftbild-Detailansichten): Nahe Kirn–Monzingen, Isar Lenggries–Bad Tölz (verzweigtes
+Kiesbett), Lahn Weilburg–Runkel (enge Mäander), Koritnica, Soča, Sjoa. Lange Strecken
 werden erst grob gesucht und dann in 6-km-Stücken fein nachgezogen. Verlässt der Fluss den
 Ausschnitt (großer Bogen), wird der Ausschnitt vergrößert.
 
@@ -119,12 +126,16 @@ GPX- und GeoJSON-Export enthalten die Hinweise als Wegpunkte bzw. Linien.
 
 | m/km | Klasse | Typischer Hinweis |
 |---|---|---|
-| < 3 | flach | meist zahm (WW I–II) |
-| 3–8 | mäßig | häufig WW II |
-| 8–15 | deutlich | häufig WW II–III |
-| 15–30 | steil | WW III–IV möglich |
-| 30–60 | sehr steil | Wildbach-Charakter, Umtragen wahrscheinlich |
-| > 60 | extrem | Stufen/Fälle, meist nicht fahrbar |
+| < 3 | flach | meist Zahmwasser, kein Wildwasser |
+| 3–8 | mäßig | meist WW I |
+| 8–15 | deutlich | meist WW II |
+| 15–30 | steil | WW II–III, einzelne Stellen schwerer |
+| 30–60 | sehr steil | WW III–IV, Wildbach – Stellen besichtigen |
+| > 60 | extrem | WW IV+, Stufen und Fälle – oft umtragen |
+
+Kalibriert nach Rückmeldung aus der Praxis (u. a. Nahe Kirn–Monzingen: WW I, stellenweise II).
+Wasserreiche Flüsse mit Blockstufen (z. B. Soča Srpenica–Trnovo) sind bei gleichem Gefälle schwerer;
+dort sind Hotspots und Schluchten aussagekräftiger als das mittlere Gefälle.
 
 Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit eigenen Erfahrungswerten kalibriert werden.
 

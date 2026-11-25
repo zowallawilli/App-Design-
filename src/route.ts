@@ -16,9 +16,17 @@ import { loadGrid, MinHeap, pixelToLngLat, type Grid } from "./flow";
 export const WATER_MIN = 0.04;
 export const BARE_MIN = 0.12;
 
+/** Gewässer aus OSM: Linie (Fluss, Bach) oder Fläche (äußerer Ring) */
+export interface WaterFeatureIn {
+  name?: string;
+  coords: LngLat[];
+  area?: boolean;
+  kind?: string;
+}
+
 export interface RouteInputs {
   /** Gewässerlinien im Ausschnitt (OSM), optional mit Namen */
-  waterways?: (bbox: [number, number, number, number]) => Promise<{ name?: string; coords: LngLat[] }[]>;
+  waterways?: (bbox: [number, number, number, number]) => Promise<WaterFeatureIn[]>;
   /** NDWI je Rasterzelle (NaN = keine Daten) */
   water?: (grid: Grid) => Promise<{ ndwi: Float32Array; ndvi?: Float32Array; label: string } | null>;
   loader?: TileLoader;
@@ -81,6 +89,28 @@ function burnLine(mask: Float32Array, g: Grid, coords: LngLat[], v: number) {
       }
     }
     prev = cur;
+  }
+}
+
+/** Füllt eine Fläche (Ring in Koordinaten) ins Raster, Wert = min(bestehend, v). */
+function fillPolygon(mask: Float32Array, g: Grid, ring: LngLat[], v: number) {
+  const pts = ring.map((c) => {
+    const [px, py] = lngLatToPixel(c, g.z);
+    return [px - g.x0, py - g.y0] as [number, number];
+  });
+  let y0 = Infinity, y1 = -Infinity;
+  for (const [, y] of pts) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(g.h - 1, Math.ceil(y1)); y++) {
+    const yc = y + 0.5;
+    const xs: number[] = [];
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xa, ya] = pts[i], [xb, yb] = pts[j];
+      if ((ya > yc) !== (yb > yc)) xs.push(xa + ((yc - ya) / (yb - ya)) * (xb - xa));
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2)
+      for (let x = Math.max(0, Math.ceil(xs[k] - 0.5)); x <= Math.min(g.w - 1, Math.floor(xs[k + 1] - 0.5)); x++)
+        mask[y * g.w + x] = Math.min(mask[y * g.w + x], v);
   }
 }
 
@@ -268,8 +298,40 @@ async function traceOnce(putIn: LngLat, takeOut: LngLat, inp: RouteInputs, margi
   const hand = new Float32Array(n);
   for (let i = 0; i < n; i++) hand[i] = g.elev[i] - floor[i];
 
-  // 2) Sentinel-2
   const sources: string[] = [];
+
+  // 2) OSM-Gewässer (Linien und Flächen) – aus hochauflösenden Luftbildern kartiert
+  say("Gewässer laden …");
+  const osm = new Float32Array(n).fill(1);
+  const ways = await osmPromise;
+  let osmMask: Uint8Array | null = null;
+  if (ways && ways.length) {
+    // Fluss nächst Ein- und Ausstieg (bis 1,5 km) bekommt Vorrang vor Nebenbächen
+    const lines = ways.filter((w) => !w.area);
+    const nearestName = (p: LngLat) => {
+      let best = { d: Infinity, name: undefined as string | undefined };
+      for (const w of lines) {
+        if (!w.name) continue;
+        const bonus = w.kind === "stream" ? 150 : 0; // Flüsse vor Bächen
+        for (const c of w.coords) {
+          const d = haversine(c, p) + bonus;
+          if (d < best.d) best = { d, name: w.name };
+        }
+      }
+      return best;
+    };
+    const na = nearestName(putIn), nb = nearestName(takeOut);
+    const main = new Set([na.d < 1500 ? na.name : undefined, nb.d < 1500 ? nb.name : undefined].filter(Boolean));
+    for (const w of ways) {
+      if (w.area) fillPolygon(osm, g, w.coords, w.kind === "river" || (w.name && main.has(w.name)) ? 0.03 : 0.08);
+      else burnLine(osm, g, w.coords, w.name && main.has(w.name) ? 0.03 : w.kind === "stream" || w.kind === "ditch" || w.kind === "drain" ? 0.5 : 0.15);
+    }
+    osmMask = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (osm[i] < 1) osmMask[i] = 1;
+    sources.push("OpenStreetMap");
+  }
+
+  // 3) Sentinel-2: Wasser (NDWI) und unbewachsenes Flussbett (NDVI)
   const water = new Float32Array(n).fill(1);
   let haveSat = false;
   if (inp.water) {
@@ -278,18 +340,28 @@ async function traceOnce(putIn: LngLat, takeOut: LngLat, inp: RouteInputs, margi
       const w = await inp.water(g);
       if (w) {
         haveSat = true;
+        // „Nähe zu Wasser“ (≤ 60 m): OSM-Gewässer oder Sentinel-Wasser. Unbewachsene Flächen ziehen
+        // nur dort stark an – sonst würden Straßen, Bahnschotter, Dächer und abgeerntete Felder
+        // im Mittelgebirge als „Flussbett“ gelten.
+        const far = new Float32Array(n).fill(1);
+        let anyWater = false;
+        for (let i = 0; i < n; i++)
+          if (osm[i] < 0.6 || w.ndwi[i] > 0.05) { far[i] = 0; anyWater = true; }
+        const near = anyWater ? minFilter(far, g.w, g.h, Math.max(1, Math.round(60 / mpp))) : null;
         for (let i = 0; i < n; i++) {
           const v = w.ndwi[i];
           if (Number.isNaN(v)) continue;
           // Wasser: NDWI −0,1 … 0,2 → Multiplikator 1 … WATER_MIN
           const tw = Math.min(1, Math.max(0, (v + 0.1) / 0.3));
           let m = 1 - (1 - WATER_MIN) * tw;
-          // Unbewachsenes Flussbett (Kies, Fels, Wildwasser) im Talboden: NDVI 0,45 … 0,15 → 1 … BARE_MIN.
-          // Nur bis 40 m über dem (in Schluchten oft verschobenen) Talboden des Höhenmodells, damit Geröllhalden weiter oben nicht anziehen.
+          // Unbewachsenes Flussbett (Kies, Fels, Wildwasser): NDVI 0,4 … 0,1 → 1 … BARE_MIN.
+          // Nur bis 40 m über dem Talboden und – wenn Wasser bekannt ist – nur nahe am Wasser.
           const nd = w.ndvi?.[i];
           if (nd !== undefined && !Number.isNaN(nd) && hand[i] < 40) {
             const tb = Math.min(1, Math.max(0, (0.4 - nd) / 0.3));
-            m = Math.min(m, 1 - (1 - BARE_MIN) * tb);
+            const nearWater = !near || near[i] === 0;
+            const floor = nearWater ? BARE_MIN : 0.7;
+            m = Math.min(m, 1 - (1 - floor) * tb);
           }
           // dichter Bewuchs (Wald) ist selten Flussbett
           if (nd !== undefined && nd > 0.65) m *= 1.5;
@@ -303,33 +375,12 @@ async function traceOnce(putIn: LngLat, takeOut: LngLat, inp: RouteInputs, margi
       say(`Sentinel-2 nicht verfügbar (${(e as Error).message})`);
     }
   }
-
-  // 3) OSM
-  say("Gewässerlinien abwarten …");
-  const osm = new Float32Array(n).fill(1);
-  const ways = await osmPromise;
-  let osmMask: Uint8Array | null = null;
-  if (ways && ways.length) {
-    // Gewässer, das Ein- und Ausstieg am nächsten liegt, bekommt Vorrang
-    const nearestName = (p: LngLat) => {
-      let best = { d: Infinity, name: undefined as string | undefined };
-      for (const w of ways) for (const c of w.coords) {
-        const d = haversine(c, p);
-        if (d < best.d) best = { d, name: w.name };
-      }
-      return best;
-    };
-    const na = nearestName(putIn), nb = nearestName(takeOut);
-    const main = new Set([na.d < 300 ? na.name : undefined, nb.d < 300 ? nb.name : undefined].filter(Boolean));
-    for (const w of ways) burnLine(osm, g, w.coords, w.name && main.has(w.name) ? 0.03 : 0.3);
-    osmMask = new Uint8Array(n);
-    for (let i = 0; i < n; i++) if (osm[i] < 1) osmMask[i] = 1;
-    sources.push("OpenStreetMap");
-  }
   sources.push(`Höhenmodell (${mpp.toFixed(1)} m)`);
 
   const { cost, demTrust } = buildCost(g, { hand, water, osm });
-  const snapR = Math.max(2, Math.round(80 / mpp));
+  // Klicks liegen oft neben dem Fluss (Ortsmitte, Straße): mit Gewässerdaten bis 250 m zum
+  // günstigsten Gewässerpunkt; nur mit Höhenmodell 80 m (sonst springt er an den Talboden)
+  const snapR = Math.max(2, Math.round((osmMask || haveSat ? 250 : 80) / mpp));
   let a = snap(g, cost, putIn, snapR);
   let b = snap(g, cost, takeOut, snapR);
 
