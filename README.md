@@ -255,9 +255,9 @@ Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher un
 | Schritt | Verfahren |
 |---|---|
 | Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
-| Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±30 m in 0,5-m-Schritten. |
+| Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±45 m in 0,5-m-Schritten. Ausgewertet werden der volle Streifen (breite Flüsse wie die Salzach, 40–70 m) und der innere Streifen ±30 m (schmale Flüsse); je 10 m zählt das Ergebnis, das die Kriterien besser erfüllt. |
 | Wasserfläche | je Querzeile der zusammenhängende Lauf aus wasserähnlichen (bläulich/türkis) und Weißwasser-Pixeln nahe der Linie – auch wenn die Linie etwas neben dem Wasser liegt. |
-| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). |
+| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). **Zusätzlich relativ** (trübe, helle Flüsse wie die Salzach, deren Schaum kaum heller als das Wasser ist): Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers daneben – nur bei nicht beschattetem Wasser (Median ≥ 100), sonst wirkt helles Ufer wie Schaum. |
 | Schwallstelle | Weißwasserfläche je Flussmeter (über 30 m geglättet) ≥ **5 m²/m** und ≥ 18 % der Wasserfläche, zusammen ≥ 150 m²; Lücken bis 50 m werden verbunden. „Viel Weißwasser“ ab 8 m²/m. |
 | Merkmale | scharfe Kurve (≥ 60° auf ±50 m), Verengung (≤ 70 % der üblichen Breite ±500 m), lokales Gefälle ≥ 30 m/km. |
 | Wasserstand | Esri meldet für denselben Bildflug das Aufnahmedatum (Tirol: Land Tirol 07.09.2023, Slowenien: GURS 21.08.2023). Damit zeigt die App den Abfluss am Aufnahmetag (Pegel, geeichtes Modell) und ob das Bild bei Niedrig-, Mittel- oder Hochwasser entstand. |
@@ -318,6 +318,7 @@ schärfer als das Esri-Luftbild, gut für die Wellenmessung.
 | Soča, Srpenica – Trnovo | GURS 21.08.2023 | keine verorteten Einzelstellen in offenen Quellen | – | 7 (Stichprobe: Weißwasser im Blockwerk vor Trnovo bestätigt) |
 | Koritnica, Kluže – Mündung | GURS 21.08.2023 | dto. | – | 3 (unterer Abschnitt, Blockstrecken) |
 | Inn, Imster Schlucht | basemap.at 07.09.2023 | Rohrbrückenschwall, Memminger Walze (Lage nicht belegt) | – | 6 |
+| Salzach, Taxenbach – Lend | basemap.at 2025 | 6 im Luftbild sichtbare Schwälle | **3/6** (Querband km 4,2–4,4, km 6,8, km 7,6; vorher 0/6) | 1 (km 0,1) – nicht erkannt: km 3,2 (Brückenschatten), 3,6 (Blockstrecke mit wenig Schaum), 5,6–6,0 (schwächer) |
 | Sjoa | – | – | – | keine offene Bildquelle |
 
 Erkenntnisse: Mit reiner Helligkeit wäre helles ruhiges Wasser (Soča über Kalkgrund, milchiger Inn)

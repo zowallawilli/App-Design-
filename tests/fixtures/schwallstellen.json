@@ -4,22 +4,90 @@
     {
       "id": "sanna",
       "name": "Sanna · Einmündung – Landeck",
-      "putIn": [10.491, 47.1176],
-      "takeOut": [10.563, 47.1436],
+      "putIn": [
+        10.491,
+        47.1176
+      ],
+      "takeOut": [
+        10.563,
+        47.1436
+      ],
       "image": "basemap.at Orthofoto (Aufdruck 2023)",
       "literature": "WW III–IV, stark verblockt; kajaktour.de, Nutzer (Befahrung)",
       "spots": [
-        { "name": "Schiefes Eck", "ww": "III", "from": [10.49877, 47.12741], "to": [10.49994, 47.12825], "tol": 60, "expect": "schwall", "source": "Nutzer bestätigt; kajaktour.de: 90°-Rechtskurve, am Einstieg stark verblockt, Fußgängerbrücke" },
-        { "name": "Pianser Schwall", "ww": "III–IV+", "from": [10.51223, 47.13441], "to": [10.51753, 47.13356], "tol": 60, "expect": "schwall", "source": "Nutzer bestätigt; kajaktour.de: ca. 500 m langer, schnellster Wellenzug in Pians" },
-        { "name": "Wehr Landeck", "ww": "–", "from": [10.54603, 47.14031], "to": [10.54735, 47.14031], "tol": 40, "expect": "schwall", "source": "Nutzer: Wehre sollen wie Schwallstellen markiert werden (im Luftbild nicht unterscheidbar)" },
-        { "name": "Oberlauf entlang der Straßengalerie", "ww": "II–III", "from": [10.49611, 47.1215], "to": [10.4981, 47.12522], "tol": 40, "expect": "neutral", "source": "Nutzer: unproblematisch, keine benannte Stelle" }
+        {
+          "name": "Schiefes Eck",
+          "ww": "III",
+          "from": [
+            10.49877,
+            47.12741
+          ],
+          "to": [
+            10.49994,
+            47.12825
+          ],
+          "tol": 60,
+          "expect": "schwall",
+          "source": "Nutzer bestätigt; kajaktour.de: 90°-Rechtskurve, am Einstieg stark verblockt, Fußgängerbrücke"
+        },
+        {
+          "name": "Pianser Schwall",
+          "ww": "III–IV+",
+          "from": [
+            10.51223,
+            47.13441
+          ],
+          "to": [
+            10.51753,
+            47.13356
+          ],
+          "tol": 60,
+          "expect": "schwall",
+          "source": "Nutzer bestätigt; kajaktour.de: ca. 500 m langer, schnellster Wellenzug in Pians"
+        },
+        {
+          "name": "Wehr Landeck",
+          "ww": "–",
+          "from": [
+            10.54603,
+            47.14031
+          ],
+          "to": [
+            10.54735,
+            47.14031
+          ],
+          "tol": 40,
+          "expect": "schwall",
+          "source": "Nutzer: Wehre sollen wie Schwallstellen markiert werden (im Luftbild nicht unterscheidbar)"
+        },
+        {
+          "name": "Oberlauf entlang der Straßengalerie",
+          "ww": "II–III",
+          "from": [
+            10.49611,
+            47.1215
+          ],
+          "to": [
+            10.4981,
+            47.12522
+          ],
+          "tol": 40,
+          "expect": "neutral",
+          "source": "Nutzer: unproblematisch, keine benannte Stelle"
+        }
       ]
     },
     {
       "id": "soca-srpenica-trnovo",
       "name": "Soča · Srpenica – Trnovo",
-      "putIn": [13.5024, 46.2956],
-      "takeOut": [13.5562, 46.282],
+      "putIn": [
+        13.5024,
+        46.2956
+      ],
+      "takeOut": [
+        13.5562,
+        46.282
+      ],
       "image": "GURS DOF 2023",
       "literature": "WW II–III(+), technische Stufen; Bergwelten/Anbieter. Einzelstellen ohne verlässliche Lage in offenen Quellen",
       "spots": []
@@ -27,8 +95,14 @@
     {
       "id": "koritnica",
       "name": "Koritnica · Kluže – Mündung",
-      "putIn": [13.5906, 46.3598],
-      "takeOut": [13.5694, 46.3242],
+      "putIn": [
+        13.5906,
+        46.3598
+      ],
+      "takeOut": [
+        13.5694,
+        46.3242
+      ],
       "image": "GURS DOF 2023",
       "literature": "WW III/IV; Einzelstellen ohne verlässliche Lage in offenen Quellen",
       "spots": []
@@ -36,11 +110,117 @@
     {
       "id": "imster-schlucht",
       "name": "Inn · Imster Schlucht",
-      "putIn": [10.745, 47.2164],
-      "takeOut": [10.8976, 47.2642],
+      "putIn": [
+        10.745,
+        47.2164
+      ],
+      "takeOut": [
+        10.8976,
+        47.2642
+      ],
       "image": "basemap.at Orthofoto",
       "literature": "WW II–III(–IV); genannt: Rohrbrückenschwall, Memminger Walze (Lage nicht belegt)",
       "spots": []
+    },
+    {
+      "id": "salzach-taxenbach",
+      "name": "Salzach · Taxenbach – Lend",
+      "putIn": [
+        12.964,
+        47.2925
+      ],
+      "takeOut": [
+        13.048,
+        47.299
+      ],
+      "image": "basemap.at Orthofoto",
+      "literature": "Raftingstrecke WW II–III; Nutzer: einige Schwallstellen wurden auf der Live-Seite nicht erkannt",
+      "spots": [
+        {
+          "name": "Schwall unter der Straßenbrücke (km 3,2)",
+          "from": [
+            12.99713,
+            47.30114
+          ],
+          "to": [
+            12.99713,
+            47.30114
+          ],
+          "tol": 100,
+          "expect": "schwall",
+          "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
+        },
+        {
+          "name": "Blockstrecke (km 3,6)",
+          "from": [
+            13.00145,
+            47.30287
+          ],
+          "to": [
+            13.00145,
+            47.30287
+          ],
+          "tol": 80,
+          "expect": "schwall",
+          "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
+        },
+        {
+          "name": "Querband / Walze (km 4,1–4,4)",
+          "from": [
+            13.0075,
+            47.3056
+          ],
+          "to": [
+            13.01001,
+            47.30656
+          ],
+          "tol": 60,
+          "expect": "schwall",
+          "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
+        },
+        {
+          "name": "Schwallstrecke (km 5,6–6,0)",
+          "from": [
+            13.02486,
+            47.30765
+          ],
+          "to": [
+            13.02993,
+            47.30677
+          ],
+          "tol": 50,
+          "expect": "schwall",
+          "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
+        },
+        {
+          "name": "Schwall (km 6,8)",
+          "from": [
+            13.0366,
+            47.30179
+          ],
+          "to": [
+            13.0366,
+            47.30179
+          ],
+          "tol": 100,
+          "expect": "schwall",
+          "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
+        },
+        {
+          "name": "Schwall (km 7,6)",
+          "from": [
+            13.04568,
+            47.29884
+          ],
+          "to": [
+            13.04568,
+            47.29884
+          ],
+          "tol": 100,
+          "expect": "schwall",
+          "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
+        }
+      ]
     }
   ]
 }

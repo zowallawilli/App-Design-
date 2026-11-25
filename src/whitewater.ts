@@ -146,7 +146,10 @@ export interface WhitewaterParams {
 }
 export const DEFAULT_PARAMS: WhitewaterParams = { spotDensity: 5, strongDensity: 8, minFrac: 0.18, minArea: 150 };
 
-export const HALF_WIDTH = 30; // m quer zur Linie
+/** Abtastbreite quer zur Linie (m). Ausgewertet wird zusätzlich der innere Streifen ±INNER_WIDTH
+ *  (schmale Flüsse), je 10 m zählt der stärkere Wert – breite Flüsse (Salzach 40–70 m) brauchen ±45 m. */
+export const HALF_WIDTH = 45;
+export const INNER_WIDTH = 30;
 export const ALONG = 1; // m
 export const ACROSS = 0.5; // m
 export const BIN = 10; // m
@@ -170,6 +173,11 @@ export const WHITE_MIN = 150;
 /** Mindest-Streuung (Standardabweichung des Minimum-Kanals) im Fenster 3 m × 3,5 m: Weißwasser ist
  *  körnig (Sanna: Median 12–14), glattes helles Wasser über Kalkgrund oder Gletschertrübe nicht (5–7). */
 export const WHITE_MIN_TEXTURE = 9;
+/** Relativ-Kriterium: Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers,
+ *  nur wenn das Wasser selbst nicht im Schatten liegt (Median ≥ 100). */
+export const REL_DSAT = 0.07;
+export const REL_DV = 20;
+export const REL_MIN_WATER = 100;
 
 // ---------------------------------------------------------------------------------------------
 // Streifenbild
@@ -286,7 +294,38 @@ const median = (a: number[]) => {
 };
 
 /** Wasserfläche je Querzeile + Weißwasser mit lokaler Helligkeitsschwelle. */
+/** Innerer Ausschnitt ±half m eines Streifens (gleiche Zeilen). */
+export function cropStrip(strip: Strip, half: number): Strip {
+  const c0 = Math.round(strip.cols / 2), band = Math.round(half / ACROSS);
+  const lo = Math.max(0, c0 - band), hi = Math.min(strip.cols - 1, c0 + band), cols = hi - lo + 1;
+  const rgb = new Uint8Array(strip.rows * cols * 3), valid = new Uint8Array(strip.rows * cols);
+  for (let i = 0; i < strip.rows; i++) {
+    rgb.set(strip.rgb.subarray((i * strip.cols + lo) * 3, (i * strip.cols + hi + 1) * 3), i * cols * 3);
+    valid.set(strip.valid.subarray(i * strip.cols + lo, i * strip.cols + hi + 1), i * cols);
+  }
+  return { ...strip, cols, rgb, valid };
+}
+
+/** Weißwasserprofil: voller Streifen (breite Flüsse) und innerer Streifen (schmale Flüsse); je 10 m
+ *  zählt das Ergebnis, das die Schwallstellen-Kriterien besser erfüllt. */
 export function whitewaterProfile(strip: Strip): Profile {
+  const outer = profileOf(strip);
+  if (strip.cols * ACROSS <= 2 * INNER_WIDTH + 1) return outer;
+  const inner = profileOf(cropStrip(strip, INNER_WIDTH));
+  const off = Math.round(strip.cols / 2) - Math.round(INNER_WIDTH / ACROSS);
+  const innerCols = Math.round((2 * INNER_WIDTH) / ACROSS) + 1;
+  // je 10 m das Ergebnis, das beide Kriterien (Dichte und Anteil) besser erfüllt
+  const score = (b: WhitewaterBin) => Math.min(b.density / DEFAULT_PARAMS.spotDensity, b.smooth / DEFAULT_PARAMS.minFrac);
+  const bins = outer.bins.map((b, i) => (inner.bins[i] && score(inner.bins[i]) > score(b) ? inner.bins[i] : b));
+  for (let i = 0; i < strip.rows; i++) for (let c = 0; c < innerCols; c++) {
+    const k = i * innerCols + c, K = i * strip.cols + c + off;
+    if (inner.white[k]) outer.white[K] = 1;
+    if (inner.wet[k]) outer.wet[K] = 1;
+  }
+  return { ...outer, bins };
+}
+
+function profileOf(strip: Strip): Profile {
   const { rows, cols, rgb, valid } = strip;
   const wet = new Uint8Array(rows * cols), white = new Uint8Array(rows * cols);
   const V = (k: number) => Math.min(rgb[k * 3], rgb[k * 3 + 1], rgb[k * 3 + 2]);
@@ -294,21 +333,33 @@ export function whitewaterProfile(strip: Strip): Profile {
   //    Linie; Weißwasser selbst ist nicht „wasserähnlich“, Schatten fallen ins untere Quartil)
   const nb = Math.ceil((strip.d[rows - 1] + 1e-6) / BIN) + 1;
   const vals: number[][] = Array.from({ length: nb }, () => []);
+  const sats: number[][] = Array.from({ length: nb }, () => []);
   const c0 = Math.round(cols / 2), near = Math.round(15 / ACROSS);
   for (let i = 0; i < rows; i += 2) {
     const bi = Math.floor(strip.d[i] / BIN);
     for (let c = c0 - near; c <= c0 + near; c += 2) {
       const k = i * cols + c;
-      if (valid[k] && isWaterLike(rgb[k * 3], rgb[k * 3 + 1], rgb[k * 3 + 2])) vals[bi].push(V(k));
+      const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2];
+      if (valid[k] && isWaterLike(r, g, b)) { vals[bi].push(V(k)); const mx = Math.max(r, g, b); sats[bi].push(mx ? (mx - Math.min(r, g, b)) / mx : 0); }
     }
   }
   // über ±25 m zusammenfassen (stabiler)
-  const medV = new Float64Array(nb);
+  const medV = new Float64Array(nb), midV = new Float64Array(nb), satW = new Float64Array(nb);
   for (let b = 0; b < nb; b++) {
-    const pool: number[] = [];
-    for (let j = Math.max(0, b - 2); j <= Math.min(nb - 1, b + 2); j++) pool.push(...vals[j]);
+    const pool: number[] = [], sp: number[] = [];
+    for (let j = Math.max(0, b - 2); j <= Math.min(nb - 1, b + 2); j++) { pool.push(...vals[j]); sp.push(...sats[j]); }
     medV[b] = pool.length >= 20 ? quantile(pool, 0.75) : NaN;
+    midV[b] = pool.length >= 20 ? quantile(pool, 0.5) : NaN;
+    satW[b] = sp.length >= 20 ? quantile(sp, 0.5) : NaN;
   }
+  // Relativ-Kriterium für helle/trübe Flüsse (Salzach): Schaum ist neutraler (weniger gesättigt) und heller als
+  // das Wasser daneben – nur bei nicht beschattetem Wasser (sonst wirkt jedes helle Ufer wie Schaum)
+
+  const relFoam = (bi: number, r: number, g: number, b: number) => {
+    if (!Number.isFinite(satW[bi]) || !(midV[bi] >= REL_MIN_WATER)) return false;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
+    return sat <= Math.min(0.14, satW[bi] - REL_DSAT) && mn >= midV[bi] + REL_DV && b >= r - 4;
+  };
   const localStd = (i: number, c: number) => {
     let sum = 0, sq = 0, n = 0;
     for (let di = -1; di <= 1; di++) {
@@ -338,7 +389,7 @@ export function whitewaterProfile(strip: Strip): Profile {
       if (!valid[k]) continue;
       any++;
       const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2];
-      if (isWhite(r, g, b, thr) && localStd(i, c) >= WHITE_MIN_TEXTURE) w[c] = 2;
+      if ((isWhite(r, g, b, thr) || relFoam(bi, r, g, b)) && localStd(i, c) >= WHITE_MIN_TEXTURE) w[c] = 2;
       else if (isWaterLike(r, g, b)) w[c] = 1;
     }
     if (any < cols / 2) continue;
