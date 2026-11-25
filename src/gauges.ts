@@ -41,6 +41,8 @@ export interface Gauge {
   levelCm?: { cm: number; time: string };
   /** vergletscherter Anteil des Einzugsgebiets (%) laut Pegel-Stammdaten */
   glacierPct?: number;
+  /** Einzugsgebiet (km²) laut Pegel-Stammdaten */
+  areaKm2?: number;
   /** virtueller Pegel: gewichtete Summe dieser Pegel (Gewichte in estimate.terms) */
   parts?: Gauge[];
 }
@@ -396,6 +398,7 @@ const tirol: ProviderImpl = {
         url: "https://hydro.tirol.gv.at/",
         levelCm: s.w !== null && s.w !== undefined && s.wTime ? { cm: s.w, time: s.wTime } : undefined,
         glacierPct: s.glacier ?? undefined,
+        areaKm2: s.area ?? undefined,
         estimate: est ?? undefined,
         note: [
           s.q === null ? (est ? `kein Abfluss veröffentlicht – ${est.label}` : "kein Abfluss veröffentlicht") : "",

@@ -2,7 +2,7 @@
 // Aufruf: node tests/e2e/screenshot.cjs <Name> '[lon,lat Einstieg]' '[lon,lat Ausstieg]' '[lon,lat Kartenmitte]' <Zoom> <datei.png>
 // Beispiel Sanna: node tests/e2e/screenshot.cjs Sanna '[10.4910,47.1176]' '[10.5630,47.1436]' '[10.527,47.13]' 13.3 tests/e2e/out/sanna.png
 // Zoom so wählen, dass beide Punkte im Kartenausschnitt liegen (sonst gehen die Klicks ins Leere).
-// Optional SHOT=flow: nur die Abfluss-Tabelle aufnehmen.
+// Optional SHOT=flow: nur die Abfluss-Tabelle aufnehmen; SHOT=map: nur die Karte (Bildabschnitte, Einzugsgebiet).
 // Optional TIROL_DIR=<ordner mit tirol.json und tirol-archiv/>: Tirol-Spiegel aus lokalen Dateien
 // (z. B. frisch erzeugt mit scripts/tirol-mirror.mjs), bevor die Action den Branch aktualisiert hat.
 const { chromium } = require('playwright');
@@ -42,7 +42,11 @@ const { chromium } = require('playwright');
   await page.evaluate(() => document.querySelector('#res-title').scrollIntoView());
   await page.waitForTimeout(500);
   // SHOT=flow: nur die Abfluss-Tabelle (#flow-info) aufnehmen
-  if (process.env.SHOT === 'flow') await page.locator('#flow-info').screenshot({ path: out });
+  if (process.env.SHOT === 'map') {
+    // Karte auf die Strecke zurücksetzen (Bildabschnitte B1…, Einzugsgebiet gestrichelt)
+    await page.evaluate(([c, z]) => window.__map.jumpTo({ center: c, zoom: z }), [center, zoom - 1.3]); await page.waitForTimeout(3000);
+    await page.locator('#map').screenshot({ path: out });
+  } else if (process.env.SHOT === 'flow') await page.locator('#flow-info').screenshot({ path: out });
   else await page.screenshot({ path: out });
   await browser.close();
 })();

@@ -131,3 +131,96 @@ export async function glacierAreaNear(p: LngLat, radiusKm = 20, fetchFn: typeof 
   await Promise.all(jobs);
   return area;
 }
+
+export interface RiverLine {
+  name: string;
+  kind: string;
+  coords: LngLat[];
+}
+
+/**
+ * Benannte Flüsse (Ebene „waterway“) und Namen von Wasserflächen (Ebene „water_name“, z. B. Stauseen)
+ * im Ausschnitt [W, S, O, N] aus groben Kacheln (Zoom 9, ~40 km je Kachel) – für das Einzugsgebiet.
+ */
+export async function riversInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<{ rivers: RiverLine[]; waterNames: { name: string; p: LngLat }[] }> {
+  const z = 9;
+  const tmpl = await template(fetchFn);
+  const rivers: RiverLine[] = [];
+  const waterNames: { name: string; p: LngLat }[] = [];
+  const jobs: Promise<void>[] = [];
+  for (let x = lon2tile(bbox[0], z); x <= lon2tile(bbox[2], z); x++)
+    for (let y = lat2tile(bbox[3], z); y <= lat2tile(bbox[1], z); y++)
+      jobs.push(
+        (async () => {
+          const res = await fetchFn(tmpl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
+          if (!res.ok) return;
+          const vt = new VectorTile(new Pbf(new Uint8Array(await res.arrayBuffer())));
+          const ww = vt.layers.waterway;
+          if (ww)
+            for (let i = 0; i < ww.length; i++) {
+              const f = ww.feature(i);
+              const props = f.properties as Record<string, string | number | boolean>;
+              const name = (props["name:latin"] ?? props.name) as string | undefined;
+              if (!name || props.brunnel === "tunnel") continue;
+              const g = (f.toGeoJSON(x, y, z) as GeoJSON.Feature).geometry;
+              const lines = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
+              for (const l of lines) rivers.push({ name, kind: String(props.class ?? ""), coords: l as LngLat[] });
+            }
+          const wn = vt.layers.water_name;
+          if (wn)
+            for (let i = 0; i < wn.length; i++) {
+              const f = wn.feature(i);
+              const name = (f.properties["name:latin"] ?? f.properties.name) as string | undefined;
+              const g = (f.toGeoJSON(x, y, z) as GeoJSON.Feature).geometry;
+              if (name && g.type === "Point") waterNames.push({ name, p: g.coordinates as LngLat });
+            }
+        })().catch(() => undefined),
+      );
+  await Promise.all(jobs);
+  return { rivers, waterNames };
+}
+
+/** Gletscherfläche (km²) in der Nähe mehrerer Punkte (je `radiusKm`), jede Fläche nur einmal gezählt. */
+export async function glacierAreaAround(points: LngLat[], radiusKm = 8, fetchFn: typeof fetch = fetch): Promise<number> {
+  if (!points.length) return 0;
+  const z = 9;
+  const tmpl = await template(fetchFn);
+  const tiles = new Set<string>();
+  for (const p of points) {
+    const dLat = radiusKm / 111.2, dLon = radiusKm / (111.2 * Math.cos((p[1] * Math.PI) / 180));
+    for (let x = lon2tile(p[0] - dLon, z); x <= lon2tile(p[0] + dLon, z); x++)
+      for (let y = lat2tile(p[1] + dLat, z); y <= lat2tile(p[1] - dLat, z); y++) tiles.add(`${x}/${y}`);
+  }
+  let area = 0;
+  await Promise.all(
+    [...tiles].map(async (k) => {
+      const [x, y] = k.split("/").map(Number);
+      const res = await fetchFn(tmpl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y))).catch(() => null);
+      if (!res?.ok) return;
+      const layer = new VectorTile(new Pbf(new Uint8Array(await res.arrayBuffer()))).layers.landcover;
+      if (!layer) return;
+      for (let i = 0; i < layer.length; i++) {
+        const f = layer.feature(i);
+        if (f.properties.class !== "ice") continue;
+        const g = (f.toGeoJSON(x, y, z) as GeoJSON.Feature).geometry;
+        const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+        for (const poly of polys) {
+          const ring = poly[0] as LngLat[];
+          const c0 = ring[0];
+          const kx = 111.2 * Math.cos((c0[1] * Math.PI) / 180);
+          let a = 0, cx = 0, cy = 0;
+          for (let j = 0; j < ring.length - 1; j++) {
+            const ax = (ring[j][0] - c0[0]) * kx, ay = (ring[j][1] - c0[1]) * 111.2;
+            const bx = (ring[j + 1][0] - c0[0]) * kx, by = (ring[j + 1][1] - c0[1]) * 111.2;
+            a += ax * by - bx * ay;
+            cx += ring[j][0]; cy += ring[j][1];
+          }
+          const cen: LngLat = [cx / Math.max(1, ring.length - 1), cy / Math.max(1, ring.length - 1)];
+          const near = points.some((p) => Math.hypot((cen[0] - p[0]) * 111.2 * Math.cos((p[1] * Math.PI) / 180), (cen[1] - p[1]) * 111.2) <= radiusKm);
+          if (near) area += Math.abs(a) / 2;
+        }
+      }
+    }),
+  );
+  return area;
+}

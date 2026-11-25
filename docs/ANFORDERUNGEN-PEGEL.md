@@ -19,11 +19,16 @@ gefährlicher als eine fehlende Angabe.
 
 ## 2. Ohne Pegelwert: kurze Hinweise statt Zahl
 - **Aufnahmedatum** des Luftbilds gut sichtbar. Eine Uhrzeit ist nicht nötig (Wetter wirkt verzögert).
-- Hinweise aus dem Wetter im **Umkreis von ~15 km um den Einstieg** (zwei Wochen davor): Regen,
+- Hinweise aus dem Wetter im **Einzugsgebiet oberhalb des Einstiegs** (Fluss + Zubringer flussaufwärts;
+  Rückfall: Umkreis ~15 km um den Einstieg), Regen nach Fläche gewertet (verbreitet/örtlich), Zeitfenster
+  nach Gebietsgröße, Hinweis bei Speichern/Kraftwerken (zwei Wochen davor): Regen,
   Starkregen auch einige Tage vorher, Trockenheit, Schneefall, Schneeschmelze.
 - Übliche **Jahreszeit** der Region.
 - Daraus eine **Tendenz** (eher niedrig / unauffällig / eher erhöht / eher hoch), ausdrücklich keine Messung.
 - **Texte möglichst kurz**, die Information soll auf einen Blick erkennbar sein.
+
+- **Bildabschnitte eindeutig zuordnen:** Abschnitte B1, B2 … mit Datum und Tendenz auf der Karte, gleiche
+  Nummer/Farbe im Panel, Klick verknüpft beides; Kartenkopf zeigt die Tendenz zum Bild.
 
 ## 3. Gletscherflüsse
 - Flüsse mit Gletschern im Einzugsgebiet (z. B. **Ötztaler Ache**) verhalten sich anders: im Sommer

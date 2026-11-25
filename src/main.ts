@@ -7,7 +7,7 @@ import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nea
 import { download, toCsv, toGeoJson, toGpx } from "./export";
 import { haversine, lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
 import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
-import { glacierAreaNear, waterInBbox } from "./vectorWater";
+import { glacierAreaAround, riversInBbox, waterInBbox } from "./vectorWater";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
 import { traceRiver } from "./route";
@@ -15,7 +15,8 @@ import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
 import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
 import { officialGauges, riverCell, seriesFor } from "./discharge";
-import { assess, captureNote, isGlacial, samplePoints, weatherBefore, type Conditions, type Glacier } from "./weather";
+import { assess, captureNote, isGlacial, weatherBefore, type Basin, type Conditions, type Glacier } from "./weather";
+import { catchmentFromRivers, type Catchment } from "./catchment";
 import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type Gauge, type GaugeMatch, type Reading } from "./gauges";
 import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
 
@@ -67,6 +68,8 @@ const style: StyleSpecification = {
     river: { type: "geojson", data: empty },
     narrows: { type: "geojson", data: empty },
     gauge: { type: "geojson", data: empty },
+    imgsec: { type: "geojson", data: empty },
+    catch: { type: "geojson", data: empty },
     section: { type: "geojson", data: empty },
     draft: { type: "geojson", data: empty },
     cursor: { type: "geojson", data: empty },
@@ -78,9 +81,21 @@ const style: StyleSpecification = {
       source: k,
       layout: { visibility: (k === "esri" ? "visible" : "none") as "visible" | "none" },
     })),
+    {
+      id: "catch-line", type: "line", source: "catch", filter: ["==", ["geometry-type"], "LineString"],
+      paint: { "line-color": "#4a90d9", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.85 },
+    },
+    {
+      id: "catch-pts", type: "circle", source: "catch", filter: ["==", ["geometry-type"], "Point"],
+      paint: { "circle-radius": 5, "circle-color": "rgba(255,255,255,0.15)", "circle-stroke-color": "#4a90d9", "circle-stroke-width": 2 },
+    },
     { id: "river", type: "line", source: "river", paint: { "line-color": "#7fd3ff", "line-width": 3, "line-opacity": 0.85 } },
     { id: "section-casing", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#102027", "line-width": 9, "line-opacity": 0.7 } },
     { id: "section", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 6 } },
+    {
+      id: "imgsec", type: "line", source: "imgsec", layout: { "line-cap": "butt" },
+      paint: { "line-color": ["get", "color"], "line-width": 4, "line-offset": -15, "line-opacity": 0.95 },
+    },
     {
       id: "section-confined", type: "line", source: "section", filter: ["==", ["get", "confined"], true],
       paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [1.5, 1.5], "line-offset": 7 },
@@ -148,7 +163,8 @@ async function updateImageDate() {
   try {
     const info = await imageryAt([c.lng, c.lat], Math.round(map.getZoom()) + 1);
     if (id !== imgReq) return;
-    el.textContent = info ? `Bild: ${info.date.split("-").reverse().join(".")} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}` : "";
+    const cond = info ? current?.flow?.conditions.get(info.date) : undefined;
+    el.textContent = info ? `Bild: ${info.date.split("-").reverse().join(".")} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}` : "";
   } catch {
     if (id === imgReq) el.textContent = "";
   }
@@ -170,6 +186,9 @@ interface FlowInfo {
   /** Hinweise aus Wetter und Jahreszeit je Tag (Aufnahmetage und heute) */
   conditions: Map<string, Conditions>;
   glacier?: Glacier;
+  /** Einzugsgebiet oberhalb (Bezugspunkte fürs Wetter) */
+  catchment?: Catchment;
+  basin?: Basin;
   today: string;
   gaugeErrors: string[];
   error?: string;
@@ -268,6 +287,9 @@ function resetAll() {
   src("section").setData(empty);
   src("narrows").setData(empty);
   src("gauge").setData(empty);
+  src("imgsec").setData(empty);
+  src("catch").setData(empty);
+  clearImgMarkers();
   src("draft").setData(empty);
   src("cursor").setData(empty);
   $("results").hidden = true;
@@ -550,16 +572,23 @@ async function loadFlowInfo(a: Analysis, id: number) {
     const series = cell ? await seriesFor(cell).catch(() => null) : null;
     const dates = [...new Set(imagery.map((im) => im.date))];
     const today = new Date().toISOString().slice(0, 10);
-    const wpts = samplePoints(line);
+    // Wetter im Einzugsgebiet oberhalb des Einstiegs: Fluss + Zubringer flussaufwärts verfolgen
+    const p0 = line[0];
+    const catchment = await riversInBbox([p0[0] - 0.9, p0[1] - 0.6, p0[0] + 0.9, p0[1] + 0.6])
+      .then(({ rivers, waterNames }) => catchmentFromRivers(line, rivers, waterNames))
+      .catch(() => catchmentFromRivers(line, []));
     const [{ match: gauge, errors: gaugeErrors }, windows, iceKm2] = await Promise.all([
       matchGauge(line, series, dates).catch((e) => ({ match: null, errors: [String(e)] })),
-      Promise.all([...dates, today].map(async (d) => [d, await weatherBefore(wpts, d).catch(() => null)] as const)),
-      glacierAreaNear(line[0], 20).catch(() => undefined),
+      Promise.all([...dates, today].map(async (d) => [d, await weatherBefore(catchment.points, d).catch(() => null)] as const)),
+      glacierAreaAround(catchment.points, 8).catch(() => undefined),
     ]);
-    // Gletschereinfluss: Stammdaten des Pegels (Tirol: vergletscherter Anteil), sonst Gletscher im Umkreis
+    // Gletschereinfluss: Stammdaten des Pegels (Tirol: vergletscherter Anteil), sonst Gletscher im Gebiet
     const pct = gauge?.gauge.glacierPct ?? gauge?.others.find((o) => o.glacierPct !== undefined)?.glacierPct;
     const glacier: Glacier = pct !== undefined ? { pct } : { areaKm2: iceKm2 };
-    info = { imagery, gauge, gaugeErrors, conditions: new Map(windows.map(([d, w]) => [d, assess(d, line[0], w, glacier)])), today, glacier };
+    // Fläche: Pegel-Stammdaten, sonst aus der Flusslänge geschätzt; Speicher/Ausleitungen oberhalb
+    const regulated = [...catchment.reservoirs, ...(gauge?.gauge.note && /Kraftwerksausleitung|Restwasser/.test(gauge.gauge.note) ? ["Ausleitung"] : [])];
+    const basin: Basin = { areaKm2: gauge?.gauge.areaKm2 ?? (catchment.fallback ? undefined : catchment.areaKm2), regulated };
+    info = { imagery, gauge, gaugeErrors, conditions: new Map(windows.map(([d, w]) => [d, assess(d, p0, w, glacier, basin)])), today, glacier, catchment, basin };
   } catch (e) {
     info = { imagery: [], gauge: null, gaugeErrors: [], conditions: new Map(), today: new Date().toISOString().slice(0, 10), error: (e as Error).message };
   }
@@ -568,6 +597,7 @@ async function loadFlowInfo(a: Analysis, id: number) {
   current.flow = info;
   updateQOptions();
   showResults(); // neu einfärben (Wucht-Bewertung braucht den Abfluss)
+  void updateImageDate(); // Kartenkopf: Tendenz zum Bilddatum
 }
 
 // ---------- Wucht-Bewertung ----------
@@ -681,17 +711,19 @@ function renderFlowInfo() {
       `${c.weather ? "" : "<li>• Wetterdaten gerade nicht abrufbar – Tendenz nur aus der Jahreszeit.</li>"}</ul>`
     );
   };
-  const day = (title: string, sub: string, gauge: string, d: string) =>
-    `<div class="day"><div class="day-head"><b>${title}</b> <span class="hint">${sub}</span></div>` +
+  const day = (title: string, sub: string, gauge: string, d: string, k?: number) =>
+    `<div class="day"${k !== undefined ? ` data-sec="${k}" title="Auf der Karte zeigen"` : ""}><div class="day-head">` +
+    `${k !== undefined ? `<span class="sec-chip" style="background:${IMG_COLORS[k % IMG_COLORS.length]}">B${k + 1}</span> ` : ""}<b>${title}</b> <span class="hint">${sub}</span></div>` +
     `<div class="day-row"><span class="k">Pegel</span><span class="q">${gauge}</span></div>` +
     `<div class="day-row"><span class="k">Hinweise</span><span>${hints(d)}</span></div></div>`;
   const rows = f.imagery
-    .map((im) =>
+    .map((im, k) =>
       day(
         `Luftbild ${fmtDate(im.date)}`,
-        `km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)} · ${esc(im.provider)} · ${im.resolution.toString().replace(".", ",")} m<br>${esc(captureNote(im.provider, im.name))}`,
+        `km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)} · ${esc(captureNote(im.provider, im.name))} · ${esc(im.provider)} · ${im.resolution.toString().replace(".", ",")} m`,
         measured(im.date),
         im.date,
+        k,
       ),
     )
     .join("");
@@ -725,13 +757,80 @@ function renderFlowInfo() {
     ratio +
     cal +
     `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen („≈“ = aus Nachbarpegeln geschätzt). ` +
-    `Hinweise: Regen, Schneefall und Schneehöhe der zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit der Region – eine Tendenz, keine Abflussmessung. ` +
+    `Hinweise: ${catchText(f)} – Regen, Schnee und Temperatur der Tage davor (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit; eine Tendenz, keine Abflussmessung. ` +
     `${f.glacier && isGlacial(f.glacier) ? `Gletscherfluss: ${f.glacier.pct !== undefined ? `${fmtQ(f.glacier.pct)} % des Einzugsgebiets vergletschert (Pegel-Stammdaten)` : `~${Math.round(f.glacier.areaKm2 ?? 0)} km² Gletscher im Umkreis von 20 km`}.` : ""}` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p>`;
+  // Abschnittskarten anklicken → Abschnitt auf der Karte zeigen
+  el.querySelectorAll<HTMLElement>(".day[data-sec]").forEach((d) => d.addEventListener("click", () => focusImageStretch(Number(d.dataset.sec))));
+  drawImageStretches();
+  src("catch").setData({
+    type: "FeatureCollection",
+    features: [
+      ...(f.catchment?.lines ?? []).map((l) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: l } })),
+      ...(f.catchment?.points ?? []).map((p) => ({ type: "Feature" as const, properties: {}, geometry: { type: "Point" as const, coordinates: p } })),
+    ],
+  });
   src("gauge").setData({
     type: "FeatureCollection",
     features: gm ? [{ type: "Feature" as const, properties: { kind: "gauge", name: gm.gauge.name }, geometry: { type: "Point" as const, coordinates: [gm.gauge.lon, gm.gauge.lat] } }] : [],
   });
+}
+
+/** Farben der Bildabschnitte B1, B2 … (Karte und Panel) */
+const IMG_COLORS = ["#e76f51", "#2a9d8f", "#e9c46a", "#9b5de5", "#f15bb5", "#00bbf9"];
+
+/** Wo gilt das Wetter? Kurzer Text für die Fußnote. */
+function catchText(f: FlowInfo): string {
+  const c = f.catchment;
+  if (!c || c.fallback) return "Wetter im Umkreis von ~15 km um den Einstieg (Fluss nicht weiter verfolgbar)";
+  const parts = [c.river, ...c.tributaries].filter(Boolean).join(", ");
+  return `Wetter im Einzugsgebiet oberhalb des Einstiegs (${parts}; ${c.points.length} Bezugspunkte, auf der Karte ○, Gebiet gestrichelt)`;
+}
+
+let imgMarkers: maplibregl.Marker[] = [];
+function clearImgMarkers() {
+  imgMarkers.forEach((m) => m.remove());
+  imgMarkers = [];
+}
+/** Bildabschnitte als farbiges Band neben der Strecke plus Schild „B1 · Datum“ am Beginn */
+function drawImageStretches() {
+  clearImgMarkers();
+  const f = current?.flow;
+  if (!current || !f) return src("imgsec").setData(empty);
+  const prof = current.analysis.profile;
+  const feats = f.imagery.map((im, k) => ({
+    type: "Feature" as const,
+    properties: { color: IMG_COLORS[k % IMG_COLORS.length] },
+    geometry: { type: "LineString" as const, coordinates: prof.filter((p) => p.d >= im.d0 && p.d <= im.d1).map((p) => p.p) },
+  }));
+  src("imgsec").setData({ type: "FeatureCollection", features: feats.filter((x) => x.geometry.coordinates.length > 1) });
+  f.imagery.forEach((im, k) => {
+    // Schild in der Mitte des Abschnitts (am Beginn läge es auf dem Einstieg-Schild)
+    const start = prof.find((p) => p.d >= (im.d0 + im.d1) / 2)?.p;
+    if (!start) return;
+    const el = document.createElement("div");
+    el.className = "img-marker";
+    el.style.background = IMG_COLORS[k % IMG_COLORS.length];
+    const c = f.conditions.get(im.date);
+    el.textContent = `B${k + 1} · ${im.date.split("-").reverse().join(".")}${c ? ` · ${c.tendency}` : ""}`;
+    el.title = "Bildabschnitt – Klick zeigt die Hinweise";
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.querySelector(`#flow-info .day[data-sec="${k}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusImageStretch(k);
+    });
+    imgMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom-left", offset: [4, -4] }).setLngLat(start).addTo(map));
+  });
+}
+function focusImageStretch(k: number) {
+  const im = current?.flow?.imagery[k];
+  if (!current || !im) return;
+  const pts = current.analysis.profile.filter((p) => p.d >= im.d0 && p.d <= im.d1).map((p) => p.p);
+  if (pts.length < 2) return;
+  const b = pts.reduce((bb, p) => bb.extend(p), new maplibregl.LngLatBounds(pts[0], pts[0]));
+  map.fitBounds(b, { padding: 60, duration: 800, maxZoom: 15 });
+  document.querySelectorAll("#flow-info .day").forEach((d) => d.classList.toggle("active", d.getAttribute("data-sec") === String(k)));
+  chart?.highlight((im.d0 + im.d1) / 2);
 }
 
 /** Zoom für die Detailansicht einzelner Stellen im Luftbild (Blöcke, Stufen erkennbar). */
