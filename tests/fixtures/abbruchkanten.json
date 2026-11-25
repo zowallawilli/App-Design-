@@ -220,6 +220,35 @@
           "source": "Weißwasser im Blockwerk, keine Stufe (Orthofoto)"
         }
       ]
+    },
+    {
+      "id": "koritnica",
+      "name": "Koritnica · Kluže – Mündung",
+      "putIn": [
+        13.5906,
+        46.3598
+      ],
+      "takeOut": [
+        13.5694,
+        46.3242
+      ],
+      "image": "GURS DOF 2023",
+      "spots": [
+        {
+          "name": "Kiesbank am Schattenrand (km 1,2)",
+          "from": [
+            13.58456,
+            46.35114
+          ],
+          "to": [
+            13.58456,
+            46.35114
+          ],
+          "tol": 40,
+          "expect": "keine",
+          "source": "GURS-Orthofoto: Übergang Schatten → sonnige helle Kiesbank, keine Stufe – bekannter Fehlalarm (11/2026)"
+        }
+      ]
     }
   ]
 }

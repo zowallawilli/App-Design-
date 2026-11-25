@@ -291,8 +291,9 @@ an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter
 | Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten, keine einzelne Kante (bleibt als Gefahrenstelle „Stufe im Höhenmodell“) |
 | Sanna: Schiefes Eck, Pianser Schwall, Oberlauf | basemap.at | keine | ✅ keine Kante |
 | Soča: Blockwerk vor Trnovo, Kalkkiesbänke | GURS | keine | ✅ keine Kante |
+| Koritnica: Kiesbank am Schattenrand (km 1,2) | GURS | keine | ❌ **Fehlalarm** – Übergang Schatten → sonnige helle Kiesbank wirkt wie einsetzende Gischt, Höhenmodell 14 m |
 
-**3/5 Abbruchkanten erkannt, 0/5 Fehlalarme**, keine weiteren Kanten auf den Strecken (Messskript mit OSM-Linie).
+**3/5 Abbruchkanten erkannt, 1/6 Gegenbeispielen fälschlich markiert** (Koritnica-Kiesbank am Schattenrand), sonst keine weiteren Kanten (Messskript mit OSM-Linie).
 In der App (Linie zusätzlich aus Sentinel-2) wird Selfoss nicht markiert: Die Linie liegt dort 36 m neben der
 Fallkante im über 100 m breiten Fluss. Breitere Suchbänder fanden Selfoss trotzdem nicht, markierten aber
 Kiesbänke an der Soča – deshalb nur die Flussmitte. Markarfljót,
