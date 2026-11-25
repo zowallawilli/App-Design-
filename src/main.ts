@@ -7,6 +7,7 @@ import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nea
 import { download, toCsv, toGeoJson, toGpx } from "./export";
 import { lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
 import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
+import { waterInBbox } from "./vectorWater";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
 import { traceRiver } from "./route";
@@ -279,7 +280,8 @@ async function traceSection(from: LngLat, to: LngLat, id: number) {
   const r = await traceRiver(from, to, {
     loader: compositeTileLoader(demSource()),
     water: $<HTMLInputElement>("opt-s2").checked ? sentinelWater : undefined,
-    waterways: $<HTMLInputElement>("opt-osm").checked ? waterwaysInBbox : undefined,
+    // OSM-Gewässer: zuerst schnelle Vektorkacheln (OpenFreeMap), sonst Overpass
+    waterways: $<HTMLInputElement>("opt-osm").checked ? (bbox) => waterInBbox(bbox).catch(() => waterwaysInBbox(bbox)) : undefined,
     maxCells: res < 0 ? 1_500_000 : res > 0 ? 5_000_000 : 3_000_000,
     onProgress: progressFor(id),
   });
@@ -288,7 +290,12 @@ async function traceSection(from: LngLat, to: LngLat, id: number) {
   const source = parts.length
     ? `${r.sources.join(" + ")}${r.shareOsm > 0 ? ` · ${pct(r.shareOsm)} auf OSM` : ""}${r.shareWater > 0 ? ` · ${pct(r.shareWater)} auf Wasser/Kiesbett` : ""}`
     : `${r.sources[0]} – nur Talboden, Kurven evtl. abgeschnitten`;
-  return { line: r.line, source };
+  // Weder OSM noch ein klares Satellitensignal: Verlauf kann Straßen oder Bahnlinien folgen
+  const note =
+    r.shareOsm < 0.5 && r.shareWater < 0.5
+      ? "Flusslauf unsicher (keine OSM-Gewässer, schwaches Satellitensignal) – bitte im Luftbild prüfen."
+      : "";
+  return { line: r.line, source, note };
 }
 function opts() {
   return {
@@ -736,7 +743,7 @@ map.on("click", async (e) => {
       setMode("idle");
       endpointMarker(p, "Ausstieg", "#264653");
       setBusy(true);
-      let sec: { line: LngLat[]; source: string };
+      let sec: { line: LngLat[]; source: string; note: string };
       try {
         sec = await traceSection(from, p, id);
       } catch (err) {
@@ -751,7 +758,7 @@ map.on("click", async (e) => {
       if (id !== runId) return;
       setBusy(false);
       src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
-      await runAnalysis(sec.line, "Eigene Strecke", sec.source);
+      await runAnalysis(sec.line, "Eigene Strecke", sec.source, sec.note);
       break;
     }
     case "draw":
@@ -786,7 +793,7 @@ $("load-preset").addEventListener("click", async () => {
     setBusy(false);
     src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
     fitLine(sec.line);
-    await runAnalysis(sec.line, pr.name, sec.source, "", pr.literature);
+    await runAnalysis(sec.line, pr.name, sec.source, sec.note, pr.literature);
   } catch (e) {
     if (id !== runId || isCancel(e)) return;
     setBusy(false);

@@ -98,6 +98,34 @@ describe("traceRiver", () => {
     expect(meanOffset(r.line)).toBeLessThan(4);
   });
 
+  it("lässt sich nicht von Straßen/Bahnschotter neben dem Fluss ablenken (Nahe-Fall)", async () => {
+    // Satellit: kein Wasser sichtbar (Bäume), aber eine unbewachsene gerade Straße entlang x = 300
+    const road = async (g: Grid) => {
+      const ndwi = new Float32Array(g.w * g.h).fill(-0.4);
+      const ndvi = new Float32Array(g.w * g.h).fill(0.7);
+      for (let y = 0; y < g.h; y++)
+        for (let x = 0; x < g.w; x++) if (Math.abs(g.x0 + x - OX - 300) <= 3) ndvi[y * g.w + x] = 0.1;
+      return { ndwi, ndvi, label: "Test" };
+    };
+    const osmLine: LngLat[] = [];
+    for (let y = 40; y <= 700; y += 5) osmLine.push(pixToLngLat(OX + riverX(y) + 0.5, OY + y + 0.5));
+    const r = await traceRiver(putIn, takeOut, { loader: valleyLoader, maxZoom: Z, water: road, waterways: async () => [{ name: "Test", coords: osmLine }] });
+    expect(meanOffset(r.line)).toBeLessThan(4);
+  });
+
+  it("füllt OSM-Wasserflächen ins Raster (breite Flüsse)", async () => {
+    // Fluss nur als Fläche kartiert: Band ±8 Pixel um die Sinuskurve
+    const left: LngLat[] = [], right: LngLat[] = [];
+    for (let y = 30; y <= 710; y += 5) {
+      left.push(pixToLngLat(OX + riverX(y) - 8, OY + y));
+      right.push(pixToLngLat(OX + riverX(y) + 8, OY + y));
+    }
+    const ring = [...left, ...right.reverse(), left[0]];
+    const r = await traceRiver(putIn, takeOut, { loader: valleyLoader, maxZoom: Z, waterways: async () => [{ coords: ring, area: true, kind: "river" }] });
+    expect(r.shareOsm).toBeGreaterThan(0.9);
+    expect(meanOffset(r.line)).toBeLessThan(9);
+  });
+
   it("gibt die Linie in Klickreihenfolge zurück, auch wenn flussaufwärts geklickt wurde", async () => {
     const r = await traceRiver(takeOut, putIn, { loader: valleyLoader, maxZoom: Z, water: sineWater });
     expect(r.reversed).toBe(true);

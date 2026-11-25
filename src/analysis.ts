@@ -17,12 +17,12 @@ export interface GradientClass {
  * hängt stark von Wasserführung, Flussbreite, Blockgröße und Verblockung ab.
  */
 export const GRADIENT_CLASSES: GradientClass[] = [
-  { id: "flat", min: 0, label: "< 3 m/km · flach", hint: "meist zahm (WW I–II), Wind und Strecke statt Wildwasser", color: "#2b83ba" },
-  { id: "moderate", min: 3, label: "3–8 m/km · mäßig", hint: "häufig WW II, einzelne Schwälle", color: "#64bc9c" },
-  { id: "marked", min: 8, label: "8–15 m/km · deutlich", hint: "häufig WW II–III, bei Hochwasser mehr", color: "#c7e57e" },
-  { id: "steep", min: 15, label: "15–30 m/km · steil", hint: "WW III–IV möglich, Stellen besichtigen", color: "#fdc861" },
-  { id: "verysteep", min: 30, label: "30–60 m/km · sehr steil", hint: "Wildbach-Charakter (WW IV–V), Umtragen wahrscheinlich", color: "#f46d43" },
-  { id: "extreme", min: 60, label: "> 60 m/km · extrem", hint: "Stufen, Fälle – meist nicht fahrbar", color: "#b2182b" },
+  { id: "flat", min: 0, label: "< 3 m/km · flach", hint: "meist Zahmwasser, kein Wildwasser", color: "#2b83ba" },
+  { id: "moderate", min: 3, label: "3–8 m/km · mäßig", hint: "meist WW I", color: "#64bc9c" },
+  { id: "marked", min: 8, label: "8–15 m/km · deutlich", hint: "meist WW II", color: "#c7e57e" },
+  { id: "steep", min: 15, label: "15–30 m/km · steil", hint: "WW II–III, einzelne Stellen schwerer", color: "#fdc861" },
+  { id: "verysteep", min: 30, label: "30–60 m/km · sehr steil", hint: "WW III–IV, Wildbach – Stellen besichtigen", color: "#f46d43" },
+  { id: "extreme", min: 60, label: "> 60 m/km · extrem", hint: "WW IV+, Stufen und Fälle – oft umtragen", color: "#b2182b" },
 ];
 
 export function classify(gradient: number): GradientClass {
