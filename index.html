@@ -44,6 +44,7 @@
             <button id="finish-draw" hidden>Zeichnen beenden</button>
             <button id="undo-draw" class="ghost" hidden>Letzten Punkt löschen</button>
             <button id="reset" class="ghost">Zurücksetzen</button>
+            <button id="cancel" class="danger" hidden>Berechnung abbrechen</button>
           </div>
         </section>
 
@@ -91,7 +92,8 @@
           <label class="check"><input type="checkbox" id="opt-s2" checked /> Sentinel-2-Satellitenbild (Wasser &amp; Kiesbett)</label>
           <label class="check"><input type="checkbox" id="opt-osm" checked /> OpenStreetMap-Gewässer</label>
           <span class="lbl" style="margin-top:10px">Engstellen &amp; Schluchten</span>
-          <label class="check"><input type="checkbox" id="opt-narrows" checked /> Flussbreite, Talquerschnitte und verdeckte Klammen analysieren</label>
+          <label class="check"><input type="checkbox" id="opt-narrows" checked /> Schluchten (Talquerschnitt) und verdeckte Klammen analysieren</label>
+          <label class="check"><input type="checkbox" id="opt-width" /> Engstellen aus Sentinel-2-Flussbreite (10 m – nur grob, oft ungenau)</label>
           <p class="hint">Das Höhenmodell wird immer genutzt. Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann in engen Schluchten Kurven abschneiden.</p>
         </details>
 
@@ -102,9 +104,17 @@
           <dl class="stats" id="stats"></dl>
           <h3>Gefälleklassen</h3>
           <ul id="classes" class="classes"></ul>
+          <h3>Stellen im Luftbild ansehen</h3>
+          <div class="row tour">
+            <button id="tour-prev" class="ghost" aria-label="Vorherige Stelle">◀</button>
+            <button id="tour-next" aria-label="Nächste Stelle">▶</button>
+            <span id="tour-label" class="hint"></span>
+          </div>
+          <h3>Luftbild &amp; Wasserstand</h3>
+          <div id="flow-info" class="flow-info"><p class="hint">Wird geladen …</p></div>
           <h3>Engstellen &amp; Schluchten</h3>
           <ul class="legend">
-            <li><span class="dia" style="background:#ff9f1c">E</span> Engstelle – Flussbett deutlich schmaler als sonst (Sentinel-2)</li>
+            <li><span class="dia" style="background:#ff9f1c">E</span> Engstelle – Flussbett deutlich schmaler als sonst (Sentinel-2, optional)</li>
             <li><span class="dia" style="background:#8e44ad">S</span> Schlucht – Tal 20 m über Wasser schmal und tief (Höhenmodell)</li>
             <li><span class="dia" style="background:#111">K</span> Mögliche Klamm – Fluss im Satellitenbild verdeckt, beidseitig steil</li>
           </ul>
@@ -129,10 +139,11 @@
       <main id="main">
         <div id="map"></div>
         <div id="basemap" class="basemap" role="group" aria-label="Kartenhintergrund">
-          <button data-base="esri" class="on">Satellit</button>
+          <button data-base="esri" class="on" title="Hochauflösendes Luft-/Satellitenbild (Esri World Imagery, je nach Region 0,25–1 m)">Luftbild</button>
           <button data-base="s2">Sentinel-2</button>
           <button data-base="topo">Topo</button>
           <label><input type="checkbox" id="terrain" /> 3D</label>
+          <span id="img-date" class="img-date" title="Quelle, Aufnahmedatum und Auflösung des Luftbilds in der Kartenmitte"></span>
         </div>
         <div id="profile-wrap" hidden>
           <div id="profile"></div>

@@ -174,7 +174,8 @@ function snap(g: Grid, cost: Float32Array, p: LngLat, r: number): number {
  * Rand des Ausschnitts entlang (Fluss macht einen großen Bogen), wird der Ausschnitt
  * vergrößert und neu gerechnet.
  */
-export async function traceRiver(putIn: LngLat, takeOut: LngLat, inp: RouteInputs = {}): Promise<RouteResult> {
+export async function traceRiver(putIn: LngLat, takeOut: LngLat, inpIn: RouteInputs = {}): Promise<RouteResult> {
+  const inp = { ...inpIn, waterways: inpIn.waterways && sharedWaterways(inpIn.waterways) };
   const spanKm = haversine(putIn, takeOut) / 1000;
   // Flüsse mäandern: Ausschnitt deutlich größer als die Luftlinie
   let marginDeg = Math.max(0.015, (spanKm / 111) * 0.4);
@@ -211,11 +212,32 @@ export async function traceRiver(putIn: LngLat, takeOut: LngLat, inp: RouteInput
   const wavg = (f: (p: RouteResult) => number) => parts.reduce((acc, p, i) => acc + f(p) * lens[i], 0) / sum;
   return {
     line: parts.flatMap((p, i) => (i === 0 ? p.line : p.line.slice(1))),
-    sources: [...new Set(parts.flatMap((p) => p.sources.filter((x) => !x.startsWith("Höhenmodell")))), `Höhenmodell (${Math.max(...parts.map((p) => p.resolution)).toFixed(1)} m)`],
+    sources: mergeSources(parts.flatMap((p) => p.sources), Math.max(...parts.map((p) => p.resolution))),
     shareOsm: wavg((p) => p.shareOsm),
     shareWater: wavg((p) => p.shareWater),
     resolution: Math.max(...parts.map((p) => p.resolution)),
     reversed: coarse.reversed,
+  };
+}
+
+/** Höchstens so lange wird auf OSM-Gewässer gewartet (ms); danach ohne OSM weiter. */
+export const OSM_TIMEOUT = 8000;
+
+/**
+ * Gewässerlinien nur einmal für den größten Ausschnitt laden; Teilstücke beim Feinabgleich
+ * nutzen dieselben Daten. Antwortet OSM nicht rechtzeitig, wird ohne OSM gerechnet.
+ */
+function sharedWaterways(fetchWays: NonNullable<RouteInputs["waterways"]>): NonNullable<RouteInputs["waterways"]> {
+  let loaded: { bbox: [number, number, number, number]; ways: Promise<{ name?: string; coords: LngLat[] }[] | null> } | null = null;
+  return async (bbox) => {
+    const inside = loaded && loaded.bbox[0] <= bbox[0] && loaded.bbox[1] <= bbox[1] && loaded.bbox[2] >= bbox[2] && loaded.bbox[3] >= bbox[3];
+    if (!inside) {
+      const timeout = new Promise<null>((r) => setTimeout(() => r(null), OSM_TIMEOUT));
+      loaded = { bbox, ways: Promise.race([fetchWays(bbox).catch(() => null), timeout]) };
+    }
+    const ways = await loaded!.ways;
+    if (!ways) throw new Error("OSM nicht verfügbar");
+    return ways;
   };
 }
 
@@ -354,4 +376,14 @@ async function traceOnce(putIn: LngLat, takeOut: LngLat, inp: RouteInputs, margi
     reversed,
     touchesEdge,
   };
+}
+
+/** Quellen der Teilstücke zusammenfassen: alle Sentinel-2-Daten in einem Eintrag. */
+function mergeSources(all: string[], resolution: number): string[] {
+  const dates = [...new Set(all.filter((x) => x.startsWith("Sentinel-2")).flatMap((x) => x.slice(12, -1).split(", ")))].sort();
+  return [
+    ...(dates.length ? [`Sentinel-2 (${dates.join(", ")})`] : []),
+    ...(all.includes("OpenStreetMap") ? ["OpenStreetMap"] : []),
+    `Höhenmodell (${resolution.toFixed(1)} m)`,
+  ];
 }

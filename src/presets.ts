@@ -17,11 +17,18 @@ export interface Preset {
 
 // Orte entlang der Soča; Flusspunkte aus dem nachgezogenen Verlauf bzw. Ortslagen (Wikipedia)
 const NA_LOGU: LngLat = [13.7502, 46.3815];
-const SOCA_DORF: LngLat = [13.6545, 46.3358];
+const SOCA_DORF: LngLat = [13.6532, 46.3402]; // Flusspunkt beim Dorf Soča
 const CEZSOCA: LngLat = [13.5583, 46.3238];
 const SRPENICA: LngLat = [13.5024, 46.2956];
-const TRNOVO: LngLat = [13.5531, 46.2798];
+const TRNOVO: LngLat = [13.5562, 46.282]; // Flusspunkt bei Trnovo ob Soči
 const KOBARID: LngLat = [13.5863, 46.2477];
+
+// Sjoa (Norwegen): Abschnittsgrenzen nach Rafting-Anbietern, auf den Flusslauf gesetzt
+const RIDDER: LngLat = [9.0763, 61.6821];
+const ASENG_IN: LngLat = [9.1754, 61.7042];
+const ASENG_OUT: LngLat = [9.3016, 61.7517];
+const AMOT_IN: LngLat = [9.4806, 61.6878];
+const SJOA_MOUTH: LngLat = [9.5413, 61.6818];
 
 export const PRESETS: Preset[] = [
   {
@@ -82,6 +89,46 @@ export const PRESETS: Preset[] = [
     seed: [13.57, 46.265],
     putIn: TRNOVO,
     takeOut: KOBARID,
+    zoom: 13,
+  },
+  {
+    id: "sjoa-ridderspranget",
+    name: "Sjoa · Ridderspranget – Åsengjuvet-Einstieg",
+    description: "Oberste Sjoa-Strecke ab der Ridderspranget-Klamm (drei Fälle am Einstieg).",
+    literature: "WW 5 bei Ridderspranget",
+    seed: [9.12, 61.69],
+    putIn: RIDDER,
+    takeOut: ASENG_IN,
+    zoom: 12,
+  },
+  {
+    id: "sjoa-asengjuvet",
+    name: "Sjoa · Åsengjuvet",
+    description: "12 km durchgehende Schluchtstrecke, anspruchsvoll und schwer verlassbar.",
+    literature: "WW 3–4 (+), bei viel Wasser schwerer",
+    seed: [9.24, 61.73],
+    putIn: ASENG_IN,
+    takeOut: ASENG_OUT,
+    zoom: 12,
+  },
+  {
+    id: "sjoa-playrun",
+    name: "Sjoa · Playrun (Heidal)",
+    description: "Klassische Raft- und Kajakstrecke durch Heidal (Faukstad, China Hole, Washing Machine).",
+    literature: "WW 2–3",
+    seed: [9.39, 61.72],
+    putIn: ASENG_OUT,
+    takeOut: AMOT_IN,
+    zoom: 12,
+  },
+  {
+    id: "sjoa-amot",
+    name: "Sjoa · Åmot – Mündung",
+    description: "Åmot-Schlucht bis zur Mündung in die Gudbrandsdalslågen bei Sjoa.",
+    literature: "WW 4, bei Hochwasser fast 5",
+    seed: [9.51, 61.685],
+    putIn: AMOT_IN,
+    takeOut: SJOA_MOUTH,
     zoom: 13,
   },
   {

@@ -12,6 +12,8 @@ import { renderProfile } from "./profileChart";
 import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
+import { imageryAlong, imageryAt, type ImageryStretch } from "./imagery";
+import { flowOn, latestDate, meanFlow, officialGauges, riverCell, seriesFor, type DischargeSeries, type FlowState } from "./discharge";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -60,6 +62,7 @@ const style: StyleSpecification = {
     },
     river: { type: "geojson", data: empty },
     narrows: { type: "geojson", data: empty },
+    gauge: { type: "geojson", data: empty },
     section: { type: "geojson", data: empty },
     draft: { type: "geojson", data: empty },
     cursor: { type: "geojson", data: empty },
@@ -88,6 +91,7 @@ const style: StyleSpecification = {
     },
     { id: "draft-line", type: "line", source: "draft", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#ffd166", "line-width": 3, "line-dasharray": [2, 1] } },
     { id: "draft-pts", type: "circle", source: "draft", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 4, "circle-color": "#ffd166", "circle-stroke-color": "#000", "circle-stroke-width": 1 } },
+    { id: "gauge", type: "circle", source: "gauge", paint: { "circle-radius": 6, "circle-color": "#1f78b4", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } },
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
   ],
 };
@@ -111,6 +115,7 @@ document.querySelectorAll<HTMLButtonElement>("#basemap button").forEach((b) =>
   b.addEventListener("click", () => {
     const key = b.dataset.base as BaseKey;
     for (const k of Object.keys(BASEMAPS)) map.setLayoutProperty(`base-${k}`, "visibility", k === key ? "visible" : "none");
+    void updateImageDate();
     document.querySelectorAll("#basemap button").forEach((x) => x.classList.toggle("on", x === b));
   }),
 );
@@ -121,6 +126,25 @@ $<HTMLInputElement>("terrain").addEventListener("change", (e) => {
   if (!on) map.easeTo({ pitch: 0 });
 });
 
+// Aufnahmedatum/Auflösung des Luftbilds in der Kartenmitte anzeigen
+let imgReq = 0;
+async function updateImageDate() {
+  const el = $("img-date");
+  const esriOn = map.getLayoutProperty("base-esri", "visibility") !== "none";
+  if (!esriOn || map.getZoom() < 12) return (el.textContent = "");
+  const id = ++imgReq;
+  const c = map.getCenter();
+  try {
+    const info = await imageryAt([c.lng, c.lat], Math.round(map.getZoom()) + 1);
+    if (id !== imgReq) return;
+    el.textContent = info ? `Bild: ${info.date.split("-").reverse().join(".")} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}` : "";
+  } catch {
+    if (id === imgReq) el.textContent = "";
+  }
+}
+map.on("moveend", () => void updateImageDate());
+map.on("load", () => void updateImageDate());
+
 // ---------- Zustand ----------
 type Mode = "idle" | "osm-river" | "osm-in" | "osm-out" | "route-in" | "route-out" | "draw";
 let mode: Mode = "idle";
@@ -128,7 +152,14 @@ let riverLine: LngLat[] | null = null;
 let riverName = "";
 let putIn: LngLat | null = null;
 let drawPts: LngLat[] = [];
-let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult } | null = null;
+interface FlowInfo {
+  imagery: (ImageryStretch & { flow: FlowState | null })[];
+  series: DischargeSeries | null;
+  today: FlowState | null;
+  mq: number;
+  error?: string;
+}
+let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo } | null = null;
 
 /** Darstellung der Engstellen-Typen */
 export const NARROW_STYLE: Record<NarrowKind, { color: string; letter: string; label: string }> = {
@@ -143,8 +174,27 @@ let chart: { highlight: (d: number | null) => void } | null = null;
 let runId = 0;
 let busy = false;
 
+/** Wird geworfen, wenn ein Vorgang abgebrochen bzw. durch einen neuen ersetzt wurde. */
+class Cancelled extends Error {
+  constructor() {
+    super("Abgebrochen");
+    this.name = "Cancelled";
+  }
+}
+/**
+ * Fortschrittsmeldung für Vorgang `id`. Ist inzwischen ein neuer Vorgang gestartet
+ * oder wurde abgebrochen, bricht die Meldung den alten Vorgang ab (statt im
+ * Hintergrund weiterzurechnen).
+ */
+const progressFor = (id: number) => (m: string) => {
+  if (id !== runId) throw new Cancelled();
+  setStatus(m);
+};
+const isCancel = (e: unknown) => e instanceof Cancelled;
+
 function setBusy(b: boolean) {
   busy = b;
+  $("cancel").hidden = !b;
   document.querySelectorAll<HTMLButtonElement>("#load-preset, .modes button, #finish-draw, #undo-draw").forEach((x) => (x.disabled = b));
   document.querySelectorAll<HTMLSelectElement>("#panel details select").forEach((x) => (x.disabled = b));
   document.body.classList.toggle("busy", b);
@@ -189,6 +239,7 @@ function endpointMarker(p: LngLat, label: string, color: string) {
 
 function resetAll() {
   runId++;
+  setBusy(false);
   lastSection = null;
   riverLine = null;
   putIn = null;
@@ -198,6 +249,7 @@ function resetAll() {
   src("river").setData(empty);
   src("section").setData(empty);
   src("narrows").setData(empty);
+  src("gauge").setData(empty);
   src("draft").setData(empty);
   src("cursor").setData(empty);
   $("results").hidden = true;
@@ -222,14 +274,14 @@ function analysisZoom(line: LngLat[]): number {
 }
 
 /** Flusslauf zwischen zwei Punkten nachziehen (Satellit + OSM + Höhenmodell). */
-async function traceSection(from: LngLat, to: LngLat) {
+async function traceSection(from: LngLat, to: LngLat, id: number) {
   const res = Number($<HTMLSelectElement>("opt-res").value);
   const r = await traceRiver(from, to, {
     loader: compositeTileLoader(demSource()),
     water: $<HTMLInputElement>("opt-s2").checked ? sentinelWater : undefined,
     waterways: $<HTMLInputElement>("opt-osm").checked ? waterwaysInBbox : undefined,
     maxCells: res < 0 ? 1_500_000 : res > 0 ? 5_000_000 : 3_000_000,
-    onProgress: (m) => setStatus(m),
+    onProgress: progressFor(id),
   });
   const pct = (v: number) => `${Math.round(v * 100)} %`;
   const parts = r.sources.filter((s) => !s.startsWith("Höhenmodell"));
@@ -262,7 +314,7 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
   const before = { ...demStats };
   setBusy(true);
   try {
-    const a = await analyzeRiver(line, (p, cb) => sampler.elevations(p, cb), opts(), (m) => id === runId && setStatus(m));
+    const a = await analyzeRiver(line, (p, cb) => sampler.elevations(p, cb), opts(), progressFor(id));
     if (id !== runId) return false; // inzwischen neuer Vorgang gestartet
     const kv = demStats.kartverket - before.kartverket, gl = demStats.global - before.global;
     const err = demStats.kartverketErrors - before.kartverketErrors;
@@ -273,6 +325,8 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
         : "");
     current = { analysis: a, name, source, dem, literature };
     showResults();
+    // Luftbild-Datum und Abfluss parallel laden (blockiert die übrige Analyse nicht)
+    void loadFlowInfo(a, id);
     if ($<HTMLInputElement>("opt-narrows").checked) {
       // Querprofile: mit Kartverket fein (3 m), sonst 10 m
       const fine = kv > 0 && gl === 0;
@@ -281,8 +335,9 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
       const nr = await analyzeNarrows(a.profile, {
         elevations: (p, cb) => qs.elevations(p, cb),
         satellite: $<HTMLInputElement>("opt-s2").checked ? sentinelPoints : undefined,
+        reportNarrows: $<HTMLInputElement>("opt-width").checked,
         ...th,
-        onProgress: (m) => id === runId && setStatus(m),
+        onProgress: progressFor(id),
       });
       if (id !== runId) return false;
       current.narrows = nr;
@@ -292,7 +347,7 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
     setStatus(notes.length ? `Hinweis: ${notes.join(" ")}` : "");
     return true;
   } catch (e) {
-    if (id === runId) setStatus(`Analyse fehlgeschlagen: ${(e as Error).message}`, true);
+    if (id === runId && !isCancel(e)) setStatus(`Analyse fehlgeschlagen: ${(e as Error).message}`, true);
     return false;
   } finally {
     if (id === runId) setBusy(false);
@@ -407,6 +462,9 @@ function showResults() {
     hsList.appendChild(li);
   });
 
+  renderFlowInfo();
+  tourIndex = -1;
+  $("tour-label").textContent = `${tourStops().length} markierte Stellen im Luftbild ansehen`;
   $("results").hidden = false;
   $("profile-wrap").hidden = false;
   map.resize();
@@ -423,17 +481,111 @@ function drawChart() {
   });
 }
 
+const LEVEL_COLOR: Record<string, string> = { "sehr niedrig": "#b2182b", niedrig: "#ef8a62", mittel: "#4d9221", hoch: "#2166ac", "sehr hoch": "#053061" };
+
+async function loadFlowInfo(a: Analysis, id: number) {
+  const pts = a.profile.map((p) => ({ d: p.d, p: p.p }));
+  const line = a.profile.map((p) => p.p);
+  let info: FlowInfo;
+  try {
+    const [imagery, cell] = await Promise.all([imageryAlong(pts).catch(() => []), riverCell(line).catch(() => null)]);
+    const series = cell ? await seriesFor(cell).catch(() => null) : null;
+    const ld = series ? latestDate(series) : null;
+    info = {
+      imagery: imagery.map((im) => ({ ...im, flow: series ? flowOn(series, im.date) : null })),
+      series,
+      today: series && ld ? flowOn(series, ld) : null,
+      mq: series ? meanFlow(series) : NaN,
+    };
+  } catch (e) {
+    info = { imagery: [], series: null, today: null, mq: NaN, error: (e as Error).message };
+  }
+  if (id !== runId && current?.analysis !== a) return;
+  if (current?.analysis !== a) return;
+  current.flow = info;
+  renderFlowInfo();
+}
+
+function renderFlowInfo() {
+  const el = $("flow-info");
+  const f = current?.flow;
+  if (!current || !f) {
+    el.innerHTML = `<p class="hint">Wird geladen …</p>`;
+    return;
+  }
+  const fmtDate = (iso: string) => iso.split("-").reverse().join(".");
+  const fmtQ = (q: number) => (q >= 10 ? q.toFixed(0) : q.toFixed(1)).replace(".", ",");
+  const lvl = (s: FlowState | null) =>
+    s ? `<span class="lvl" style="background:${LEVEL_COLOR[s.label]}">${s.label}</span>` : "–";
+  const rows = f.imagery
+    .map(
+      (im) =>
+        `<tr><td>km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)}</td>` +
+        `<td><b>${fmtDate(im.date)}</b><br>${im.provider} · ${im.resolution.toString().replace(".", ",")} m</td>` +
+        `<td class="q">${im.flow ? `${fmtQ(im.flow.q)} m³/s<br>${lvl(im.flow)}` : "–"}</td></tr>`,
+    )
+    .join("");
+  const today = f.today
+    ? `<tr><td>heute</td><td><b>${fmtDate(f.today.date)}</b><br>Modell GloFAS</td><td class="q">${fmtQ(f.today.q)} m³/s<br>${lvl(f.today)}</td></tr>`
+    : "";
+  const first = f.imagery.find((im) => im.flow);
+  const ratio =
+    first?.flow && f.today
+      ? `<p class="hint">Heute fließt etwa <b>${(f.today.q / first.flow.q).toFixed(1).replace(".", ",")}×</b> so viel Wasser wie am Aufnahmetag des Luftbilds (${fmtDate(first.date)}). Mittlerer Abfluss (MQ): ~${fmtQ(f.mq)} m³/s.</p>`
+      : "";
+  const gauges = officialGauges(current.analysis.profile[0].p)
+    .map((g) => `<a href="${g.url}" target="_blank" rel="noopener">${g.label}</a>`)
+    .join(" · ");
+  el.innerHTML =
+    (f.imagery.length || today
+      ? `<table><tr><th>Strecke</th><th>Luftbild</th><th>Abfluss*</th></tr>${rows}${today}</table>`
+      : `<p class="hint">Keine Bild- oder Abflussdaten verfügbar${f.error ? ` (${f.error})` : ""}.</p>`) +
+    ratio +
+    `<p class="hint">* Modellabfluss GloFAS (Copernicus, über Open-Meteo), Rasterpunkt ${f.series ? `${f.series.cell.lat.toFixed(3)}, ${f.series.cell.lon.toFixed(3)}` : "–"} (5-km-Raster, auf der Karte als blauer Punkt). ` +
+    `Einordnung im Vergleich zu allen Jahren um dieselbe Jahreszeit. Für kleine Flüsse und nahe Mündungen nur grob – mit dem Pegel vor Ort vergleichen${gauges ? `: ${gauges}` : ""}.</p>`;
+  src("gauge").setData(
+    f.series ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [f.series.cell.lon, f.series.cell.lat] } } : empty,
+  );
+}
+
+/** Zoom für die Detailansicht einzelner Stellen im Luftbild (Blöcke, Stufen erkennbar). */
+const DETAIL_ZOOM = 17.5;
+
+/** Alle markierten Stellen (Hotspots, Engstellen, Schluchten) entlang der Strecke zum Durchblättern. */
+let tourIndex = -1;
+function tourStops() {
+  if (!current) return [];
+  const a = current.analysis;
+  const stops = [
+    ...a.hotspots.map((h, i) => ({ d: (h.d0 + h.d1) / 2, label: `H${i + 1} · max. ${h.maxGradient.toFixed(0)} m/km`, go: () => focusHotspot(i) })),
+    ...(current.narrows?.features ?? []).map((f, i) => ({ d: (f.d0 + f.d1) / 2, label: f.title, go: () => focusNarrow(i) })),
+  ];
+  return stops.sort((x, y) => x.d - y.d);
+}
+function tour(step: number) {
+  const stops = tourStops();
+  if (!stops.length) return;
+  tourIndex = (tourIndex + step + stops.length) % stops.length;
+  const s = stops[tourIndex];
+  const base = document.querySelector<HTMLButtonElement>('#basemap button[data-base="esri"]');
+  if (map.getLayoutProperty("base-esri", "visibility") === "none") base?.click();
+  s.go();
+  $("tour-label").textContent = `${tourIndex + 1}/${stops.length} · km ${(s.d / 1000).toFixed(1)} · ${s.label}`;
+}
+$("tour-prev").addEventListener("click", () => tour(-1));
+$("tour-next").addEventListener("click", () => tour(1));
+
 function focusNarrow(i: number) {
   const f = current?.narrows?.features[i];
   if (!f) return;
-  map.flyTo({ center: f.center, zoom: Math.max(map.getZoom(), 15.5), duration: 900 });
+  map.flyTo({ center: f.center, zoom: DETAIL_ZOOM, duration: 900 });
   chart?.highlight((f.d0 + f.d1) / 2);
 }
 
 function focusHotspot(i: number) {
   if (!current) return;
   const h = current.analysis.hotspots[i];
-  map.flyTo({ center: h.center, zoom: Math.max(map.getZoom(), 15), duration: 900 });
+  map.flyTo({ center: h.center, zoom: DETAIL_ZOOM, duration: 900 });
   chart?.highlight((h.d0 + h.d1) / 2);
 }
 
@@ -441,7 +593,7 @@ function focusHotspot(i: number) {
 new ResizeObserver(() => drawChart()).observe($("profile-wrap"));
 
 // Parameter geändert → neu rechnen
-["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf", "opt-narrows"].forEach((id) =>
+["opt-seg", "opt-hot", "opt-dem", "opt-res", "opt-conf", "opt-narrows", "opt-width"].forEach((id) =>
   $(id).addEventListener("change", () => {
     if (lastSection && !busy) void runAnalysis(lastSection.line, lastSection.name, lastSection.source, "", lastSection.literature);
   }),
@@ -474,6 +626,11 @@ document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) =>
   }),
 );
 $("reset").addEventListener("click", () => { resetAll(); setMode("idle"); });
+$("cancel").addEventListener("click", () => {
+  resetAll();
+  setMode("idle");
+  setStatus("Berechnung abgebrochen. Du kannst sofort eine neue Strecke wählen.");
+});
 
 function updateDraft() {
   const features: GeoJSON.Feature[] = drawPts.map((p) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } }));
@@ -535,17 +692,20 @@ map.on("click", async (e) => {
   if (busy) return;
   const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
   switch (mode) {
-    case "osm-river":
+    case "osm-river": {
+      const id = ++runId;
       setBusy(true);
       try {
         await loadOsmRiver(p);
+        if (id !== runId) return; // inzwischen zurückgesetzt
         setMode("osm-in");
       } catch (err) {
+        if (id !== runId) return;
         setStatus(`${(err as Error).message} Erneut auf den Fluss klicken oder anderen Modus wählen.`, true);
-      } finally {
-        setBusy(false);
       }
+      if (id === runId) setBusy(false);
       break;
+    }
     case "osm-in":
       if (!riverLine) return setMode("osm-river");
       putIn = locateOnLine(riverLine, p).point;
@@ -578,18 +738,18 @@ map.on("click", async (e) => {
       setBusy(true);
       let sec: { line: LngLat[]; source: string };
       try {
-        sec = await traceSection(from, p);
+        sec = await traceSection(from, p, id);
       } catch (err) {
+        if (id !== runId || isCancel(err)) return;
         setBusy(false);
-        if (id !== runId) return;
         clearMarkers();
         putIn = null;
         setMode("route-in");
         setStatus(`${(err as Error).message} Bitte Einstieg neu wählen.`, true);
         return;
       }
-      setBusy(false);
       if (id !== runId) return;
+      setBusy(false);
       src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
       await runAnalysis(sec.line, "Eigene Strecke", sec.source);
       break;
@@ -621,15 +781,16 @@ $("load-preset").addEventListener("click", async () => {
   map.flyTo({ center: pr.seed, zoom: pr.zoom });
   setBusy(true);
   try {
-    const sec = await traceSection(pr.putIn, pr.takeOut);
-    setBusy(false);
+    const sec = await traceSection(pr.putIn, pr.takeOut, id);
     if (id !== runId) return;
+    setBusy(false);
     src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
     fitLine(sec.line);
     await runAnalysis(sec.line, pr.name, sec.source, "", pr.literature);
   } catch (e) {
+    if (id !== runId || isCancel(e)) return;
     setBusy(false);
-    if (id === runId) setStatus(`Laden fehlgeschlagen: ${(e as Error).message}`, true);
+    setStatus(`Laden fehlgeschlagen: ${(e as Error).message}`, true);
   }
 });
 

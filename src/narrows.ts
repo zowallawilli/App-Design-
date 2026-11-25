@@ -53,6 +53,8 @@ export interface NarrowsOptions {
   demStep?: number;
   /** Schlucht, wenn Talbreite 20 m über Wasser höchstens so breit ist (m) */
   gorgeWidth?: number;
+  /** Engstellen aus der Sentinel-2-Breite melden (10 m Auflösung – grob) */
+  reportNarrows?: boolean;
   /** … und die Hänge beidseitig mindestens so hoch sind (m) */
   gorgeDepth?: number;
   onProgress?: (msg: string) => void;
@@ -193,7 +195,7 @@ export async function analyzeNarrows(profile: ProfilePoint[], o: NarrowsOptions)
   // Engstellen: Breite ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler.
   // Nur wo das Flussbett typischerweise ≥ 30 m breit ist (≥ 3 Sentinel-2-Pixel) –
   // schmalere Flüsse kann der Satellit nicht verlässlich in der Breite auflösen.
-  if (satellite) {
+  if (satellite && o.reportNarrows !== false) {
     const widths = sections.map((s) => s.width);
     const smooth = widths.map((_, i) => {
       const v = widths.slice(Math.max(0, i - 1), i + 2).filter((x): x is number => x !== null);

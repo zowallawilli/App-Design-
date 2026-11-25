@@ -139,6 +139,27 @@ export function monotoneDecreasing(values: number[]): number[] {
   return out;
 }
 
+/** Steigung der Ausgleichsgeraden (m je km) von y über x (m). */
+export function trendPerKm(x: number[], y: number[]): number {
+  const n = x.length;
+  if (n < 2) return 0;
+  const mx = x.reduce((a, b) => a + b, 0) / n, my = y.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (x[i] - mx) * (y[i] - my);
+    sxx += (x[i] - mx) ** 2;
+  }
+  return sxx > 0 ? (sxy / sxx) * 1000 : 0;
+}
+
+/** Gleitender Median (Halbbreite k). */
+export function runningMedian(v: number[], k: number): number[] {
+  return v.map((_, i) => {
+    const w = v.slice(Math.max(0, i - k), i + k + 1).sort((a, b) => a - b);
+    return w[Math.floor(w.length / 2)];
+  });
+}
+
 /** Zentriertes gleitendes Mittel (Halbbreite k Stützpunkte); zu den Enden hin symmetrisch verkürzt, damit Start- und Endhöhe erhalten bleiben. */
 export function movingAverage(values: number[], k: number): number[] {
   if (k <= 0) return [...values];
@@ -190,15 +211,14 @@ export async function analyzeRiver(
   onProgress?.("Höhendaten laden …");
   let z = await elevations(buildQuery(samples), (a, b) => onProgress?.(`Höhendaten ${Math.round((a / b) * 100)} %`));
 
-  // Fließrichtung prüfen: Start muss höher liegen als Ende. Median der ersten/letzten
-  // Talboden-Werte statt eines Einzelpixels, damit Rauschen die Richtung nicht kippt.
+  // Fließrichtung prüfen: Die Strecke wird in der angegebenen Richtung (Einstieg → Ausstieg)
+  // ausgewertet. Nur wenn das Gelände entlang der GANZEN Strecke deutlich ansteigt
+  // (Ausgleichsgerade über alle Talboden-Werte, > 1 m/km), wird umgedreht – einzelne
+  // Höhenfehler an den Endpunkten (z. B. in Schluchten) kippen die Richtung so nicht mehr.
   let reversed = false;
   const floorAt = (i: number) => Math.min(...z.slice(i * perSample, i * perSample + 1 + o.floorOffsets.length * 2));
-  const endN = Math.max(1, Math.min(10, Math.floor(samples.length / 5)));
-  const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
-  const head = median(Array.from({ length: endN }, (_, i) => floorAt(i)));
-  const tail = median(Array.from({ length: endN }, (_, i) => floorAt(samples.length - 1 - i)));
-  if (head < tail) {
+  const fl = samples.map((_, i) => floorAt(i));
+  if (trendPerKm(samples.map((x) => x.d), fl) > 1) {
     reversed = true;
     samples = resample([...line].reverse(), o.step);
     z = await elevations(buildQuery(samples));
@@ -213,7 +233,13 @@ export async function analyzeRiver(
     const right = z[base + 2 + nFloor];
     return { d: s.d, p: s.p, raw, floor, walls: Math.min(left, right) - floor };
   });
-  const smooth = movingAverage(monotoneDecreasing(profileRaw.map((p) => p.floor)), Math.round(o.smoothWindow / o.step / 2));
+  // Einzelne Ausreißer nach unten (Höhenfehler in Schluchten, Brücken) begrenzen, bevor die
+  // monotone Anpassung sie über lange Strecken „mitzieht“: höchstens 8 m unter dem
+  // gleitenden Median (±250 m).
+  const floors = profileRaw.map((p) => p.floor);
+  const med = runningMedian(floors, Math.round(250 / o.step));
+  const clipped = floors.map((v, i) => Math.max(v, med[i] - 8));
+  const smooth = movingAverage(monotoneDecreasing(clipped), Math.round(o.smoothWindow / o.step / 2));
   const profile: ProfilePoint[] = profileRaw.map((p, i) => ({ ...p, z: smooth[i] }));
 
   const length = profile[profile.length - 1].d;
