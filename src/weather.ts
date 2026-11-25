@@ -182,6 +182,6 @@ export function assess(date: string, p: LngLat, w: WeatherWindow | null): Condit
 export function captureNote(provider: string, name: string): string {
   const s = `${provider} ${name}`;
   if (/maxar|vantor|digitalglobe|worldview|geoeye|airbus|pl[eé]iades|spot|cnes/i.test(s))
-    return "Satellitenbild – Uhrzeit nicht veröffentlicht; diese Satelliten überfliegen Europa meist am Vormittag (etwa 10–12 Uhr Ortszeit).";
-  return "Luftbild-Befliegung (Orthofoto) – Uhrzeit nicht veröffentlicht; Befliegungen meist bei hohem Sonnenstand (Vormittag bis früher Nachmittag). Das Datum gilt für diesen Bildteil, Nachbarabschnitte können an anderen Tagen beflogen sein.";
+    return "Satellitenbild – Uhrzeit nicht veröffentlicht, meist vormittags (~10–12 Uhr Ortszeit).";
+  return "Orthofoto (Befliegung) – Uhrzeit nicht veröffentlicht, meist Vormittag bis früher Nachmittag.";
 }

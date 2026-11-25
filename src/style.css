@@ -144,3 +144,9 @@ button.danger { background: #c0392b; color: #fff; }
 @media (max-width: 760px) { .img-date { display: none; } }
 .tour .hint { margin: 0; flex: 1; min-width: 0; }
 #wave-btn.on { background: var(--accent); color: var(--accent-fg); }
+.flow-info .days { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.flow-info .day { border: 1px solid var(--line, #ddd); border-radius: 8px; padding: 6px 8px; }
+.flow-info .day-head { margin-bottom: 4px; line-height: 1.35; }
+.flow-info .day-row { display: grid; grid-template-columns: 4.6em 1fr; gap: 6px; margin-top: 4px; }
+.flow-info .day-row .k { color: var(--muted); font-size: 0.8rem; padding-top: 2px; }
+.flow-info .day-row .q { white-space: normal; }

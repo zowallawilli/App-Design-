@@ -655,19 +655,28 @@ function renderFlowInfo() {
       `${c.weather ? "" : "<li>• Wetterdaten gerade nicht abrufbar – Tendenz nur aus der Jahreszeit.</li>"}</ul>`
     );
   };
+  const day = (title: string, sub: string, gauge: string, d: string) =>
+    `<div class="day"><div class="day-head"><b>${title}</b> <span class="hint">${sub}</span></div>` +
+    `<div class="day-row"><span class="k">Pegel</span><span class="q">${gauge}</span></div>` +
+    `<div class="day-row"><span class="k">Hinweise</span><span>${hints(d)}</span></div></div>`;
   const rows = f.imagery
-    .map(
-      (im) =>
-        `<tr><td><b>${fmtDate(im.date)}</b><br><span class="hint">km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)}</span></td>` +
-        `<td>${esc(im.provider)} · ${im.resolution.toString().replace(".", ",")} m<br><span class="hint">${esc(captureNote(im.provider, im.name))}</span></td>` +
-        `<td class="q">${measured(im.date)}</td>` +
-        `<td>${hints(im.date)}</td></tr>`,
+    .map((im) =>
+      day(
+        `Luftbild ${fmtDate(im.date)}`,
+        `km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)} · ${esc(im.provider)} · ${im.resolution.toString().replace(".", ",")} m<br>${esc(captureNote(im.provider, im.name))}`,
+        measured(im.date),
+        im.date,
+      ),
     )
     .join("");
-  const today =
-    `<tr><td><b>heute</b><br><span class="hint">${fmtDate(f.today)}</span></td><td>–</td>` +
-    `<td class="q">${gm?.latest ? `${est ? "≈ " : ""}<b>${fmtQ(gm.latest.q)} m³/s</b>${estHint}<br><span class="hint">${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""}</span>` : `<span class="hint">${gm ? "kein aktueller Wert" : "kein Pegel"}</span>`}</td>` +
-    `<td>${hints(f.today)}</td></tr>`;
+  const today = day(
+    `Heute ${fmtDate(f.today)}`,
+    "",
+    gm?.latest
+      ? `${est ? "≈ " : ""}<b>${fmtQ(gm.latest.q)} m³/s</b>${estHint} <span class="hint">(${gm.latest.time.slice(0, 16).replace("T", " ")}${gm.latest.time.endsWith("Z") ? " UTC" : ""})</span>`
+      : `<span class="hint">${gm ? "kein aktueller Wert" : "kein Pegel"}</span>`,
+    f.today,
+  );
   // Verhältnis heute ÷ Aufnahmetag nur aus gemessenen Werten
   const measuredFirst = f.imagery.map((im) => ({ im, q: gm?.onDates.get(im.date) })).find((x) => x.q !== undefined);
   const ratio =
@@ -686,12 +695,13 @@ function renderFlowInfo() {
     .join(" · ");
   el.innerHTML =
     (f.imagery.length || gm
-      ? `<table><tr><th>Aufnahmetag</th><th>Luftbild</th><th>Pegel</th><th>Hinweise (keine Messung)</th></tr>${rows}${today}</table>`
+      ? `<div class="days">${rows}${today}</div>`
       : `<p class="hint">Keine Bilddaten verfügbar${f.error ? ` (${esc(f.error)})` : ""}.</p>`) +
     ratio +
     cal +
     `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen („≈“ = aus Nachbarpegeln geschätzt). ` +
-    `Hinweise: Regen, Schneefall und Schneehöhe der zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit der Region – eine Tendenz, keine Abflussmessung.` +
+    `Hinweise: Regen, Schneefall und Schneehöhe der zwei Wochen davor im Umkreis von ~15 km um den Einstieg (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit der Region – eine Tendenz, keine Abflussmessung. ` +
+    `Aufnahmedatum laut Esri; es gilt für den jeweiligen Bildteil (Befliegungen sind Mosaike aus mehreren Flugtagen), eine Uhrzeit wird nicht veröffentlicht.` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p>`;
   src("gauge").setData({
     type: "FeatureCollection",
