@@ -59,14 +59,6 @@
                 <option value="1000">1 km</option>
               </select>
             </label>
-            <label>Hotspot ab
-              <select id="opt-hot">
-                <option value="20">20 m/km</option>
-                <option value="30" selected>30 m/km</option>
-                <option value="45">45 m/km</option>
-                <option value="60">60 m/km</option>
-              </select>
-            </label>
             <label>Höhenmodell
               <select id="opt-dem">
                 <option value="auto" selected>Automatisch (Norwegen: Kartverket 1 m)</option>
@@ -141,7 +133,7 @@
           <h3>Schwallstellen <span class="hint">(Weißwasser im Luftbild – Indikator)</span></h3>
           <ul class="legend">
             <li><span class="dia" style="background:#0077b6;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Schwallstelle – auffällig viel Weißwasser im Luftbild (Schwall, Walze, Blockstrecke oder Wehr). Nur Markierung, keine Schwierigkeitsangabe.</li>
-            <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Gefahrenstelle – Weißwasser und Steilstufe im Höhenmodell: mögliche Stufe oder Wasserfall</li>
+            <li><span class="dia" style="background:#d62828"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20z" fill="#fff"/><path d="M12 9v6M12 17.5v.5" stroke="#d62828" stroke-width="2.6" stroke-linecap="round"/></svg></span> Gefahrenstelle – mögliche Abbruchkante (Wasserfall, Stufe, Wehr): Weißwasser/Gischt setzt im Luftbild schlagartig ein <b>und</b> das Höhenmodell zeigt dort Höhenverlust</li>
           </ul>
           <ol id="ww-list" class="hotspots"></ol>
           <p id="ww-meta" class="hint"></p>
@@ -162,10 +154,8 @@
           </ul>
           <ol id="narrows-list" class="hotspots"></ol>
           <p id="narrows-meta" class="hint"></p>
-          <h3>Steilstufen <span class="hint">(mögliche Wasserfälle, Katarakte, Wehre)</span></h3>
+          <h3>Steilstufen <span class="hint">(nur Höhenmodell, im Luftbild nicht bestätigt)</span></h3>
           <ol id="steps-list" class="hotspots"></ol>
-          <h3>Hotspots <span class="hint">(steilste Stellen)</span></h3>
-          <ol id="hotspots" class="hotspots"></ol>
           <div class="row exports">
             <button id="exp-gpx">GPX</button>
             <button id="exp-csv">CSV</button>

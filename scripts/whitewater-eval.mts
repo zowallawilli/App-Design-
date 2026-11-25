@@ -15,9 +15,11 @@ import { nodeTileLoader } from "./nodeTileLoader";
 const OUT = process.argv[2] ?? "ww-out";
 const only = process.argv.slice(3);
 mkdirSync(OUT, { recursive: true });
-const fx = JSON.parse(readFileSync(new URL("../tests/fixtures/schwallstellen.json", import.meta.url), "utf8"));
-const decode: TileDecoder = async (buf) => {
-  const d = jpeg.decode(new Uint8Array(buf), { useTArray: true, formatAsRGBA: true });
+const fx = JSON.parse(readFileSync(new URL(`../tests/fixtures/${process.env.FIXTURE ?? "schwallstellen"}.json`, import.meta.url), "utf8"));
+export const decode: TileDecoder = async (buf) => {
+  const u = new Uint8Array(buf);
+  if (u[0] === 0x89 && u[1] === 0x50) { const p = PNG.sync.read(Buffer.from(u)); return { data: p.data, width: p.width, height: p.height }; }
+  const d = jpeg.decode(u, { useTArray: true, formatAsRGBA: true });
   return { data: d.data, width: d.width, height: d.height };
 };
 const gm = (p: LngLat) => `https://www.google.com/maps/search/?api=1&query=${p[1].toFixed(5)},${p[0].toFixed(5)}`;

@@ -48,8 +48,9 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
 | `src/vectorWater.ts` | OSM-Gewässer aus OpenFreeMap-Vektorkacheln (Overpass nur Fallback) |
 | `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung je Abschnitt |
-| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023), Streifenbild, Textur, Lernen |
+| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023, NÁTT Island), Streifenbild, Textur, Lernen; Abbruchkanten (`findBreaklines`) |
 | `src/whitewaterStore.ts` | eigene Markierungen + gelernte Schwelle (localStorage, JSON-Export/-Import), Browser-Dekoder |
+| `scripts/breakline-eval.mts` | Messung Gefahrenstellen gegen `tests/fixtures/abbruchkanten.json` |
 | `scripts/whitewater-eval.mts` | Messung gegen `tests/fixtures/schwallstellen.json`, Kontrollbilder (Fluss gerade gezogen) |
 | `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln, Archiv der Tagesmittel `tirol-archiv/` (≤ 400 Tage, Branch = 1 Commit) |
 | `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (41 Prüfungen), Screenshot-Skript |
@@ -78,7 +79,10 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
 ## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
-- Nur markieren, nicht einschätzen. Gefahrenstelle nur bei Weißwasser + Steilstufe. Wehre ebenfalls markieren.
+- Nur markieren, nicht einschätzen; Schwallstellen mit Wellensymbol ohne Nummer. Wehre ebenfalls markieren.
+- Gefahrenstelle (Warndreieck) nur bei Abbruchkante im Bild **und** Höhenverlust (`findBreaklines`),
+  trainiert an Selfoss/Dettifoss/Hafragilsfoss (NÁTT); Messung `scripts/breakline-eval.mts` (3/5, 0 Fehlalarme;
+  Krimml im Schatten nicht erkannt). Hotspot-Marker entfernt (Gefälle zeigen die Abschnittsfarben).
 - Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),
   Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
 - Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
@@ -87,7 +91,7 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 
 ## Offene Punkte / Ideen
 - Weißwasser: Kalkblöcke am Ufer vs. Schaum, Weißwasser im Schatten; weitere offene Orthofotos;
-  Gefahrenstellen künftig aus Abbruchkante im Bild + Höhenverlust (Training an Wasserfällen, z. B. Island).
+  Abbruchkanten im Schatten/als Kaskade (Krimml); Markarfljót, sobald das NÁTT-Mosaik dort Bilder hat.
 - Tirol: Archiv der Tagesmittel erst ab 24.11.2026 → Eichung ab ~10 Tagen, Aufnahmetage älterer Luftbilder
   bleiben ohne Messwert (eHYD-Jahrbuch nur bis Vorjahr−1, kein dokumentierter Endpunkt).
 - Inn bei Imst/Magerbach: geschätzt aus Innsbruck (unterhalb), weil Landeck Perjen in der Restwasserstrecke liegt

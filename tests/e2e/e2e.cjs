@@ -136,8 +136,8 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   // 11 Reset + Parameter ändern darf nichts anzeigen
   await page.click('#load-preset'); await waitIdle();
   await page.click('#reset');
-  await page.selectOption('#opt-hot', '45'); await page.waitForTimeout(2500);
-  await page.selectOption('#opt-hot', '30');
+  await page.selectOption('#opt-seg', '250'); await page.waitForTimeout(2500);
+  await page.selectOption('#opt-seg', '500');
   check('Reset: Parameter ändern zeigt nichts', !(await resultsVisible()));
 
   // 12 Doppelt laden (Race)
@@ -212,10 +212,11 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   const cur = await page.evaluate(() => window.__map.getSource('cursor')._data?.geometry?.type);
   check('Profil-Hover zeigt Punkt auf Karte', cur === 'Point');
 
-  // 16 Hotspot-Klick
-  const nHs = await page.locator('#hotspots button').count();
-  if (nHs) { await page.click('#hotspots button >> nth=0'); await page.waitForTimeout(1200); }
-  check('Hotspot-Klick zoomt', nHs === 0 || (await page.evaluate(() => window.__map.getZoom())) >= 14.9, `${nHs} Hotspots`);
+  // Gefahrenstellen: Wasserfälle der Jökulsá á Fjöllum (NÁTT-Luftbild)
+  await page.selectOption('#preset', 'jokulsa-dettifoss'); await page.click('#load-preset'); await waitIdle(400000);
+  const nBreak = await page.locator('.break-marker').count();
+  check('Island: Wasserfälle als Gefahrenstellen (Abbruchkante + Höhenverlust)', nBreak >= 2, `${nBreak} Gefahrenstellen · ${(await page.textContent('#ww-list')).replace(/\s+/g, ' ').slice(0, 200)}`);
+  check('Keine Hotspot-Marker mehr', (await page.locator('.hs-marker').count()) === 0);
 
   // 17 Kartenwechsel + 3D
   await page.click('[data-base="s2"]'); await page.click('[data-base="topo"]'); await page.check('#terrain'); await page.waitForTimeout(1500); await page.uncheck('#terrain');

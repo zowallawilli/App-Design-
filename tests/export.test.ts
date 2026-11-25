@@ -18,6 +18,6 @@ describe("export", async () => {
   });
   it("GeoJSON ist gültig", () => {
     const j = JSON.parse(toGeoJson(a, "x"));
-    expect(j.features.length).toBe(a.segments.length + a.hotspots.length);
+    expect(j.features.length).toBe(a.segments.length);
   });
 });

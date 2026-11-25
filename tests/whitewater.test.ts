@@ -3,6 +3,7 @@ import {
   ACROSS, ALONG, bendAt, DEFAULT_PARAMS, describeSpots, findSpots, fitParams, HALF_WIDTH, isWaterLike, isWhite, labelFeature,
   ORTHO_SOURCES, orthoSourceFor, whitewaterProfile, type Strip,
 } from "../src/whitewater";
+import { centerWhite, DEFAULT_BREAK, findBreaklines } from "../src/whitewater";
 import { exportJson, mergeLabels, parseImport } from "../src/whitewaterStore";
 import type { LngLat } from "../src/geo";
 
@@ -57,12 +58,12 @@ describe("Weißwasserprofil und Schwallstellen", () => {
     expect(findSpots(whitewaterProfile(synthStrip(400, undefined, true)).bins)).toHaveLength(0);
   });
 
-  it("markiert Weißwasser an einer Steilstufe als Gefahrenstelle", () => {
+  it("kennzeichnet Weißwasser an einer Abbruchkante", () => {
     const strip = synthStrip(400, [150, 210]);
     const prof = whitewaterProfile(strip);
     const [s] = describeSpots(findSpots(prof.bins), strip, prof.bins, { steps: [{ d0: 170, d1: 230 }], gradientAt: () => 45 });
     expect(s.hazard).toBe(true);
-    expect(s.notes.join(" ")).toMatch(/Steilstufe/);
+    expect(s.notes.join(" ")).toMatch(/Abbruchkante/);
     expect(s.notes.join(" ")).toMatch(/45 m\/km/);
   });
 });
@@ -119,5 +120,44 @@ describe("Markierungen exportieren/importieren", () => {
     expect(merged).toHaveLength(2);
     expect(merged[0].schwall).toBe(false);
     expect(() => parseImport(JSON.stringify({ format: "anders" }))).toThrow();
+  });
+});
+
+/** Fluss mit Gischt ab `from` m (ganze Flussmitte weiß); `ramp` > 0 = allmählich zunehmend. */
+function sprayStrip(len: number, from: number, ramp = 0): Strip {
+  const s = synthStrip(len);
+  for (let i = 0; i < s.rows; i++) {
+    const f = ramp ? Math.max(0, Math.min(1, (s.d[i] - from) / ramp)) : s.d[i] >= from ? 1 : 0;
+    for (let c = 0; c < s.cols; c++) {
+      const o = -HALF_WIDTH + c * ACROSS;
+      if (Math.abs(o) <= 10 && ((i * 7 + c * 13) % 100) / 100 < f) s.rgb.set([235, 238, 240], (i * s.cols + c) * 3);
+    }
+  }
+  return s;
+}
+
+describe("Abbruchkanten (Gefahrenstellen)", () => {
+  const fall = (dFall: number, h: number) => (d: number) => 500 - d * 0.01 - (d > dFall ? h : 0);
+  it("Gischt setzt schlagartig ein + Höhenverlust → Abbruchkante", () => {
+    const bl = findBreaklines(sprayStrip(600, 300), fall(295, 15));
+    expect(bl).toHaveLength(1);
+    expect(Math.abs(bl[0].d - 300)).toBeLessThan(20);
+    expect(bl[0].drop).toBeGreaterThan(14);
+    expect(bl[0].confidence).toBe("deutlich");
+  });
+  it("gleiche Kante ohne Höhenverlust (Schwall) → keine Gefahrenstelle", () => {
+    expect(findBreaklines(sprayStrip(600, 300), fall(295, 0))).toHaveLength(0);
+  });
+  it("Höhenverlust ohne Kante im Bild (Höhenmodell-Artefakt) → keine Gefahrenstelle", () => {
+    expect(findBreaklines(synthStrip(600), fall(295, 30))).toHaveLength(0);
+  });
+  it("allmählich zunehmendes Weißwasser ist keine Kante", () => {
+    expect(findBreaklines(sprayStrip(600, 200, 250), fall(295, 15))).toHaveLength(0);
+  });
+  it("Weißanteil der Flussmitte", () => {
+    const w = centerWhite(sprayStrip(400, 200));
+    expect(w[100]).toBe(0);
+    expect(w[300]).toBeGreaterThan(0.5);
+    expect(DEFAULT_BREAK.minDrop).toBe(5);
   });
 });

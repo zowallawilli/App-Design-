@@ -106,6 +106,26 @@ export const ORTHO_SOURCES: OrthoSource[] = [
   },
 ];
 
+const ICELAND: LngLat[] = [[-24.7, 63.2], [-13.3, 63.2], [-13.3, 66.7], [-24.7, 66.7]];
+const tileBbox3857 = (x: number, y: number, z: number) => {
+  const size = (2 * Math.PI * 6378137) / 2 ** z, o = Math.PI * 6378137;
+  return [x * size - o, o - (y + 1) * size, (x + 1) * size - o, o - y * size].map((v) => v.toFixed(2)).join(",");
+};
+ORTHO_SOURCES.push({
+  // Náttúrufræðistofnun (NÁTT, ehem. LMÍ): landesweites Luftbild-Mosaik ≥ 25 cm, CC BY 4.0, WMS (mapcache) mit CORS
+  id: "natt-loftmynd",
+  name: "NÁTT Grunnkort Loftmynd (Island)",
+  attribution: "Náttúrufræðistofnun, Grunnkort – Loftmynd",
+  license: "CC BY 4.0",
+  year: "je nach Gebiet",
+  resolution: 0.4,
+  esriMatch: /^$/, // Esri zeigt in Island andere Bilder → Aufnahmetag unbekannt
+  covers: (p) => inPoly(p, ICELAND),
+  toPixel: lonLatTo3857Px(18),
+  tileUrl: (x, y) =>
+    `https://gis.natt.is/mapcache/web-mercator/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=grunnkort-loftmynd&STYLES=&SRS=EPSG:3857&BBOX=${tileBbox3857(x, y, 18)}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg`,
+});
+
 export function orthoSourceFor(line: LngLat[]): OrthoSource | null {
   const pts = [line[0], line[Math.floor(line.length / 2)], line[line.length - 1]];
   return ORTHO_SOURCES.find((s) => pts.filter((p) => s.covers(p)).length >= 2) ?? null;
@@ -398,7 +418,7 @@ export interface WhitewaterSpot {
   bend?: number;
   narrowing?: number;
   gradient?: number;
-  /** fällt mit einer Steilstufe zusammen → Gefahrenstelle */
+  /** liegt an einer Abbruchkante (siehe findBreaklines) */
   hazard?: boolean;
   notes: string[];
 }
@@ -473,7 +493,7 @@ export function describeSpots(
     if (bend >= 60) notes.push(`in scharfer Kurve (${Math.round(bend)}°)`);
     if (narrowing !== undefined && narrowing <= 0.7) notes.push(`Flussbett verengt (~${Math.round(narrowing * 100)} % der üblichen Breite)`);
     if (gradient !== undefined && gradient >= 30) notes.push(`steil (${Math.round(gradient)} m/km)`);
-    if (hazard) notes.push("fällt mit einer Steilstufe zusammen – mögliche Stufe/Wasserfall");
+    if (hazard) notes.push("an einer möglichen Abbruchkante (Wasserfall/Stufe/Wehr)");
     return { ...s, center, bend, narrowing, gradient, hazard, notes };
   });
 }
@@ -516,3 +536,99 @@ export function fitParams(samples: { f: number; schwall: boolean }[], base: Whit
   return { ...base, spotDensity: clamp(best) };
 }
 const clamp = (t: number) => Math.min(20, Math.max(0.5, t));
+
+// ---------------------------------------------------------------------------------------------
+// Abbruchkanten (Wasserfall, Stufe, Wehr): scharf einsetzendes Weißwasser/Gischt + Höhenverlust
+//
+// Trainiert an Selfoss, Dettifoss, Hafragilsfoss (Jökulsá á Fjöllum, NÁTT-Luftbild) und
+// Gegenbeispielen ohne Kante (Pianser Schwall, Sanna-Oberlauf, Soča-Blockstrecke, Stromschnellen
+// zwischen Selfoss und Dettifoss mit Höhenmodell-Artefakt). Gischt ist glatt – deshalb hier ohne
+// Textur- und ohne Wasserfarben-Kriterium (Gletscherwasser ist grau), nur in der Flussmitte.
+
+export interface BreakParams {
+  /** Mindestsprung des Weißanteils (Flussmitte) von oberhalb nach unterhalb der Kante */
+  minJump: number;
+  /** Weißanteil unmittelbar unterhalb der Kante */
+  minBelow: number;
+  /** Mindest-Höhenverlust (m) zwischen 60 m oberhalb und 30 m unterhalb der Kante */
+  minDrop: number;
+}
+export const DEFAULT_BREAK: BreakParams = { minJump: 0.4, minBelow: 0.5, minDrop: 5 };
+/** Weiß für Gischt/Schaum: Minimum-Kanal ≥ 165, Sättigung ≤ 0,14 */
+export const SPRAY_MIN = 165;
+
+export interface Breakline {
+  d: number;
+  center: LngLat;
+  /** Weißanteil 15 m oberhalb / unterhalb */
+  above: number;
+  below: number;
+  /** Höhenverlust (m) laut Höhenmodell, und davon über dem örtlichen Gefälle */
+  drop: number;
+  excess: number;
+  /** deutlich: scharfe Kante und ≥ 10 m Höhenverlust */
+  confidence: "deutlich" | "möglich";
+}
+
+/** Weißanteil je Meter in der Flussmitte (±8 m um die Linie). NaN = keine Bilddaten. */
+export function centerWhite(strip: Strip, half = 8): Float64Array {
+  const out = new Float64Array(strip.rows).fill(NaN);
+  const c0 = Math.round(strip.cols / 2), band = Math.round(half / ACROSS);
+  for (let i = 0; i < strip.rows; i++) {
+    let w = 0, n = 0;
+    for (let c = c0 - band; c <= c0 + band; c++) {
+      const k = i * strip.cols + c;
+      if (!strip.valid[k]) continue;
+      const r = strip.rgb[k * 3], g = strip.rgb[k * 3 + 1], b = strip.rgb[k * 3 + 2];
+      const mn = Math.min(r, g, b), mx = Math.max(r, g, b);
+      n++;
+      if (mn >= SPRAY_MIN && (mx - mn) / Math.max(mx, 1) <= 0.14) w++;
+    }
+    if (n >= band) out[i] = w / n;
+  }
+  return out;
+}
+
+const meanRange = (a: Float64Array, i0: number, i1: number) => {
+  let s = 0, n = 0;
+  for (let i = Math.max(0, i0); i < Math.min(a.length, i1); i++) if (Number.isFinite(a[i])) { s += a[i]; n++; }
+  return n >= (i1 - i0) / 2 ? s / n : NaN;
+};
+
+/**
+ * Abbruchkanten: Weißwasser/Gischt setzt entlang des Flusses schlagartig ein (Sprung ≥ minJump
+ * auf 15 m, unterhalb ≥ minBelow) UND das Höhenmodell zeigt dort Höhenverlust ≥ minDrop.
+ * `zAt(d)` = monoton fallendes, ungeglättetes Profil (Talboden) an Stationierung d.
+ */
+export function findBreaklines(strip: Strip, zAt: (d: number) => number, params: BreakParams = DEFAULT_BREAK): Breakline[] {
+  const wf = centerWhite(strip);
+  const L = 15;
+  const cand: { i: number; jump: number; above: number; below: number }[] = [];
+  for (let i = L; i < strip.rows - L; i++) {
+    const above = meanRange(wf, i - L, i), below = meanRange(wf, i, i + L);
+    if (!Number.isFinite(above) || !Number.isFinite(below)) continue;
+    const jump = below - above;
+    if (jump >= params.minJump && below >= params.minBelow) cand.push({ i, jump, above, below });
+  }
+  // je Häufung nur das stärkste Maximum
+  const peaks: typeof cand = [];
+  for (const c of cand) {
+    const last = peaks[peaks.length - 1];
+    if (last && c.i - last.i < 60) { if (c.jump > last.jump) peaks[peaks.length - 1] = c; }
+    else peaks.push(c);
+  }
+  const total = strip.d[strip.rows - 1];
+  const out: Breakline[] = [];
+  for (const pk of peaks) {
+    const d = strip.d[pk.i];
+    const drop = zAt(Math.max(0, d - 60)) - zAt(Math.min(total, d + 30));
+    const regional = (zAt(Math.max(0, d - 500)) - zAt(Math.min(total, d + 500))) / Math.max(1, Math.min(total, d + 500) - Math.max(0, d - 500));
+    const excess = drop - regional * 90;
+    if (drop < params.minDrop || excess < params.minDrop * 0.6) continue;
+    out.push({
+      d, center: strip.p[pk.i], above: pk.above, below: pk.below, drop, excess,
+      confidence: pk.jump >= 0.6 && drop >= 10 ? "deutlich" : "möglich",
+    });
+  }
+  return out;
+}

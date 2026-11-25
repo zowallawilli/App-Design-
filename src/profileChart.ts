@@ -73,10 +73,6 @@ export function renderProfile(
     el("rect", { x: x(w.d0), y: m.t, width: Math.max(3, x(w.d1) - x(w.d0)), height: 8, fill: w.hazard ? "#d62828" : "#0077b6", class: "ww-mark" }, svg);
   }
 
-  // Hotspots
-  for (const h of a.hotspots) {
-    el("rect", { x: x(h.d0), y: m.t, width: Math.max(2, x(h.d1) - x(h.d0)), height: ih, class: "hotspot-band" }, svg);
-  }
 
   // Abschnittsflächen nach Gefälleklasse
   for (const s of a.segments) {

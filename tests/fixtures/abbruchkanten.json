@@ -1,0 +1,225 @@
+{
+  "_doc": "Referenz für Abbruchkanten (Wasserfall/Stufe/Wehr) = Gefahrenstellen. expect: 'kante' = muss erkannt werden, 'keine' = darf keine Gefahrenstelle sein (Schwall ohne Kante, Höhenmodell-Artefakt), 'neutral' = zählt nicht. Lage der Fälle aus dem offenen Orthofoto (NÁTT) bestimmt, Namen laut OpenStreetMap/Wikipedia. Koordinaten [Länge, Breite]. Gullfoss, Goðafoss und Markarfljót liegen (Stand 11/2026) außerhalb des NÁTT-Mosaiks.",
+  "rivers": [
+    {
+      "id": "jokulsa-dettifoss",
+      "name": "Jökulsá á Fjöllum · Selfoss – Dettifoss – Hafragilsfoss",
+      "putIn": [
+        -16.3862,
+        65.8035
+      ],
+      "takeOut": [
+        -16.4005,
+        65.8372
+      ],
+      "image": "NÁTT Grunnkort Loftmynd",
+      "spots": [
+        {
+          "name": "Selfoss",
+          "from": [
+            -16.38692,
+            65.80506
+          ],
+          "to": [
+            -16.38692,
+            65.80506
+          ],
+          "tol": 50,
+          "expect": "kante",
+          "source": "Wasserfall ~11 m, im NÁTT-Luftbild Kante mit Gischt"
+        },
+        {
+          "name": "Stromschnellen zwischen Selfoss und Dettifoss",
+          "from": [
+            -16.38828,
+            65.80733
+          ],
+          "to": [
+            -16.38828,
+            65.80733
+          ],
+          "tol": 40,
+          "expect": "keine",
+          "source": "Höhenmodell meldet ~35 m (Schluchtrand-Artefakt), im Bild Schwall ohne Kante"
+        },
+        {
+          "name": "Dettifoss",
+          "from": [
+            -16.38512,
+            65.81465
+          ],
+          "to": [
+            -16.38512,
+            65.81465
+          ],
+          "tol": 60,
+          "expect": "kante",
+          "source": "Wasserfall ~44 m, große Gischtwolke"
+        },
+        {
+          "name": "Hafragilsfoss",
+          "from": [
+            -16.39958,
+            65.83235
+          ],
+          "to": [
+            -16.39958,
+            65.83235
+          ],
+          "tol": 60,
+          "expect": "kante",
+          "source": "Wasserfall ~27 m"
+        }
+      ]
+    },
+    {
+      "id": "krimmler-ache",
+      "name": "Krimmler Ache · Krimmler Wasserfälle",
+      "putIn": [
+        12.169,
+        47.1975
+      ],
+      "takeOut": [
+        12.1765,
+        47.2135
+      ],
+      "image": "basemap.at Orthofoto",
+      "spots": [
+        {
+          "name": "Krimmler Wasserfälle, obere Stufe",
+          "from": [
+            12.17167,
+            47.19809
+          ],
+          "to": [
+            12.17185,
+            47.20223
+          ],
+          "tol": 30,
+          "expect": "kante",
+          "source": "Höhenmodell 162 m; im Orthofoto Kaskade im tiefen Schatten"
+        },
+        {
+          "name": "Krimmler Wasserfälle, untere Stufe",
+          "from": [
+            12.17267,
+            47.20429
+          ],
+          "to": [
+            12.17078,
+            47.2085
+          ],
+          "tol": 30,
+          "expect": "kante",
+          "source": "Höhenmodell 230 m; im Orthofoto Kaskade im tiefen Schatten"
+        }
+      ]
+    },
+    {
+      "id": "sanna",
+      "name": "Sanna · Einmündung – Landeck",
+      "putIn": [
+        10.491,
+        47.1176
+      ],
+      "takeOut": [
+        10.563,
+        47.1436
+      ],
+      "image": "basemap.at Orthofoto (Aufdruck 2023)",
+      "literature": "WW III–IV, stark verblockt; kajaktour.de, Nutzer (Befahrung)",
+      "spots": [
+        {
+          "name": "Schiefes Eck",
+          "ww": "III",
+          "from": [
+            10.49877,
+            47.12741
+          ],
+          "to": [
+            10.49994,
+            47.12825
+          ],
+          "tol": 60,
+          "expect": "keine",
+          "source": "Nutzer bestätigt; kajaktour.de: 90°-Rechtskurve, am Einstieg stark verblockt, Fußgängerbrücke – Schwall ohne Abbruchkante"
+        },
+        {
+          "name": "Pianser Schwall",
+          "ww": "III–IV+",
+          "from": [
+            10.51223,
+            47.13441
+          ],
+          "to": [
+            10.51753,
+            47.13356
+          ],
+          "tol": 60,
+          "expect": "keine",
+          "source": "Nutzer bestätigt; kajaktour.de: ca. 500 m langer, schnellster Wellenzug in Pians"
+        },
+        {
+          "name": "Wehr Landeck",
+          "ww": "–",
+          "from": [
+            10.54603,
+            47.14031
+          ],
+          "to": [
+            10.54735,
+            47.14031
+          ],
+          "tol": 40,
+          "expect": "neutral",
+          "source": "Nutzer: Wehre sollen wie Schwallstellen markiert werden (im Luftbild nicht unterscheidbar)"
+        },
+        {
+          "name": "Oberlauf entlang der Straßengalerie",
+          "ww": "II–III",
+          "from": [
+            10.49611,
+            47.1215
+          ],
+          "to": [
+            10.4981,
+            47.12522
+          ],
+          "tol": 40,
+          "expect": "keine",
+          "source": "Nutzer: unproblematisch, keine benannte Stelle"
+        }
+      ]
+    },
+    {
+      "id": "soca-srpenica-trnovo",
+      "name": "Soča · Srpenica – Trnovo",
+      "putIn": [
+        13.5024,
+        46.2956
+      ],
+      "takeOut": [
+        13.5562,
+        46.282
+      ],
+      "image": "GURS DOF 2023",
+      "literature": "WW II–III(+), technische Stufen; Bergwelten/Anbieter. Einzelstellen ohne verlässliche Lage in offenen Quellen",
+      "spots": [
+        {
+          "name": "Blockwerk vor Trnovo",
+          "from": [
+            13.549,
+            46.2851
+          ],
+          "to": [
+            13.556,
+            46.283
+          ],
+          "tol": 40,
+          "expect": "keine",
+          "source": "Weißwasser im Blockwerk, keine Stufe (Orthofoto)"
+        }
+      ]
+    }
+  ]
+}

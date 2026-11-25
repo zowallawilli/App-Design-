@@ -37,7 +37,6 @@ const { chromium } = require('playwright');
   console.log('FLOW', (await t('#flow-info')).slice(0, 1500));
   console.log('NARROWS', (await t('#narrows-list')).slice(0, 300));
   console.log('STUFEN', (await t('#steps-list')).slice(0, 400));
-  console.log('HOTSPOTS', (await t('#hotspots')).slice(0, 300));
   console.log('SCHWALL', (await t('#ww-list')).slice(0, 1500));
   console.log('SCHWALL-INFO', (await t('#ww-meta')).slice(0, 600));
   // Panel so scrollen, dass Kennzahlen + Schwierigkeit oben stehen
