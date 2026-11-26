@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { powerClassIndex, RATED_CLASSES, rateAnalysis, streamPower, waveVelocity } from "../src/power";
+import { powerClassIndex, RATED_CLASSES, rateAnalysis, streamPower, waveVelocity, waveVelocityRange } from "../src/power";
 import { classify, type Analysis } from "../src/analysis";
 
 describe("Wucht-Bewertung", () => {
@@ -22,5 +22,17 @@ describe("Wucht-Bewertung", () => {
   it("Wellenabstand → Fließgeschwindigkeit", () => {
     expect(waveVelocity(4).toFixed(2)).toBe("2.50"); // 4 m Wellen ≈ 2,5 m/s
     expect(waveVelocity(10).toFixed(2)).toBe("3.95");
+  });
+
+  it("Tiefenkorrektur: flaches Wasser → langsamer, tiefes → Tiefwasser-Wert", () => {
+    expect(waveVelocity(4, 100)).toBeCloseTo(waveVelocity(4), 6);
+    expect(waveVelocity(4, 0.5).toFixed(2)).toBe("2.02");
+    expect(waveVelocity(10, 0.5).toFixed(2)).toBe("2.18"); // nahe √(g·h) = 2,21
+    const r = waveVelocityRange(10);
+    expect(r.min).toBeLessThan(r.max);
+    expect(r.max).toBeLessThanOrEqual(r.deep);
+    expect(r.shallowMatters).toBe(true);
+    expect(waveVelocityRange(2).shallowMatters).toBe(false);
+    expect(waveVelocityRange(2).min / waveVelocityRange(2).deep).toBeGreaterThan(0.9);
   });
 });

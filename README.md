@@ -158,7 +158,10 @@ erkannt; in tiefen Schluchten liefert das Höhenmodell teils Werte vom Rand, dah
 ## Wellen messen
 
 Werkzeug „Wellen messen“: im Luftbild die Kämme einer Wellenfolge anklicken. Für stehende Wellen gilt
-λ = 2π·v²/g, also v = √(g·λ/2π): 2 m Abstand ≈ 1,8 m/s, 4 m ≈ 2,5 m/s, 10 m ≈ 4 m/s. Dazu zeigt die
+λ = 2π·v²/g, also v = √(g·λ/2π): 2 m Abstand ≈ 1,8 m/s, 4 m ≈ 2,5 m/s, 10 m ≈ 4 m/s. Das gilt für tiefes
+Wasser; allgemein v = √(g·λ/2π · tanh(2πh/λ)). Weil die Tiefe h im Luftbild unbekannt ist, zeigt die App eine
+**Spanne für 0,5–2 m Tiefe** (z. B. 4 m → 2,0–2,5 m/s, 10 m → 2,2–3,6 m/s) und ab λ > 4 m den Hinweis „bei
+flachem Wasser eher langsamer“. Die Kämme quer zu ihrer Ausrichtung (in Fließrichtung) anklicken. Dazu zeigt die
 App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem heutigen Wasserstand vergleichbar.
 
 ## Wie verlässlich sind die Abflussdaten?
@@ -269,7 +272,7 @@ Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher un
 | Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
 | Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±45 m in 0,5-m-Schritten. Ausgewertet werden der volle Streifen (breite Flüsse wie die Salzach, 40–70 m) und der innere Streifen ±30 m (schmale Flüsse); je 10 m zählt das Ergebnis, das die Kriterien besser erfüllt. |
 | Wasserfläche | je Querzeile der zusammenhängende Lauf aus wasserähnlichen (bläulich/türkis) und Weißwasser-Pixeln nahe der Linie – auch wenn die Linie etwas neben dem Wasser liegt. |
-| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). **Zusätzlich relativ** (trübe, helle Flüsse wie die Salzach, deren Schaum kaum heller als das Wasser ist): Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers daneben – nur bei nicht beschattetem Wasser (Median ≥ 100), sonst wirkt helles Ufer wie Schaum. |
+| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). **Dichter Schaum** (Querband/Walze unter Wehr oder Stufe) ist dagegen glatt und sehr hell: Minimum-Kanal ≥ 215, Sättigung ≤ 0,10, ohne Textur-Kriterium – aber nur, wenn in derselben Spalte flussauf- **und** flussabwärts innerhalb von 15 m Wasser liegt (lange helle Kalkkiesbänke grenzen an Land und fallen so heraus). **Zusätzlich relativ** (trübe, helle Flüsse wie die Salzach, deren Schaum kaum heller als das Wasser ist): Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers daneben – nur bei nicht beschattetem Wasser (Median ≥ 100), sonst wirkt helles Ufer wie Schaum. |
 | Schwallstelle | Weißwasserfläche je Flussmeter (über 30 m geglättet) ≥ **5 m²/m** und ≥ 18 % der Wasserfläche, zusammen ≥ 150 m²; Lücken bis 50 m werden verbunden. „Viel Weißwasser“ ab 8 m²/m. |
 | Merkmale | scharfe Kurve (≥ 60° auf ±50 m), Verengung (≤ 70 % der üblichen Breite ±500 m), lokales Gefälle ≥ 30 m/km. |
 | Wasserstand | Esri meldet für denselben Bildflug das Aufnahmedatum (Tirol: Land Tirol 07.09.2023, Slowenien: GURS 21.08.2023). Damit zeigt die App den Abfluss am Aufnahmetag (Pegel, geeichtes Modell) und ob das Bild bei Niedrig-, Mittel- oder Hochwasser entstand. |
@@ -282,7 +285,9 @@ Steilstufen allein aus dem Höhenmodell sind unscharf (Schluchtränder, 30-m-Ras
 1. **Kante im Luftbild:** In der Flussmitte (±8 m) setzt Weißwasser/Gischt entlang des Flusses
    schlagartig ein – Anteil heller, ungesättigter Pixel (Minimum-Kanal ≥ 165) auf den 15 m unterhalb
    ≥ 50 % und mindestens 40 Prozentpunkte höher als auf den 15 m oberhalb. Gischt ist glatt, deshalb hier ohne
-   Textur- und Wasserfarben-Kriterium (Gletscherwasser ist grau).
+   Wasserfarben-Kriterium (Gletscherwasser ist grau) – und umgekehrt muss die helle Fläche auf den 30 m unterhalb
+   **glatt** sein (Median der Streuung < 8; Island 2–6): helle, sonnige Kiesbänke sind körnig (Koritnica 9–11)
+   und täuschten am Schattenrand sonst eine Kante vor.
 2. **Höhenverlust:** Nur an diesen Kandidaten wird das feinere Höhenmodell (Zoomstufe 15, Talboden aus
    Linie ±10 m, monoton fallend) nachgeladen. Gefordert: ≥ 8 m zwischen 80 m oberhalb und 100 m
    unterhalb der Kante, davon ≥ 4,8 m mehr als das örtliche Gefälle (±500 m) erwarten lässt.
@@ -300,12 +305,12 @@ an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter
 | Dettifoss | NÁTT | Kante | ✅ erkannt (50 m, „deutlich“) |
 | Hafragilsfoss | NÁTT | Kante | ✅ erkannt (96 m inkl. Schlucht darunter, „deutlich“) |
 | Stromschnellen zwischen Selfoss und Dettifoss (Höhenmodell meldet 35 m) | NÁTT | keine | ✅ keine Kante |
-| Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten, keine einzelne Kante (bleibt als Gefahrenstelle „Stufe im Höhenmodell“) |
+| Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten (Schaum dort bläulich, Minimum-Kanal ~95, Sättigung ~0,3), keine einzelne Kante, Fälle pendeln bis 20 m um die Linie (bleibt als Gefahrenstelle „Stufe im Höhenmodell“). Geprüft 11/2026: „Stufe im Höhenmodell + durchgehend weiß“ und Schaum-im-Schatten-Kriterium – mit zwei Beispielen nicht belastbar, verworfen |
 | Sanna: Schiefes Eck, Pianser Schwall, Oberlauf | basemap.at | keine | ✅ keine Kante |
 | Soča: Blockwerk vor Trnovo, Kalkkiesbänke | GURS | keine | ✅ keine Kante |
-| Koritnica: Kiesbank am Schattenrand (km 1,2) | GURS | keine | ❌ **Fehlalarm** – Übergang Schatten → sonnige helle Kiesbank wirkt wie einsetzende Gischt, Höhenmodell 14 m |
+| Koritnica: Kiesbank am Schattenrand (km 1,2) | GURS | keine | ✅ keine Kante (seit 11/2026: körnige Kiesbank ≠ glatte Gischt; vorher Fehlalarm) |
 
-**3/5 Abbruchkanten erkannt, 1/6 Gegenbeispielen fälschlich markiert** (Koritnica-Kiesbank am Schattenrand), sonst keine weiteren Kanten (Messskript mit OSM-Linie).
+**3/5 Abbruchkanten erkannt, 0/6 Gegenbeispiele fälschlich markiert**, keine weiteren Kanten (Messskript mit OSM-Linie).
 In der App (Linie zusätzlich aus Sentinel-2) wird Selfoss nicht markiert: Die Linie liegt dort 36 m neben der
 Fallkante im über 100 m breiten Fluss. Breitere Suchbänder fanden Selfoss trotzdem nicht, markierten aber
 Kiesbänke an der Soča – deshalb nur die Flussmitte. Markarfljót,
@@ -327,16 +332,21 @@ schärfer als das Esri-Luftbild, gut für die Wellenmessung.
 
 | Fluss | Bild | Referenzstellen | gefunden | weitere markierte Stellen |
 |---|---|---|---|---|
-| Sanna, Einmündung – Landeck | basemap.at 07.09.2023 | Schiefes Eck (WW III), Pianser Schwall (WW III–IV+), Wehr Landeck | **3/3** | 1 (km 1,9, sichtbarer Schwall) + Oberlauf an der Straßengalerie (WW II–III, neutral) |
+| Sanna, Einmündung – Landeck | basemap.at 07.09.2023 | Schiefes Eck (WW III), Pianser Schwall (WW III–IV+), Wehr Landeck | **3/3** (App-Linie 2/3: Schiefes Eck knapp unter der Mindestfläche, 143 statt 150 m²) | 1 (km 1,9, sichtbarer Schwall) + Oberlauf an der Straßengalerie (WW II–III, neutral) |
 | Soča, Srpenica – Trnovo | GURS 21.08.2023 | keine verorteten Einzelstellen in offenen Quellen | – | 7 (Stichprobe: Weißwasser im Blockwerk vor Trnovo bestätigt) |
 | Koritnica, Kluže – Mündung | GURS 21.08.2023 | dto. | – | 3 (unterer Abschnitt, Blockstrecken) |
 | Inn, Imster Schlucht | basemap.at 07.09.2023 | Rohrbrückenschwall, Memminger Walze (Lage nicht belegt) | – | 6 |
-| Salzach, Taxenbach – Lend | basemap.at 2025 | 6 im Luftbild sichtbare Schwälle | **3/6** (Querband km 4,2–4,4, km 6,8, km 7,6; vorher 0/6). In der App (Linie mit Sentinel-2, am Querband ~7 m versetzt) 2/6 – das Querband bleibt knapp unter Anteil/Fläche | 1 (km 0,1) – nicht erkannt: km 3,2 (Brückenschatten), 3,6 (Blockstrecke mit wenig Schaum), 5,6–6,0 (schwächer) |
+| Salzach, Taxenbach – Lend | basemap.at 2025 | 6 im Luftbild sichtbare Schwälle | **3/6** mit OSM- **und** App-Linie (Querband km 4,2–4,4, km 6,8, km 7,6). App-Linie vorher 2/6 – das Querband (glatter, dichter Schaum) kommt jetzt über das Schaum-Kriterium | 1 (km 0,1) + Wehr/Sohlstufe km 3,75 (neutral, im Bild klar sichtbar) – nicht erkannt: km 3,2 (Schatten), 3,6 (Blockstrecke mit wenig Schaum), 5,6–6,0 (schwächer): Dichte 2–5 m²/m bei 10–20 % Anteil, knapp unter den Schwellen |
 | Sjoa | – | – | – | keine offene Bildquelle |
 
 Erkenntnisse: Mit reiner Helligkeit wäre helles ruhiges Wasser (Soča über Kalkgrund, milchiger Inn)
 massenhaft als Weißwasser erkannt worden – erst die Textur macht das brauchbar. Helle Kalkblöcke am Ufer
 sind farblich ähnlich und können noch Fehlalarme erzeugen; Weißwasser im tiefen Schatten wird übersehen.
+
+Geprüft und verworfen (11/2026, Messung mit App-Linie): **Schaum im Schatten** (relativ zum beschatteten Wasser
+heller, neutral, körnig) brachte an der Salzach keinen Treffer, aber bis zu 8 neue Stellen an Koritnica/Inn;
+**Linie auf die Wassermitte zentrieren** (aus der erkannten Wasserfläche) verschob die Linie in beschattete
+Uferbereiche (Schatten wirkt wasserähnlich) – Sanna 1/3 statt 2/3, Inn +3 bis +7 Stellen.
 
 ### Offene Orthofotos weltweit (Recherche 11/2026)
 

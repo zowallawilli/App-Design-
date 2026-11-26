@@ -18,18 +18,19 @@ Stand (11/2026):
 - Keine Hotspot-, ▼- oder K-Marker mehr; Klammen erscheinen als Schlucht (S).
 - 3D: Karte drehen (⟲ ⟳, Rundflug, Norden). Lern-Modus für eigene Markierungen mit JSON-Export/-Import.
 
+Erledigt 11/2026: Salzach-Querband per Schaum-Kriterium (App-Linie 2/6 → 3/6, Wehr km 3,75 gefunden);
+Wellenmessung mit Tiefenkorrektur (Spanne 0,5–2 m); Koritnica-Kiesbank kein Fehlalarm mehr (Gischt muss glatt
+sein). Geprüft und verworfen: Schaum im Schatten, Linie auf Wassermitte zentrieren, Kaskaden-Kriterium (README).
+
 Offene Aufgaben (bitte in dieser Reihenfolge, vorher kurz Machbarkeit/Aufwand nennen):
-1. Salzach Taxenbach–Lend: fehlende Schwälle km 3,2 (Brückenschatten), 3,6 (Blockstrecke), 5,6–6,0
-   und das Querband km 4,2–4,4 mit der App-Linie (Sentinel-2) erkennen, ohne mehr Fehlalarme auf
-   Sanna/Soča/Koritnica/Inn. Ansatz prüfen: Flusslinie für die Weißwasser-Suche auf die Wassermitte
-   zentrieren (Wasserfläche aus dem Orthofoto), Weißwasser im Schatten, Kalkblöcke vs. Schaum.
-2. Wellenmessung: Tiefenkorrektur v = √(g·λ/2π · tanh(2πh/λ)) – Spanne je nach Wassertiefe statt
-   einer Zahl, Hinweis bei λ > 4 m („bei flachem Wasser eher langsamer“) und „quer zu den Kämmen messen“.
-3. Abbruchkanten: Fehlalarm Schattenrand → sonnige Kiesbank (Koritnica km 1,2) beseitigen; Fälle im Schatten bzw.
-   als Kaskade (Krimmler Wasserfälle) und Selfoss bei versetzter Linie erkennen.
-4. Weitere offene Orthofotos: Finnland (MML, kostenloser Schlüssel), Neuseeland (LINZ, Schlüssel),
-   USA (NAIP) – Schlüssel nur nach meiner Freigabe, nie ins Repo.
-5. Markarfljót, sobald das NÁTT-Mosaik dort Bilder hat.
+1. Salzach: schwache Schwälle km 3,2 / 3,6 / 5,6–6,0 (Dichte 2–5 m²/m, Anteil 10–20 %) – bräuchte z. B. eine
+   eigene Schwelle je Flusstyp oder gelernte Schwelle aus Nutzer-Markierungen; Wehr km 3,75 vom Nutzer bestätigen.
+2. Abbruchkanten: Krimmler Wasserfälle (Kaskade im Schatten), Selfoss bei versetzter App-Linie – braucht mehr
+   Beispiele (weitere Wasserfälle im NÁTT-Mosaik/basemap.at als Fixture).
+3. Weitere offene Orthofotos: Finnland (MML, kostenloser Schlüssel), Neuseeland (LINZ, Schlüssel),
+   USA (NAIP, ohne Schlüssel – Hosts imagery.nationalmap.gov in der Cloud-Umgebung noch gesperrt) –
+   Schlüssel nur nach meiner Freigabe, nie ins Repo.
+4. Markarfljót, sobald das NÁTT-Mosaik dort Bilder hat.
 
 Nach jeder Änderung: npm test, npx tsc --noEmit, npm run e2e (Dev-Server vorher starten, während des
 Laufs keine Dateien ändern), Referenzmessungen, Screenshots von Sanna, Soča und Salzach schicken,
