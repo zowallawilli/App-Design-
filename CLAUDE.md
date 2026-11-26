@@ -102,6 +102,9 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   „Gischt muss glatt sein“; Krimml im Schatten nicht erkannt). NAIP (USA) seit 11/2026 als Bildquelle. Hotspot-Marker entfernt (Gefälle zeigen die Abschnittsfarben).
 - Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),
   Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
+- Empfindlichkeits-Regler 1–9 (`tunedParams`: Regler × Flussbreite, localStorage `packraft.wwSensitivity`).
+  Ohne auswertbares Luftbild **keine** Schwallstellen, nur deutlicher Hinweis (Nutzerwunsch).
+- Referenzbilder des Nutzers kommen per Upload ins Repo (Ordner „Gefahrenstellen“/„Stromschnellen“) und werden ergänzt.
 - Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
   Zielregionen für später: Island, Skandinavien, Nordamerika, Zentralasien, Neuseeland (Recherche im README).
 - Kostenlose Schlüssel (MML Finnland, LINZ) erst später, wenn der Nutzer es will.

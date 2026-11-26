@@ -528,6 +528,35 @@ export interface WhitewaterSpot {
 }
 
 /** Schwallstellen aus dem Weißwasserprofil. */
+// ---------------------------------------------------------------------------------------------
+// Empfindlichkeit (Schieberegler) und Flussgröße
+
+/** Stufen des Reglers: 1 = nur große Schwälle … 9 = auch kleine; 5 = Standard */
+export const SENSITIVITY_MIN = 1, SENSITIVITY_MAX = 9, SENSITIVITY_DEFAULT = 5;
+/** Bezugsbreite (m), bei der die Standardschwellen gelten */
+export const WIDTH_REF = 25;
+
+/** typische Wasserbreite der Strecke (Median der 10-m-Abschnitte mit erkennbarem Wasser) */
+export function typicalWidth(bins: WhitewaterBin[]): number | null {
+  const ws = bins.map((b) => b.width).filter((w): w is number => w !== null);
+  return ws.length >= 5 ? median(ws) : null;
+}
+/** Weißwasserfläche je Flussmeter wächst mit der Breite → bei breiten Flüssen strenger, bei schmalen milder. */
+export function widthFactor(width: number | null): number {
+  return width ? Math.min(1.6, Math.max(0.8, Math.sqrt(width / WIDTH_REF))) : 1;
+}
+/** Schwellen für Reglerstufe `level` und Flussbreite: je Stufe Faktor 2^(¼) auf Dichte und Fläche
+ *  (1 → doppelt so streng, 9 → halb so streng), Anteil mit der Wurzel davon. Die Schwelle für „viel Weißwasser“
+ *  (Grundlage der Gefahrenstelle „Stufe mit Weißwasser“) hängt nur von der Breite ab, nicht vom Regler. */
+export function tunedParams(base: WhitewaterParams, level: number, width: number | null): WhitewaterParams {
+  const s = 2 ** ((SENSITIVITY_DEFAULT - level) / 4), fw = widthFactor(width);
+  return { spotDensity: base.spotDensity * s * fw, strongDensity: base.strongDensity * fw, minFrac: base.minFrac * Math.sqrt(s), minArea: base.minArea * s * fw };
+}
+/** Bild brauchbar? Mindestens 30 % der Abschnitte zeigen Wasser (sonst z. B. leere Kacheln außerhalb des Mosaiks). */
+export function imageUsable(bins: WhitewaterBin[]): boolean {
+  return bins.length > 0 && bins.filter((b) => b.width !== null).length / bins.length >= 0.3;
+}
+
 export function findSpots(bins: WhitewaterBin[], params: WhitewaterParams = DEFAULT_PARAMS): Omit<WhitewaterSpot, "center" | "notes">[] {
   const out: Omit<WhitewaterSpot, "center" | "notes">[] = [];
   let cur: { b0: number; b1: number } | null = null;

@@ -139,6 +139,11 @@
           <ul class="legend">
             <li><span class="dia" style="background:#0077b6;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Schwallstelle – auffällig viel Weißwasser im Luftbild (Schwall, Walze, Blockstrecke oder Wehr). Nur Markierung, keine Schwierigkeitsangabe.</li>
           </ul>
+          <div class="row ww-sens">
+            <label for="ww-sens" title="Wie empfindlich Weißwasser als Schwallstelle markiert wird. Die Schwelle passt sich zusätzlich der Flussbreite an (breite Flüsse strenger).">Empfindlichkeit</label>
+            <input type="range" id="ww-sens" min="1" max="9" step="1" value="5" aria-describedby="ww-sens-out" />
+            <span id="ww-sens-out" class="hint"></span>
+          </div>
           <ol id="ww-list" class="hotspots"></ol>
           <p id="ww-meta" class="hint"></p>
           <div class="row ww-tools">

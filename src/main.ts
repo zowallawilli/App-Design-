@@ -23,6 +23,7 @@ import { rateAnalysis, streamPower, waveVelocityRange, WAVE_DEPTHS, type RatingM
 import {
   DEFAULT_PARAMS, describeSpots, edgeCandidates, findBreaklines, findSpots, localProfile, type Breakline, fitParams, labelFeature, orthoSourceFor, sampleStrip, whitewaterProfile,
   type OrthoSource, type WhitewaterBin, type WhitewaterLabel, type WhitewaterParams, type WhitewaterSpot,
+  imageUsable, SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, tunedParams, typicalWidth, widthFactor,
 } from "./whitewater";
 import { browserDecoder, exportJson, loadLabels, loadParams, mergeLabels, parseImport, saveLabels, saveParams } from "./whitewaterStore";
 
@@ -265,6 +266,11 @@ interface WwState {
 }
 let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo; ww?: WwState } | null = null;
 let wwParams: WhitewaterParams = loadParams();
+/** Empfindlichkeit der Schwallstellen-Suche (Regler 1–9, nur in diesem Browser) */
+const SENS_KEY = "packraft.wwSensitivity";
+let wwSensitivity = (() => { try { const v = Number(localStorage.getItem(SENS_KEY)); return v >= SENSITIVITY_MIN && v <= SENSITIVITY_MAX ? v : SENSITIVITY_DEFAULT; } catch { return SENSITIVITY_DEFAULT; } })();
+/** wirksame Schwellen: gelernte/Standard-Schwelle × Regler × Flussbreite */
+const effParams = (): WhitewaterParams => tunedParams(wwParams, wwSensitivity, current?.ww?.bins ? typicalWidth(current.ww.bins) : null);
 let wwLabels: WhitewaterLabel[] = loadLabels();
 
 /** Darstellung der Engstellen-Typen */
@@ -676,6 +682,7 @@ export const WAVE_SVG = (color = "#fff", size = 16) =>
   `<path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg>`;
 const kmRange = (s: WhitewaterSpot) => `km ${(s.d0 / 1000).toFixed(2)}–${(s.d1 / 1000).toFixed(2)}`;
 
+const OPEN_SOURCES_TEXT = "Ausgewertet werden nur offen lizenzierte Orthofotos: Österreich (basemap.at), Slowenien (GURS DOF 2023), USA (NAIP), Island (NÁTT, nur Teile). Esri, Google, Apple u. a. dürfen nur angezeigt werden; Sentinel-2 ist für Stromschnellen zu grob.";
 const wwCache = new Map<string, WwState>();
 async function runWhitewater(a: Analysis, id: number) {
   if (!current || current.analysis !== a) return;
@@ -742,8 +749,9 @@ function computeSpots(): WhitewaterSpot[] {
   if (!current || !ww?.bins || !ww.track) return [];
   const a = current.analysis;
   const gradientAt = (d: number) => (a.segments.find((sg) => d >= sg.d0 && d <= sg.d1) ?? a.segments[a.segments.length - 1]).gradient;
+  if (!imageUsable(ww.bins)) return [];
   const steps = (ww.breaks ?? []).map((b) => ({ d0: b.d - 20, d1: b.d + 20 }));
-  return describeSpots(findSpots(ww.bins, wwParams), ww.track, ww.bins, { gradientAt, steps });
+  return describeSpots(findSpots(ww.bins, effParams()), ww.track, ww.bins, { gradientAt, steps });
 }
 
 /** Aufnahmetag des ausgewerteten Orthofotos an Stationierung d (über Esri-Metadaten desselben Bildflugs),
@@ -763,8 +771,10 @@ const WATER_HINT: Record<Conditions["tendency"], string> = {
 };
 
 function renderWhitewater(a: Analysis) {
+  renderSensitivity();
   const ww = current?.ww;
   const list = $("ww-list"), meta = $("ww-meta");
+  $<HTMLElement>("ww-sens").parentElement!.hidden = !(ww?.status === "done" && ww.bins && imageUsable(ww.bins));
   list.innerHTML = "";
   if (!ww || ww.status === "loading") {
     list.innerHTML = `<li class="hint">${ww ? `Wird im Orthofoto (${ww.source?.name}) gesucht …` : "Wird berechnet …"}</li>`;
@@ -773,13 +783,16 @@ function renderWhitewater(a: Analysis) {
     list.innerHTML = `<li class="hint">Ausgeschaltet (Analyse-Parameter).</li>`;
     meta.textContent = "";
   } else if (ww.status === "none") {
-    list.innerHTML = `<li class="hint">Für diese Strecke gibt es kein offenes, auswertbares Orthofoto – keine Weißwasser-Suche möglich. Bitte im Luftbild selbst prüfen (Stellen-Tour ◀ ▶).</li>`;
-    meta.textContent = "Ausgewertet werden nur offen lizenzierte Orthofotos (derzeit Österreich: basemap.at, Slowenien: GURS DOF 2023). Esri, Google, Apple u. a. dürfen nur angezeigt werden.";
+    list.innerHTML = `<li class="hint ww-noimg"><b>Kein öffentlich auswertbares Luftbild für diese Region – Stromschnellen werden hier bewusst nicht markiert.</b> Die Karte zeigt zwar ein Luftbild, das darf aber nur angezeigt, nicht ausgewertet werden. Bitte Schwälle selbst im Luftbild prüfen (Stellen-Tour ◀ ▶); Gefälle und Schluchten bleiben als Indikatoren.</li>`;
+    meta.textContent = OPEN_SOURCES_TEXT;
   } else if (ww.status === "error") {
     list.innerHTML = `<li class="hint">Weißwasser-Suche fehlgeschlagen: ${ww.message}</li>`;
     meta.textContent = "";
+  } else if (ww.bins && !imageUsable(ww.bins)) {
+    list.innerHTML = `<li class="hint ww-noimg"><b>Das offene Luftbild deckt diese Strecke nicht ab (keine Wasserfläche erkennbar) – kein auswertbares Luftbild für diese Strecke – Stromschnellen werden hier bewusst nicht markiert.</b> Die Karte zeigt zwar ein Luftbild, das darf aber nur angezeigt, nicht ausgewertet werden. Bitte Schwälle selbst im Luftbild prüfen (Stellen-Tour ◀ ▶); Gefälle und Schluchten bleiben als Indikatoren.</li>`;
+    meta.textContent = `${ww.source?.name ?? "Bildquelle"}: ohne Bilddaten an dieser Strecke (z. B. außerhalb des Mosaiks). ${OPEN_SOURCES_TEXT}`;
   } else {
-    if (!ww.spots.length) list.innerHTML = `<li class="hint">Keine Stellen über der Schwelle (${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter).</li>`;
+    if (!ww.spots.length) list.innerHTML = `<li class="hint">Keine Stellen über der Schwelle (${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter, Empfindlichkeit ${wwSensitivity}).</li>`;
     ww.spots.forEach((s, i) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
@@ -831,7 +844,7 @@ function renderLabels() {
   });
   $("ww-learn-info").textContent =
     `${wwLabels.length} eigene Markierung${wwLabels.length === 1 ? "" : "en"} (${wwLabels.filter((l) => l.schwall).length} Schwall, ${wwLabels.filter((l) => !l.schwall).length} kein Schwall) · ` +
-    `Schwelle ${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter${wwParams.spotDensity !== DEFAULT_PARAMS.spotDensity ? ` (gelernt, Standard ${DEFAULT_PARAMS.spotDensity.toString().replace(".", ",")})` : " (Standard)"}. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
+    `Grundschwelle ${wwParams.spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter${wwParams.spotDensity !== DEFAULT_PARAMS.spotDensity ? ` (gelernt, Standard ${DEFAULT_PARAMS.spotDensity.toString().replace(".", ",")})` : " (Standard)"}, wirksam ${effParams().spotDensity.toFixed(1).replace(".", ",")} (Empfindlichkeit ${wwSensitivity}, Flussbreite). Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
 }
 
 let labelPopup: maplibregl.Popup | null = null;
@@ -859,6 +872,19 @@ function addLabelAt(p: LngLat) {
 }
 
 $("ww-label").addEventListener("click", () => setMode(mode === "ww-label" ? "idle" : "ww-label"));
+const SENS_TEXT = (v: number) => (v <= 2 ? "nur große Schwälle" : v <= 4 ? "eher große" : v === 5 ? "Standard" : v <= 7 ? "auch kleinere" : "auch kleine");
+function renderSensitivity() {
+  $<HTMLInputElement>("ww-sens").value = String(wwSensitivity);
+  const w = current?.ww?.bins ? typicalWidth(current.ww.bins) : null;
+  $("ww-sens-out").textContent = `${SENS_TEXT(wwSensitivity)}${w ? ` · Fluss ~${Math.round(w)} m breit${Math.abs(widthFactor(w) - 1) > 0.02 ? ` (Schwelle ×${widthFactor(w).toFixed(2).replace(".", ",")})` : ""}` : ""}`;
+}
+$("ww-sens").addEventListener("input", (e) => {
+  wwSensitivity = Number((e.target as HTMLInputElement).value);
+  try { localStorage.setItem(SENS_KEY, String(wwSensitivity)); } catch { /* privater Modus */ }
+  if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
+  renderSensitivity();
+});
+renderSensitivity();
 $("ww-learn").addEventListener("click", () => {
   const ww = current?.ww;
   if (!current || !ww?.bins) return setStatus("Erst eine Strecke mit Weißwasser-Suche auswerten.", true);
@@ -868,14 +894,16 @@ $("ww-learn").addEventListener("click", () => {
     .filter((x) => x.at.offset < 60)
     .map((x) => ({ f: labelFeature(ww.bins!, x.at.d), schwall: x.l.schwall }));
   if (!samples.length) return setStatus("Keine eigenen Markierungen an dieser Strecke (max. 60 m neben der Flusslinie).", true);
-  const before = wwParams.spotDensity;
-  wwParams = fitParams(samples, wwParams);
+  const eff = effParams();
+  const fitted = fitParams(samples, eff);
+  // gelernte Grundschwelle so setzen, dass Regler × Breite wieder die angepasste Schwelle ergeben
+  wwParams = { ...wwParams, spotDensity: (wwParams.spotDensity * fitted.spotDensity) / eff.spotDensity };
   saveParams(wwParams);
   ww.spots = computeSpots();
   showResults();
-  const hit = samples.filter((x) => (x.f >= wwParams.spotDensity) === x.schwall).length;
+  const hit = samples.filter((x) => (x.f >= fitted.spotDensity) === x.schwall).length;
   const f1 = (x: number) => x.toFixed(1).replace(".", ",");
-  setStatus(`Gelernt aus ${samples.length} Markierung${samples.length === 1 ? "" : "en"}: Schwelle ${f1(before)} → ${f1(wwParams.spotDensity)} m²/m; ${hit} von ${samples.length} Markierungen werden damit richtig erkannt.`);
+  setStatus(`Gelernt aus ${samples.length} Markierung${samples.length === 1 ? "" : "en"}: Schwelle ${f1(eff.spotDensity)} → ${f1(fitted.spotDensity)} m²/m; ${hit} von ${samples.length} Markierungen werden damit richtig erkannt.`);
 });
 $("ww-reset").addEventListener("click", () => {
   wwParams = { ...DEFAULT_PARAMS };

@@ -3,6 +3,7 @@ import {
   ACROSS, ALONG, bendAt, DEFAULT_PARAMS, describeSpots, findSpots, fitParams, HALF_WIDTH, isWaterLike, isWhite, labelFeature,
   ORTHO_SOURCES, orthoSourceFor, whitewaterProfile, type Strip,
 } from "../src/whitewater";
+import { imageUsable, SENSITIVITY_DEFAULT, tunedParams, typicalWidth, widthFactor } from "../src/whitewater";
 import { centerWhite, DEFAULT_BREAK, findBreaklines, SPRAY_MAX_TEXTURE, sprayTexture } from "../src/whitewater";
 import { exportJson, mergeLabels, parseImport } from "../src/whitewaterStore";
 import type { LngLat } from "../src/geo";
@@ -195,5 +196,30 @@ describe("Abbruchkanten (Gefahrenstellen)", () => {
     expect(w[100]).toBe(0);
     expect(w[300]).toBeGreaterThan(0.5);
     expect(DEFAULT_BREAK.minDrop).toBe(8);
+  });
+});
+
+describe("Empfindlichkeit und Flussbreite", () => {
+  it("Standardstufe bei Bezugsbreite = Standardschwellen; Regler und Breite wirken in die erwartete Richtung", () => {
+    expect(tunedParams(DEFAULT_PARAMS, SENSITIVITY_DEFAULT, 25)).toEqual(DEFAULT_PARAMS);
+    expect(tunedParams(DEFAULT_PARAMS, 1, 25).spotDensity).toBeCloseTo(DEFAULT_PARAMS.spotDensity * 2, 6);
+    expect(tunedParams(DEFAULT_PARAMS, 9, 25).spotDensity).toBeCloseTo(DEFAULT_PARAMS.spotDensity / 2, 6);
+    expect(tunedParams(DEFAULT_PARAMS, 9, 25).strongDensity).toBe(DEFAULT_PARAMS.strongDensity); // Gefahrenstellen unabhängig vom Regler
+    expect(widthFactor(100)).toBe(1.6);
+    expect(widthFactor(5)).toBe(0.8);
+    expect(widthFactor(null)).toBe(1);
+  });
+  it("Regler steuert die Zahl der Stellen", () => {
+    const prof = whitewaterProfile(synthStrip(400, [150, 210]));
+    const w = typicalWidth(prof.bins);
+    expect(w).toBeGreaterThan(15);
+    expect(findSpots(prof.bins, tunedParams(DEFAULT_PARAMS, 9, w))).toHaveLength(1);
+    expect(findSpots(prof.bins, tunedParams(DEFAULT_PARAMS, 1, w)).length).toBeLessThanOrEqual(1);
+  });
+  it("leeres Bild (außerhalb des Mosaiks) ist nicht auswertbar", () => {
+    const blank = synthStrip(300);
+    blank.rgb.fill(255);
+    expect(imageUsable(whitewaterProfile(blank).bins)).toBe(false);
+    expect(imageUsable(whitewaterProfile(synthStrip(300)).bins)).toBe(true);
   });
 });
