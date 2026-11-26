@@ -1,5 +1,6 @@
-// Hinweise zum Wasserstand ohne Pegel: Wetter in der Umgebung vor einem Tag (Regen, Schnee,
-// Schneeschmelze) und die übliche Jahreszeit der Region. Bewusst KEINE Abflusszahl – das
+// Hinweise zum Wasserstand ohne Pegel: übliche Jahreszeit der Region und Abflussregime (Gletscher-,
+// Schneeschmelze oder Regen). Die Wetterabfrage (Regen, Schnee der Tage davor) ist seit 26.11.2026
+// eingefroren (Nutzerentscheidung) – Code bleibt, wird aber nicht mehr aufgerufen. Bewusst KEINE Abflusszahl – das
 // Modell GloFAS lag im Abgleich mit 223 Pegeln meist um ein Mehrfaches daneben (README).
 //
 // Daten: Open-Meteo, Wetter-Reanalyse ERA5 (archive-api, ab 1940, ~5 Tage Verzug) bzw. für die
@@ -102,10 +103,36 @@ export interface Glacier {
 /** Gletscherfluss? (≥ 2 % vergletschert laut Pegel, sonst ≥ 5 km² Gletscher im Umkreis von 20 km) */
 export const isGlacial = (g?: Glacier | null) => !!g && ((g.pct ?? 0) >= 2 || (g.pct === undefined && (g.areaKm2 ?? 0) >= 5));
 
+/** Abflussregime: was den Fluss im Jahreslauf prägt */
+export type RegimeKind = "gletscher" | "schnee" | "regen";
+export interface Regime { kind: RegimeKind; text: string; /** höchster Punkt des Einzugsgebiets (m), falls bekannt */ maxElev?: number }
+/** Höhe, ab der im Winter meist eine Schneedecke liegt, die im Frühjahr abschmilzt (grob nach Breite) */
+export function snowElevation(lat: number): number {
+  const a = Math.abs(lat);
+  return a >= 60 ? 300 : a >= 55 ? 600 : a >= 50 ? 1000 : a >= 45 ? 1300 : a >= 35 ? 1800 : a >= 25 ? 2800 : 4000;
+}
+const fmtM = (m: number) => `${Math.round(m / 100) * 100} m`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+/** Gletscher-, Schneeschmelze- oder Regenfluss aus Gletscheranteil und Höhe des Einzugsgebiets */
+export function regimeOf(glacier: Glacier | null | undefined, maxElev: number | undefined, lat: number): Regime {
+  if (isGlacial(glacier)) {
+    const g = glacier!;
+    const how = g.pct !== undefined ? `${String(Math.round(g.pct * 10) / 10).replace(".", ",")} % des Einzugsgebiets vergletschert` : `~${Math.round(g.areaKm2 ?? 0)} km² Gletscher im Einzugsgebiet`;
+    return { kind: "gletscher", maxElev, text: `Gletscherfluss (${how}): im Sommer viel Schmelzwasser, an warmen Tagen abends am meisten.` };
+  }
+  if (maxElev !== undefined && maxElev >= snowElevation(lat))
+    return { kind: "schnee", maxElev, text: `Schneeschmelze prägt den Fluss (Einzugsgebiet bis ~${fmtM(maxElev)}): meist am meisten Wasser im Frühjahr/Frühsommer.` };
+  return {
+    kind: "regen", maxElev,
+    text: maxElev !== undefined ? `Regen prägt den Fluss (Einzugsgebiet bis ~${fmtM(maxElev)}, kaum Schneeschmelze): Wasserstand folgt dem Niederschlag.` : "Regime unbekannt (Höhe des Einzugsgebiets nicht ermittelt).",
+  };
+}
+
 /** Übliche Jahreszeit der Region (Erfahrungswerte, keine Daten des Tages) */
-export function seasonHint(p: LngLat, date: string, glacial = false): Hint | null {
+export function seasonHint(p: LngLat, date: string, glacial = false, regime?: RegimeKind): Hint | null {
   const [lon, lat] = p;
-  const mo = Number(date.slice(5, 7));
+  const mo0 = Number(date.slice(5, 7));
+  // Südhalbkugel: Jahreszeiten um ein halbes Jahr versetzt
+  const mo = lat < 0 ? ((mo0 + 5) % 12) + 1 : mo0;
   const iceland = lat > 63 && lat < 67 && lon > -25 && lon < -13;
   const nordic = !iceland && lat >= 58;
   const alps = lat > 43.5 && lat < 48.6 && lon > 5 && lon < 17;
@@ -126,16 +153,28 @@ export function seasonHint(p: LngLat, date: string, glacial = false): Hint | nul
     if (mo >= 8 && mo <= 10) return { text: "Spätsommer/Herbst im Norden: Wasserstand hängt vom Regen ab.", effect: 0 };
     return { text: "Winter im Norden: meist Niedrigwasser, teils vereist.", effect: -1 };
   }
-  if (alps) {
+  if (alps && regime !== "regen") {
     if (mo === 3) return { text: "März in den Alpen: Schneeschmelze beginnt unten.", effect: 0 };
     if (mo >= 4 && mo <= 6) return { text: "April–Juni in den Alpen: Schneeschmelze, meist mehr Wasser.", effect: 1 };
     if (mo === 7 || mo === 8) return { text: "Hochsommer in den Alpen: Wasserstand hängt von Gewittern und Regen ab.", effect: 0 };
     if (mo >= 9 && mo <= 11) return { text: "Herbst in den Alpen: meist niedriger Grundabfluss.", effect: 0 };
     return { text: "Winter in den Alpen: meist Niedrigwasser.", effect: -1 };
   }
-  if (lat > 45 && lat < 55) {
+  if (regime === "schnee" && !alps) {
+    // Schneeschmelze anderswo: Hochwasserzeit nach Breite (Nordhalbkugel-Monate, Süden verschoben)
+    const a = Math.abs(lat);
+    const [m0, m1] = a < 40 ? [3, 5] : a < 50 ? [4, 6] : [5, 7];
+    if (mo >= m0 && mo <= m1) return { text: "Zeit der Schneeschmelze in dieser Region: meist mehr Wasser.", effect: 1 };
+    if (mo === m1 + 1) return { text: "Schneeschmelze klingt ab.", effect: 0 };
+    if (mo >= 11 || mo <= 2) return { text: "Winter: Schnee bleibt liegen, meist wenig Wasser.", effect: -1 };
+    return { text: "Nach der Schneeschmelze: Wasserstand hängt vom Regen ab.", effect: 0 };
+  }
+  if (lat > 45 && lat < 55 && !alps) {
     if (mo === 12 || mo <= 3) return { text: "Winter/Frühjahr im Mittelgebirge: meist die wasserreichste Zeit.", effect: 1 };
     if (mo >= 7 && mo <= 10) return { text: "Sommer/Herbst im Mittelgebirge: meist die wasserärmste Zeit.", effect: -1 };
+  }
+  if (alps && regime === "regen") {
+    if (mo >= 7 && mo <= 10) return { text: "Voralpenfluss im Sommer/Herbst: Wasserstand hängt vom Regen ab.", effect: 0 };
   }
   return null;
 }
@@ -207,9 +246,9 @@ export interface Basin {
   regulated?: string[];
 }
 
-export function assess(date: string, p: LngLat, w: WeatherWindow | null, glacier?: Glacier | null, basin: Basin = {}): Conditions {
+export function assess(date: string, p: LngLat, w: WeatherWindow | null, glacier?: Glacier | null, basin: Basin = {}, regime?: RegimeKind): Conditions {
   const glacial = isGlacial(glacier);
-  const season = seasonHint(p, date, glacial);
+  const season = seasonHint(p, date, glacial, regime);
   const hints = [...(w ? weatherHints(w, date, glacial, basin.areaKm2) : []), ...(season ? [season] : [])];
   if (basin.regulated?.length)
     hints.push({ text: `Speicher/Kraftwerke oberhalb (${basin.regulated.slice(0, 2).join(", ")}) – Wetter wirkt gedämpft, Schwall möglich.`, effect: 0 });

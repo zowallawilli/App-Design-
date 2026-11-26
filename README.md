@@ -34,10 +34,10 @@ NODE_USE_ENV_PROXY=1 npx tsx scripts/soca.mts
 |---|---|
 | **Referenzstrecke** | Soča-Abschnitte (Trenta, Velika Korita, Čezsoča–Srpenica, Srpenica–Trnovo, Trnovo–Kobarid) und Koritnica, jeweils mit Schwierigkeit laut Literatur |
 | **Ein-/Ausstieg** | Zwei Punkte anklicken → der Flusslauf dazwischen wird automatisch nachgezogen (siehe unten) |
-| **Fluss aus OSM** | Fluss anklicken → wird aus OpenStreetMap geladen und verkettet. Danach Ein- und Ausstieg anklicken. |
+| **Strecke bearbeiten** | Ein-/Ausstieg-Schild jederzeit ziehen → Strecke wird neu nachgezogen und analysiert. Modus „Strecke bearbeiten“: Klick auf die Strecke fügt einen Zwischenpunkt ein, ziehen = Strecke über diesen Punkt zwingen, Klick auf den Punkt = löschen. Häkchen „am Fluss nachziehen“ aus → gerade Teilstücke (eigene Linien). („Fluss aus OSM“ wurde am 26.11.2026 entfernt – lud zu lange.) |
 | **Zeichnen** | Strecke flussabwärts selbst klicken |
 | **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte, **Klick springt dorthin** (liegt dort eine markierte Stelle, direkt in die Detailansicht). Die Leiste darunter zeigt die Luftbild-Abschnitte B1, B2 … mit Aufnahmedatum und Wasserstand-Tendenz; Klick zoomt zum Abschnitt und öffnet die Hinweise. |
-| **Eigene Stellen** | Planungswerkzeug, weltweit und ohne Analyse nutzbar: Knopf „Eigene Stellen“, dann in die Karte klicken → Art (Stromschnelle, Walze, Wehr, Gefahrenstelle, Holz/Baum, Umtragen, Ein-/Ausstieg, Lagerplatz, Notiz), Grad I–VI, Notiz. Symbol anklicken = bearbeiten/löschen, im Modus ziehen = verschieben. Standardmäßig in der Karte; an der Strecke (≤ 500 m) in der Liste, im Profil, in der Stellen-Tour und als Wegpunkte im GPX/GeoJSON. Gefahrenstelle/Holz ≤ 100 m vom Fluss erscheinen als Gefahrenstelle (rote Welle). Gespeichert im Browser (localStorage `packraft.wwLabels`). |
+| **Eigene Stellen** | Sprachunabhängige Symbole (Zelt = Lager, Baum = Holz, Träger = Umtragen, Welle + Grad = Stromschnelle …). Planungswerkzeug, weltweit und ohne Analyse nutzbar: Knopf „Eigene Stellen“, dann in die Karte klicken → Art (Stromschnelle, Walze, Wehr, Gefahrenstelle, Holz/Baum, Umtragen, Ein-/Ausstieg, Lagerplatz, Notiz), Grad I–VI, Notiz. Symbol anklicken = bearbeiten/löschen, im Modus ziehen = verschieben. Standardmäßig in der Karte; an der Strecke (≤ 500 m) in der Liste, im Profil, in der Stellen-Tour und als Wegpunkte im GPX/GeoJSON. Gefahrenstelle/Holz ≤ 100 m vom Fluss erscheinen als Gefahrenstelle (rote Welle). Gespeichert im Browser (localStorage `packraft.wwLabels`). |
 | **Aus OpenStreetMap** | Stromschnellen (`whitewater=rapid`, Grad aus `whitewater:rapid_grade`), Wasserfälle, Wehre, Dämme, Schleusen, Ein-/Ausstiege und Umtragestellen aus OSM (Overpass), weltweit – gekennzeichnet als **„aus OSM, nicht geprüft“**, eigenes eckiges Symbol, im GPX mit „(OSM)“. Fehlt ein Eintrag, kann trotzdem etwas da sein. |
 | **Gefahrenstellen** | Rote Welle: nicht einsehbare steile Klamm (Satellit/Höhenmodell) oder eigene Gefahrenstelle. Steile Abschnitte zeigt die Gefälle-Farbe. Nur mit eingeschalteter experimenteller Luftbild-Auswertung zusätzlich Abbruchkanten und Stufen mit Weißwasser. |
 | **Schwallstellen (experimentell)** | Weißwasser im offenen Orthofoto (siehe unten) – seit 26.11.2026 **standardmäßig aus** (Analyse-Parameter → „Schwallstellen-Erkennung experimentell“), weil offene Orthofotos nur in AT, SI, USA und Teilen Islands vorliegen und die Trefferquote bei ~70 % liegt. Regler, Grad-Auswahl und Lernen eingeklappt unter „Erkennung einstellen & lernen“; Code bleibt erhalten. |
@@ -211,6 +211,33 @@ Wasser; allgemein v = √(g·λ/2π · tanh(2πh/λ)). Weil die Tiefe h im Luftb
 **Spanne für 0,5–2 m Tiefe** (z. B. 4 m → 2,0–2,5 m/s, 10 m → 2,2–3,6 m/s) und ab λ > 4 m den Hinweis „bei
 flachem Wasser eher langsamer“. Die Kämme quer zu ihrer Ausrichtung (in Fließrichtung) anklicken. Dazu zeigt die
 App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem heutigen Wasserstand vergleichbar.
+
+## Tour: mehrere Flüsse und Verbindungswege (seit 26.11.2026)
+
+- **Tour-Liste:** Jede neu festgelegte Strecke wird ein weiterer Abschnitt; frühere bleiben blass auf der Karte und
+  lassen sich per Klick (Liste oder Linie) wieder anzeigen – ohne neu zu rechnen. „Zurücksetzen“ löscht die ganze Tour,
+  ✕ einen Abschnitt. „Tour als GPX“: je Abschnitt und Verbindungsweg ein Track, höchster Punkt als Wegpunkt.
+- **Nebenflüsse:** Benannte Flüsse, die die Strecke berühren (≤ 250 m, OSM-Vektorkacheln Zoom 11), sind blau gestrichelt.
+  Klick auf einen = Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt (Fließrichtung wird geprüft).
+- **Verbindungsweg** (`src/hike.ts`): „Fluss → Fluss“ (Klick auf Fluss A und B; Start an jeder Stelle von A, Ziel an
+  jeder Stelle von B – die Suche wählt selbst Aus-/Einstieg und meist den niedrigsten Sattel) oder „Punkt → Punkt“.
+  Gehzeit je Rasterzelle nach Tobler (Steigung), weglos ×1,6, Wasser queren ×12, Gletscher ×3, > ~37° gesperrt (außer auf
+  Wegen); Wege/Gewässer/Gletscher aus OpenFreeMap-Kacheln, Höhen AWS Terrain (Zoom ≤ 13, max. 1,2 Mio. Zellen). Bis zu zwei
+  Alternativen (Umgebung der besten Route verteuert, höchstens 1,6× Gehzeit, < 60 % Überlappung). Angezeigt: Länge,
+  Auf-/Abstieg, Gehzeit nach DIN 33466 (ohne Pausen, ohne Gepäckzuschlag), höchster Punkt, Anteil weglos.
+  Grenzen: Felsstufen unter der Rasterweite, Wald/Gebüsch/Sumpf, Flussquerungen, Schutzgebiete – **Indikator, vor Ort prüfen.**
+  Beispiel Ötztal (Sölden) → Pitztal: 10,7 km, ↑ 1.486 m, ~7:24 h, höchster Punkt ~2.630 m.
+
+## Wasserstand ohne Pegel: Jahreszeit, Aufnahmedatum, Abflussregime (seit 26.11.2026)
+
+Die Wetterabfrage (Open-Meteo: Regen/Schnee der Tage davor) ist **eingefroren** (Code in `src/weather.ts` bleibt).
+Hinweise je Aufnahmetag und heute kommen nur noch aus der üblichen Jahreszeit der Region und dem **Abflussregime**:
+**Gletscherfluss** (≥ 2 % vergletschert laut Pegel bzw. ≥ 5 km² Gletscher im Einzugsgebiet), sonst **Schneeschmelze**,
+wenn das Einzugsgebiet oberhalb über die Höhe reicht, ab der im Winter Schnee liegt (grob nach Breite: ≥ 60° 300 m,
+55° 600 m, 50° 1000 m, 45° 1300 m, 35° 1800 m, 25° 2800 m), sonst **Regen**. Höhe: höchster Punkt der verfolgten Flussläufe
+oberhalb + ~400 m (grobes Höhenmodell). Südhalbkugel mit um sechs Monate versetzten Jahreszeiten.
+Das Einzugsgebiet (Fluss + Zubringer oberhalb) ist standardmäßig blau gestrichelt auf der Karte.
+Pegel werden nur noch gezeigt, wenn sie **gemessen** sind und zum **selben Fluss** gehören – keine Schätzungen aus Nachbarpegeln.
 
 ## Wie verlässlich sind die Abflussdaten?
 
