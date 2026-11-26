@@ -758,6 +758,7 @@ function computeSpots(): WhitewaterSpot[] {
   const a = current.analysis;
   const gradientAt = (d: number) => (a.segments.find((sg) => d >= sg.d0 && d <= sg.d1) ?? a.segments[a.segments.length - 1]).gradient;
   if (!imageUsable(ww.bins)) return [];
+  fillLabelFeatures();
   const steps = (ww.breaks ?? []).map((b) => ({ d0: b.d - 20, d1: b.d + 20 }));
   const par = effParams(), m = wwModel, thr = modelThreshold(wwSensitivity);
   const accept = m ? (b: WhitewaterBin) => b.width !== null && modelProb(m, b) >= thr : undefined;
@@ -926,6 +927,17 @@ function addLabelAt(p: LngLat) {
   });
   labelPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "300px" }).setLngLat(at).setDOMContent(box).addTo(map);
 }
+/** Markierungen ohne Bildmerkmale (ältere Version, oder vor der Analyse gesetzt) an der aktuellen Strecke ergänzen –
+ *  bei jeder Auswertung automatisch, damit sie fürs Lernen zählen. */
+function fillLabelFeatures() {
+  let n = 0;
+  for (const l of wwLabels) {
+    if (l.feat) continue;
+    const f = featAt(l.p);
+    if (f.feat) { Object.assign(l, f); n++; }
+  }
+  if (n) saveLabels(wwLabels);
+}
 function afterLabelChange() {
   saveLabels(wwLabels);
   if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
@@ -954,13 +966,13 @@ $("ww-learn").addEventListener("click", () => {
   const pos = samples.filter((x) => x.schwall).length, neg = samples.length - pos;
   const m = trainModel(samples);
   if (!m) {
-    return setStatus(`Für das Modell braucht es je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild-Auswertung (bisher ${pos} / ${neg}). Markierungen ohne Analyse an der Stelle zählen erst, wenn du die Strecke auswertest und erneut lernst.`, true);
+    return setStatus(`Für das Modell braucht es je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild-Auswertung (bisher ${pos} / ${neg}). ${wwLabels.length - samples.length} Markierungen haben noch keine Luftbild-Merkmale – sie werden ergänzt, sobald du die jeweilige Strecke auswertest (nur bis 60 m neben der Flusslinie, nur mit auswertbarem Luftbild).`, true);
   }
   wwModel = m;
   saveModel(m);
   if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
   else renderLabels();
-  setStatus(`Modell gelernt aus ${pos + neg} Markierungen (${pos} Schwall, ${neg} kein Schwall), alle Flüsse. Trefferquote bei Prüfung an zurückgehaltenen Markierungen: ${Math.round(m.acc * 100)} %.`);
+  setStatus(`Modell gelernt aus ${pos + neg} Markierungen (${pos} Schwall, ${neg} kein Schwall), alle Flüsse${wwLabels.length > samples.length ? `; ${wwLabels.length - samples.length} weitere noch ohne Luftbild-Merkmale (Strecke dazu auswerten)` : ""}. Trefferquote bei Prüfung an zurückgehaltenen Markierungen: ${Math.round(m.acc * 100)} %.`);
 });
 $("ww-reset").addEventListener("click", () => {
   wwParams = { ...DEFAULT_PARAMS };
