@@ -204,3 +204,4 @@ details.more ul.small li { margin-bottom: 4px; }
 button.linkish { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline dotted; cursor: pointer; }
 .learn-result { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #2a9d8f; background: #2a9d8f14; font-size: 0.85rem; }
 .learn-result.bad { border-left-color: #e09f3e; background: #e09f3e14; }
+.ww-popup .lbl-show { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; flex-wrap: wrap; }

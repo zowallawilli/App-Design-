@@ -667,6 +667,8 @@ export interface WhitewaterLabel {
   grade?: Grade;
   note?: string;
   date?: string;
+  /** true = auch später als eigene Stelle anzeigen; sonst nur zum Lernen (Standard) */
+  show?: boolean;
   /** ausgewertete Bildquelle (id) und Merkmale an der Stelle */
   src?: string;
   feat?: LabelFeat;
@@ -683,7 +685,14 @@ export function binFeat(bins: WhitewaterBin[], d: number): LabelFeat | null {
 // ---------------------------------------------------------------------------------------------
 // Lernendes Modell (logistische Regression) aus eigenen Markierungen
 
-export interface WwModel { w: number[]; b: number; pos: number; neg: number; /** Trefferquote (Kreuzvalidierung) */ acc: number; date: string }
+export interface WwModel {
+  w: number[]; b: number; pos: number; neg: number;
+  /** Trefferquote (Kreuzvalidierung) */ acc: number;
+  /** Trefferquote der festen Standardschwelle auf denselben Markierungen (Vergleich) */ accFixed?: number;
+  date: string;
+}
+/** Modell nur verwenden, wenn es die feste Schwelle nachweislich übertrifft (≥ 3 Prozentpunkte) */
+export const modelUsable = (m: WwModel | null): boolean => !!m && m.accFixed !== undefined && m.acc >= m.accFixed + 0.03; // ältere Modelle ohne Vergleich: nicht verwenden
 /** mindestens so viele Markierungen je Klasse, bevor das Modell die festen Schwellen ersetzt */
 export const MODEL_MIN = 5;
 const xOf = (f: LabelFeat) => [Math.log1p(f.density), f.smooth * 4, Math.log((f.width ?? WIDTH_REF) / WIDTH_REF)];
@@ -724,16 +733,19 @@ export function trainModel(samples: { f: LabelFeat; schwall: boolean }[]): WwMod
     for (const i of te) ok += (1 / (1 + Math.exp(-(m.b + xs[i].reduce((s, v, j) => s + v * m.w[j], 0)))) >= 0.5 ? 1 : 0) === ys[i] ? 1 : 0;
   }
   const { w, b } = fitLogistic(xs, ys);
-  return { w, b, pos, neg, acc: ok / samples.length, date: new Date().toISOString().slice(0, 10) };
+  const P = DEFAULT_PARAMS;
+  const accFixed = samples.filter((s) => (s.f.density >= P.spotDensity && s.f.smooth >= P.minFrac) === s.schwall).length / samples.length;
+  return { w, b, pos, neg, acc: ok / samples.length, accFixed, date: new Date().toISOString().slice(0, 10) };
 }
 /** Wahrscheinlichkeitsschwelle je Reglerstufe: 5 → 0,5, 1 → 0,88 (nur deutliche), 9 → 0,12 */
 export const modelThreshold = (level: number) => 1 / (1 + Math.exp(-(SENSITIVITY_DEFAULT - level) / 2));
 
-/** Eigene Markierungen auf die Strecke legen: „kein Schwall“ blendet erkannte Stellen aus, eigene Schwälle ohne
+/** Eigene Markierungen mit „anzeigen“ auf die Strecke legen: „kein Schwall“ blendet erkannte Stellen aus, eigene Schwälle ohne
  *  erkannte Stelle kommen hinzu, erkannte Stellen mit eigener Markierung gelten als bestätigt. */
 export function applyLabels(
   spots: WhitewaterSpot[], labels: { label: WhitewaterLabel; d: number; p: LngLat }[],
 ): WhitewaterSpot[] {
+  labels = labels.filter((l) => l.label.show); // Markierungen nur zum Lernen ändern die Anzeige nicht
   const inSpot = (s: WhitewaterSpot, d: number) => d >= s.d0 - 25 && d <= s.d1 + 25;
   const out = spots
     .filter((s) => !labels.some((l) => !l.label.schwall && inSpot(s, l.d)))

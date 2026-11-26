@@ -23,7 +23,7 @@ import { rateAnalysis, streamPower, waveVelocityRange, WAVE_DEPTHS, type RatingM
 import {
   DEFAULT_PARAMS, describeSpots, edgeCandidates, findBreaklines, findSpots, localProfile, type Breakline, orthoSourceFor, sampleStrip, whitewaterProfile,
   type OrthoSource, type WhitewaterBin, type WhitewaterLabel, type WhitewaterParams, type WhitewaterSpot,
-  applyLabels, binFeat, GRADES, LABEL_KINDS, labelText, modelProb, modelThreshold, trainModel, type Grade, type LabelKind, type WwModel,
+  applyLabels, binFeat, modelUsable, GRADES, LABEL_KINDS, labelText, modelProb, modelThreshold, trainModel, type Grade, type LabelKind, type WwModel,
   imageUsable, SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, tunedParams, typicalWidth, widthFactor,
 } from "./whitewater";
 import { ghToken, setGhToken, uploadLabels } from "./githubUpload";
@@ -140,7 +140,7 @@ const style: StyleSpecification = {
     },
     {
       id: "ww-labels", type: "circle", source: "ww-labels", layout: { visibility: "none" }, // nur beim Markieren sichtbar
-      paint: { "circle-radius": 7, "circle-color": ["case", ["get", "gefahr"], "#d62828", ["get", "schwall"], "#00b4d8", "#9e9e9e"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
+      paint: { "circle-radius": 7, "circle-color": ["case", ["get", "gefahr"], "#d62828", ["get", "schwall"], "#00b4d8", "#9e9e9e"], "circle-opacity": ["case", ["get", "show"], 1, 0.55], "circle-stroke-color": ["case", ["get", "show"], "#ffd166", "#fff"], "circle-stroke-width": 2 },
     },
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
   ],
@@ -782,7 +782,7 @@ function computeSpots(): WhitewaterSpot[] {
   if (!imageUsable(ww.bins)) return [];
   fillLabelFeatures();
   const steps = (ww.breaks ?? []).map((b) => ({ d0: b.d - 20, d1: b.d + 20 }));
-  const par = effParams(), m = wwModel, thr = modelThreshold(wwSensitivity);
+  const par = effParams(), m = modelUsable(wwModel) ? wwModel : null, thr = modelThreshold(wwSensitivity);
   const accept = m ? (b: WhitewaterBin) => b.width !== null && modelProb(m, b) >= thr : undefined;
   const found = describeSpots(findSpots(ww.bins, par, accept), ww.track, ww.bins, { gradientAt, steps });
   return applyLabels(found, labelsOnLine());
@@ -879,15 +879,16 @@ function focusWw(i: number) {
 function renderLabels() {
   src("ww-labels").setData({
     type: "FeatureCollection",
-    features: wwLabels.map((l, i) => ({ type: "Feature", properties: { i, schwall: l.schwall, gefahr: l.kind === "gefahr", text: l.schwall ? (l.grade ?? "") : "✕" }, geometry: { type: "Point", coordinates: l.p } })),
+    features: wwLabels.map((l, i) => ({ type: "Feature", properties: { i, schwall: l.schwall, gefahr: l.kind === "gefahr", show: !!l.show, text: l.schwall ? (l.grade ?? "") : "✕" }, geometry: { type: "Point", coordinates: l.p } })),
   });
-  const pos = wwLabels.filter((l) => l.schwall).length, withF = wwLabels.filter((l) => l.feat).length;
+  const pos = wwLabels.filter((l) => l.schwall).length, withF = wwLabels.filter((l) => l.feat).length, shown = wwLabels.filter((l) => l.show).length;
   $("ww-learn-info").textContent =
-    `${wwLabels.length} eigene Markierung${wwLabels.length === 1 ? "" : "en"} (${pos} Schwall, ${wwLabels.length - pos} kein Schwall; ${withF} mit Luftbild-Merkmalen) · ` +
-    (wwModel
-      ? `Erkennung mit gelerntem Modell (${wwModel.pos + wwModel.neg} Markierungen, Trefferquote ${Math.round(wwModel.acc * 100)} %, ${fmtDate(wwModel.date)}), Empfindlichkeit ${wwSensitivity}. `
+    `${wwLabels.length} eigene Markierung${wwLabels.length === 1 ? "" : "en"} (${pos} Schwall, ${wwLabels.length - pos} kein Schwall; ${withF} mit Luftbild-Merkmalen; ${shown} auch in der Karte angezeigt, übrige nur zum Lernen) · ` +
+    (modelUsable(wwModel)
+      ? `Erkennung mit gelerntem Modell (${wwModel!.pos + wwModel!.neg} Markierungen, Trefferquote ${Math.round(wwModel!.acc * 100)} % statt ${Math.round((wwModel!.accFixed ?? 0) * 100)} % mit fester Schwelle, ${fmtDate(wwModel!.date)}), Empfindlichkeit ${wwSensitivity}. `
+      : wwModel ? `Gelerntes Modell (${Math.round(wwModel.acc * 100)} %${wwModel.accFixed !== undefined ? ` vs. feste Schwelle ${Math.round(wwModel.accFixed * 100)} %` : ", ohne Vergleich – neu lernen"}) ist nicht besser – Erkennung weiter mit fester Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m²/m. `
       : `Feste Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter (Empfindlichkeit ${wwSensitivity}, Flussbreite); Modell ab je 5 Markierungen „Schwall“/„kein Schwall“. `) +
-    `Markierungen bleiben bei neuen Analysen erhalten, überstimmen die Erkennung und sind nur im Modus „Stellen markieren“ als Punkte sichtbar. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
+    `Markierungen bleiben erhalten und sind nur im Modus „Stellen markieren“ als Punkte sichtbar; nur die mit Häkchen „anzeigen“ erscheinen auch sonst als eigene Stelle bzw. blenden Erkennungen aus. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
 }
 
 let labelPopup: maplibregl.Popup | null = null;
@@ -917,6 +918,7 @@ function addLabelAt(p: LngLat) {
     `<div class="lbl-sec">Schwall · Grad <span class="lbl-grades">${GRADES.map((g) => `<button data-g="${g}" class="g${grade === g ? " sel" : ""}">${g}</button>`).join("")}</span></div>` +
     `<div class="row wrap">${LABEL_KINDS.filter((k) => k.schwall).map(btn).join("")}</div>` +
     `<div class="lbl-sec">kein Schwall</div><div class="row wrap">${LABEL_KINDS.filter((k) => !k.schwall).map(btn).join("")}</div>` +
+    `<label class="lbl-show"><input type="checkbox" class="lbl-show-cb"${old?.show ? " checked" : ""}> auch später in der Karte anzeigen <span class="hint">(sonst nur zum Lernen)</span></label>` +
     `<input class="lbl-note" maxlength="200" placeholder="Notiz (optional)" value="${(old?.note ?? "").replace(/"/g, "&quot;")}">` +
     (old ? `<div class="row"><button data-del class="ghost danger">Markierung löschen</button></div>` : "");
   box.querySelectorAll<HTMLButtonElement>("button[data-g]").forEach((b) =>
@@ -932,6 +934,7 @@ function addLabelAt(p: LngLat) {
       const note = box.querySelector<HTMLInputElement>(".lbl-note")!.value.trim() || undefined;
       const label: WhitewaterLabel = {
         p: at, schwall: k.schwall, kind: k.id as LabelKind, grade: k.schwall ? grade : undefined, note,
+        show: box.querySelector<HTMLInputElement>(".lbl-show-cb")!.checked || undefined,
         date: new Date().toISOString().slice(0, 10), ...(old?.feat ? { src: old.src, feat: old.feat } : featAt(at)),
       };
       if (old) wwLabels[near] = label;
@@ -996,7 +999,8 @@ $("ww-learn").addEventListener("click", () => {
   const kinds = LABEL_KINDS.map((k) => [k.text, wwLabels.filter((l) => l.feat && l.kind === k.id).length] as const).filter(([, n]) => n);
   showLearnResult(
     `✓ Verarbeitet: ${samples.length} von ${wwLabels.length} Markierungen fürs Lernen genutzt (${pos} Schwall, ${neg} kein Schwall${kinds.length ? `; ${kinds.map(([t, n]) => `${t} ${n}`).join(", ")}` : ""}). ` +
-      `Trefferquote an zurückgehaltenen Markierungen: <b>${Math.round(m.acc * 100)} %</b>.` +
+      `Trefferquote an zurückgehaltenen Markierungen: <b>${Math.round(m.acc * 100)} %</b>, feste Schwelle auf denselben Markierungen: ${Math.round((m.accFixed ?? 0) * 100)} % → ` +
+      (modelUsable(m) ? "<b>Modell wird verwendet.</b>" : "<b>Modell ist nicht besser – die feste Schwelle bleibt.</b> Mehr und eindeutigere Markierungen helfen; die Merkmale werden weiter ausgebaut.") +
       (wwLabels.length > samples.length ? ` ${wwLabels.length - samples.length} Markierungen noch ohne Luftbild-Merkmale – die zugehörige Strecke auswerten und erneut lernen.` : ""),
     true,
   );

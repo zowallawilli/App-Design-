@@ -242,20 +242,33 @@ describe("Eigene Markierungen und lernendes Modell", () => {
   it("„kein Schwall“ blendet erkannte Stelle aus, eigener Schwall wird ergänzt oder bestätigt – nichts doppelt", async () => {
     const { applyLabels } = await import("../src/whitewater");
     const spot = (d0: number, d1: number) => ({ d0, d1, dPeak: (d0 + d1) / 2, center: [10, 47] as LngLat, peakFrac: 0.3, meanFrac: 0.2, peakDensity: 8, area: 300, width: 20, strong: true, notes: [] as string[] });
-    const L = (d: number, schwall: boolean, kind: "schwall" | "kiesbank" = schwall ? "schwall" : "kiesbank") => ({ label: { p: [10, 47] as LngLat, schwall, kind, grade: schwall ? ("III" as const) : undefined }, d, p: [10, 47] as LngLat });
+    const L = (d: number, schwall: boolean, kind: "schwall" | "kiesbank" = schwall ? "schwall" : "kiesbank", show = true) => ({ label: { p: [10, 47] as LngLat, schwall, kind, grade: schwall ? ("III" as const) : undefined, show }, d, p: [10, 47] as LngLat });
     const out = applyLabels([spot(100, 150), spot(400, 450)], [L(120, false), L(430, true), L(800, true)]);
     expect(out).toHaveLength(2); // 100–150 ausgeblendet, 400–450 bestätigt, 800 neu
     expect(out[0].own?.grade).toBe("III");
     expect(out[0].notes[0]).toMatch(/von dir markiert: Stromschnelle · WW III/);
     expect(out[1].d0).toBe(785);
     expect(out[1].area).toBe(0);
+    // Markierungen nur zum Lernen (ohne Häkchen „anzeigen“) ändern die Anzeige nicht
+    const learnOnly = applyLabels([spot(100, 150)], [L(120, false, "kiesbank", false), L(800, true, "schwall", false)]);
+    expect(learnOnly).toHaveLength(1);
+    expect(learnOnly[0].own).toBeUndefined();
+  });
+
+  it("Modell nur verwenden, wenn es die feste Schwelle schlägt; alte Modelle ohne Vergleich nicht", async () => {
+    const { modelUsable, trainModel } = await import("../src/whitewater");
+    expect(modelUsable({ w: [1, 1, 1], b: 0, pos: 20, neg: 14, acc: 0.62, date: "" })).toBe(false); // wie im Browser des Nutzers
+    expect(modelUsable({ w: [1, 1, 1], b: 0, pos: 20, neg: 14, acc: 0.6, accFixed: 0.7, date: "" })).toBe(false);
+    expect(modelUsable({ w: [1, 1, 1], b: 0, pos: 20, neg: 14, acc: 0.85, accFixed: 0.7, date: "" })).toBe(true);
+    const m = trainModel(Array.from({ length: 12 }, (_, i) => ({ f: { density: i < 6 ? 9 + i : 1 + i * 0.1, smooth: i < 6 ? 0.3 : 0.05, width: 20 }, schwall: i < 6 })))!;
+    expect(m.accFixed).toBeGreaterThan(0.9);
   });
 
   it("Export/Import erhält Art, Grad, Merkmale und Modell; alte Dateien bleiben lesbar", () => {
-    const labels = [{ p: [10, 47] as LngLat, schwall: true, kind: "walze" as const, grade: "IV" as const, note: "Rücklauf", date: "2026-11-26", src: "basemap-at", feat: { density: 9, smooth: 0.3, width: 18 } }];
+    const labels = [{ p: [10, 47] as LngLat, schwall: true, kind: "walze" as const, grade: "IV" as const, show: true, note: "Rücklauf", date: "2026-11-26", src: "basemap-at", feat: { density: 9, smooth: 0.3, width: 18 } }];
     const model = { w: [1, 2, 3], b: -1, pos: 5, neg: 5, acc: 0.9, date: "2026-11-26" };
     const imp = parseImport(exportJson(labels, DEFAULT_PARAMS, model));
-    expect(imp.labels[0]).toMatchObject({ kind: "walze", grade: "IV", feat: { density: 9 } });
+    expect(imp.labels[0]).toMatchObject({ kind: "walze", grade: "IV", show: true, feat: { density: 9 } });
     expect(imp.model?.w).toEqual([1, 2, 3]);
     const old = parseImport(JSON.stringify({ format: "packraft-schwallstellen", version: 1, labels: [{ p: [10, 47], schwall: false }] }));
     expect(old.labels[0]).toMatchObject({ schwall: false });

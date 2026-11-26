@@ -65,7 +65,7 @@ function validLabels(v: unknown): WhitewaterLabel[] {
       const feat = f && typeof f.density === "number" && typeof f.smooth === "number" && Number.isFinite(f.density) && Number.isFinite(f.smooth)
         ? { density: f.density, smooth: f.smooth, width: typeof f.width === "number" && Number.isFinite(f.width) ? f.width : null } : undefined;
       return {
-        p: [x.p[0], x.p[1]] as LngLat, schwall: x.schwall, kind, grade,
+        p: [x.p[0], x.p[1]] as LngLat, schwall: x.schwall, kind, grade, show: x.show === true ? true : undefined,
         note: typeof x.note === "string" ? x.note.slice(0, 200) : undefined, date: typeof x.date === "string" ? x.date.slice(0, 10) : undefined,
         src: typeof x.src === "string" ? x.src.slice(0, 40) : undefined, feat,
       };
@@ -77,7 +77,7 @@ function validModel(v: unknown): WwModel | null {
   const o = v as Record<string, unknown>;
   const num = (x: unknown) => typeof x === "number" && Number.isFinite(x);
   if (!Array.isArray(o.w) || o.w.length !== 3 || !o.w.every(num) || !num(o.b)) return null;
-  return { w: o.w as number[], b: o.b as number, pos: num(o.pos) ? (o.pos as number) : 0, neg: num(o.neg) ? (o.neg as number) : 0, acc: num(o.acc) ? (o.acc as number) : 0, date: typeof o.date === "string" ? o.date.slice(0, 10) : "" };
+  return { w: o.w as number[], b: o.b as number, pos: num(o.pos) ? (o.pos as number) : 0, neg: num(o.neg) ? (o.neg as number) : 0, acc: num(o.acc) ? (o.acc as number) : 0, accFixed: num(o.accFixed) ? (o.accFixed as number) : undefined, date: typeof o.date === "string" ? o.date.slice(0, 10) : "" };
 }
 
 function validParams(v: unknown): WhitewaterParams | null {
