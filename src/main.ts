@@ -61,6 +61,15 @@ type BaseKey = keyof typeof BASEMAPS;
 
 const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
 
+/** Einzugsgebiet (Fluss + Zubringer oberhalb, Wetter-Bezugspunkte) auf der Karte zeigen? Standard: aus. */
+function showCatch(): boolean {
+  try { return localStorage.getItem("packraft.showCatch") === "1"; } catch { return false; }
+}
+function setShowCatch(on: boolean) {
+  try { localStorage.setItem("packraft.showCatch", on ? "1" : "0"); } catch { /* nur für diese Sitzung */ }
+  for (const id of ["catch-line", "catch-pts"]) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+}
+
 const style: StyleSpecification = {
   version: 8,
   sources: {
@@ -96,11 +105,11 @@ const style: StyleSpecification = {
       layout: { visibility: (k === "esri" ? "visible" : "none") as "visible" | "none" },
     })),
     {
-      id: "catch-line", type: "line", source: "catch", filter: ["==", ["geometry-type"], "LineString"],
+      id: "catch-line", type: "line", source: "catch", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: showCatch() ? "visible" : "none" },
       paint: { "line-color": "#4a90d9", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.85 },
     },
     {
-      id: "catch-pts", type: "circle", source: "catch", filter: ["==", ["geometry-type"], "Point"],
+      id: "catch-pts", type: "circle", source: "catch", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: showCatch() ? "visible" : "none" },
       paint: { "circle-radius": 5, "circle-color": "rgba(255,255,255,0.15)", "circle-stroke-color": "#4a90d9", "circle-stroke-width": 2 },
     },
     { id: "river", type: "line", source: "river", paint: { "line-color": "#7fd3ff", "line-width": 3, "line-opacity": 0.85 } },
@@ -251,6 +260,8 @@ interface FlowInfo {
   today: string;
   gaugeErrors: string[];
   error?: string;
+  /** „Pegel & Quellen“ aufgeklappt (bleibt beim Neuzeichnen offen) */
+  catchOpen?: boolean;
 }
 /** Weißwasser-Suche im offenen Orthofoto */
 interface WwState {
@@ -1253,12 +1264,15 @@ function renderFlowInfo() {
         (gm.unverified ? ` · <span class="stale">Flusszuordnung ungeprüft</span>` : "") +
         (!gm.latest ? " · veröffentlicht keinen Abfluss" : "")
       : `Kein offizieller Pegel an der Strecke – Hinweise aus Wetter und Jahreszeit${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " (Norwegen: NVE-Schlüssel unter „Analyse-Parameter“ eintragen)" : ""}`}.</p>` +
-    `<details class="more"><summary>Pegel &amp; Quellen</summary>` +
+    `<details class="more"${f.catchOpen ? " open" : ""}><summary>Pegel &amp; Quellen</summary>` +
+    `<label class="check"><input type="checkbox" id="show-catch"${showCatch() ? " checked" : ""} /> Einzugsgebiet zeigen <span class="hint">(Fluss und Zubringer oberhalb, Wetter-Bezugspunkte ○)</span></label>` +
     cal +
     `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen („≈“ = aus Nachbarpegeln geschätzt). ` +
     `Hinweise: ${catchText(f)} – Regen, Schnee und Temperatur der Tage davor (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit; eine Tendenz, keine Abflussmessung. ` +
     `${f.glacier && isGlacial(f.glacier) ? `Gletscherfluss: ${f.glacier.pct !== undefined ? `${fmtQ(f.glacier.pct)} % des Einzugsgebiets vergletschert (Pegel-Stammdaten)` : `~${Math.round(f.glacier.areaKm2 ?? 0)} km² Gletscher im Umkreis von 20 km`}.` : ""}` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p></details>`;
+  el.querySelector<HTMLInputElement>("#show-catch")?.addEventListener("change", (e) => setShowCatch((e.target as HTMLInputElement).checked));
+  el.querySelector("details.more")?.addEventListener("toggle", (e) => (f.catchOpen = (e.target as HTMLDetailsElement).open));
   // Abschnittskarten anklicken → Abschnitt auf der Karte zeigen
   el.querySelectorAll<HTMLElement>(".day[data-sec]").forEach((d) => d.addEventListener("click", () => focusImageStretch(Number(d.dataset.sec))));
   drawImageStretches();
@@ -1283,7 +1297,7 @@ function catchText(f: FlowInfo): string {
   const c = f.catchment;
   if (!c || c.fallback) return "Wetter im Umkreis von ~15 km um den Einstieg (Fluss nicht weiter verfolgbar)";
   const parts = [c.river, ...c.tributaries].filter(Boolean).join(", ");
-  return `Wetter im Einzugsgebiet oberhalb des Einstiegs (${parts}; ${c.points.length} Bezugspunkte, auf der Karte ○, Gebiet gestrichelt)`;
+  return `Wetter im Einzugsgebiet oberhalb des Einstiegs (${parts}; ${c.points.length} Bezugspunkte; auf der Karte mit „Einzugsgebiet zeigen“)`;
 }
 
 let imgMarkers: maplibregl.Marker[] = [];

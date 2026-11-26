@@ -107,7 +107,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Norwegen: Åmot-Schlucht als Schlucht-/Klammstrecke', /Klamm|Schlucht/.test(sjNr), sjNr.slice(0, 160) + ' | ' + (await page.textContent('#narrows-meta')).slice(0, 120));
   check('Norwegen: Kartverket-Höhenmodell (oder klarer Hinweis bei Störung)', /Kartverket/.test(await stat('Höhenmodell') || ''), `${await stat('Höhenmodell')} · ${await stat('Flusslinie')} · ${await stat('Länge')} · ${await stat('Höhe')}`);
   const sjWw = (await page.textContent('#ww-list')).replace(/\s+/g, ' ');
-  check('Norwegen: Hinweis statt Stromschnellen (kein auswertbares Luftbild)', /Kein öffentlich auswertbares Luftbild/.test(sjWw) && (await page.locator('.ww-marker').count()) === 0 && (await page.locator('#ww-sens').isHidden()), sjWw.slice(0, 120));
+  check('Norwegen: Hinweis statt Stromschnellen (kein auswertbares Luftbild)', /Kein (öffentlich )?auswertbares Luftbild/.test(sjWw) && (await page.locator('.ww-marker').count()) === 0 && (await page.locator('#ww-sens').isHidden()), sjWw.slice(0, 120));
   await page.selectOption('#opt-dem', 'global'); await waitIdle();
   check('Norwegen: Umschalten auf global', /global/.test(await stat('Höhenmodell') || ''), `${await stat('Höhenmodell')} · ${await stat('Höhe')}`);
   await page.selectOption('#opt-dem', 'auto'); await waitIdle();
@@ -238,6 +238,14 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exp-gpx')]);
     const txt = fs.readFileSync(await dl.path(), 'utf8');
     check('GPX: steile Abschnitte als Track + Wegpunkt', /<name>Steil km/.test(txt) && (txt.match(/<trk>/g) || []).length >= 2, `${(txt.match(/<trk>/g) || []).length} Tracks`);
+  }
+  {
+    const vis = () => page.evaluate(() => window.__map.getLayoutProperty('catch-line', 'visibility'));
+    const v0 = await vis();
+    await page.click('#flow-info details.more > summary'); await page.check('#show-catch'); await page.waitForTimeout(300);
+    const v1 = await vis();
+    await page.uncheck('#show-catch');
+    check('Einzugsgebiet standardmäßig aus, per „Einzugsgebiet zeigen“ ein', v0 === 'none' && v1 === 'visible', `${v0} → ${v1}`);
   }
   // 15 Profil-Hover
   await page.hover('#profile svg', { position: { x: 600, y: 100 } });
