@@ -107,6 +107,8 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Eigene Markierungen (Art + Grad + Notiz, Bildmerkmale) überstimmen die Erkennung (`applyLabels`); Modell
   `trainModel` (logistische Regression, je ≥ 5 Beispiele) ersetzt die festen Schwellen. Teilen mit anderen Nutzern:
   GitHub-Konto als Hürde abgelehnt – später gemeinsam brainstormen.
+- Markierungen des Nutzers: Upload aus der App nach `daten/markierungen/*.json` (GitHub-Schlüssel nur im Browser,
+  localStorage `packraft.ghToken`) → dort auswerten, Grundmodell daraus bauen.
 - Referenzbilder des Nutzers kommen per Upload ins Repo (Ordner „Gefahrenstellen“/„Stromschnellen“) und werden ergänzt.
 - Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
   Zielregionen für später: Island, Skandinavien, Nordamerika, Zentralasien, Neuseeland (Recherche im README).

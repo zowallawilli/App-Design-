@@ -20,6 +20,8 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|tile|Access to fetch/i.test(m.text())) errors.push(m.text().slice(0, 150)); });
   await page.route(/overpass/, r => osmMode === 'ok' ? r.fulfill({ status: 200, contentType: 'application/json', body: mock, headers: { 'access-control-allow-origin': '*' } }) : r.abort());
   await page.route(/nominatim/, r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify([{ display_name: 'Bovec, Slowenien', lon: '13.552', lat: '46.338' }]) }));
+  // Markierung im Format von PR #17 (ohne Art/Merkmale) am Koritnica-Ausstieg – muss bei der Analyse Merkmale bekommen
+  await page.addInitScript(() => { if (!localStorage.getItem('packraft.wwLabels')) localStorage.setItem('packraft.wwLabels', JSON.stringify([{ p: [13.5694, 46.3242], schwall: false, date: '2026-11-26' }])); });
   await page.goto('http://localhost:5173/');
   await page.waitForFunction(() => window.__map && window.__map.loaded());
 
@@ -172,6 +174,8 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const cb = await page.locator('#map canvas').boundingBox();
     const px = cb.x + cb.width / 2 + 45, py = cb.y + cb.height / 2;
     const info = async () => (await page.textContent('#ww-learn-info')).replace(/\s+/g, ' ');
+    const i0 = await info();
+    check('Alte Markierung (PR #17) bekommt bei der Analyse Luftbild-Merkmale', /^1 eigene Markierung \(0 Schwall, 1 kein Schwall; 1 mit Luftbild/.test(i0), i0.slice(0, 90));
     await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
     await page.click('.ww-popup button[data-g="III"]'); await page.click('.ww-popup button[data-k="walze"]'); await page.waitForTimeout(400);
     const i1 = await info();
@@ -182,8 +186,21 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
     await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
     const i3 = await info();
+    const visIn = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
     await page.click('#ww-label');
-    check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^1 eigene Markierung \(1 Schwall, 0 kein Schwall; 1 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^1 eigene Markierung \(0 Schwall, 1 kein Schwall/.test(i2) && /^0 eigene Markierungen/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
+    const visOut = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
+    // Lernen mit zu wenigen Markierungen → sichtbare Rückmeldung; Export mit Schlüssel → Upload (GitHub-API simuliert)
+    await page.click('#ww-learn'); await page.waitForTimeout(300);
+    const lr = (await page.textContent('#ww-learn-result')).replace(/\s+/g, ' ');
+    let put = null;
+    await page.route(/api\.github\.com/, (r) => { put = r.request(); return r.fulfill({ status: 201, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ content: { html_url: 'https://github.com/zowallawilli/App-Design-/blob/main/daten/markierungen/x.json' } }) }); });
+    await page.evaluate(() => { const el = document.getElementById('gh-token'); el.value = 'test-token'; el.dispatchEvent(new Event('change')); });
+    await page.click('#ww-export'); await page.waitForTimeout(800);
+    const up = (await page.textContent('#ww-learn-result')).replace(/\s+/g, ' ');
+    await page.evaluate(() => { const el = document.getElementById('gh-token'); el.value = ''; el.dispatchEvent(new Event('change')); });
+    check('Lernen gibt Rückmeldung, Export lädt mit Schlüssel nach daten/markierungen/ hoch', /Noch kein Modell: \d+ Schwall/.test(lr) && /hochgeladen nach daten\/markierungen\/markierungen-/.test(up) && put && put.method() === 'PUT' && /contents\/daten\/markierungen\//.test(put.url()), `${lr.slice(0, 80)} | ${up.slice(0, 90)}`);
+    check('Eigene Markierungen nur im Markier-Modus sichtbar', visIn === 'visible' && visOut === 'none', `${visIn} → ${visOut}`);
+    check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^2 eigene Markierungen \(1 Schwall, 1 kein Schwall; 2 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^2 eigene Markierungen \(0 Schwall, 2 kein Schwall/.test(i2) && /^1 eigene Markierung \(/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
   }
   check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
   check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
