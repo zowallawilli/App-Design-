@@ -93,7 +93,11 @@
           <label class="check"><input type="checkbox" id="opt-narrows" checked /> Schluchten (Talquerschnitt) und verdeckte Klammen analysieren</label>
           <label class="check"><input type="checkbox" id="opt-width" /> Engstellen aus Sentinel-2-Flussbreite (10 m – nur grob, oft ungenau)</label>
           <span class="lbl" style="margin-top:10px">Schwallstellen</span>
-          <label class="check"><input type="checkbox" id="opt-ww" checked /> Weißwasser im offenen Orthofoto suchen (Österreich: basemap.at, Slowenien: GURS)</label>
+          <label class="check"><input type="checkbox" id="opt-ww" checked /> Weißwasser im offenen Orthofoto suchen (Österreich, Slowenien, USA, Teile Islands)</label>
+          <label class="check" style="flex-direction:column;align-items:stretch">
+            <input id="gh-token" type="password" autocomplete="off" placeholder="GitHub-Schlüssel zum Hochladen der Markierungen" />
+            <span class="hint">Optional, nur für den Repo-Inhaber: Mit einem persönlichen GitHub-Schlüssel lädt „Markierungen exportieren“ die Markierungen direkt nach <code>daten/markierungen/</code> im Repo hoch. Erstellen unter GitHub → Settings → Developer settings → Fine-grained tokens: nur das Repo App-Design-, Berechtigung „Contents: Read and write“. Bleibt nur in diesem Browser gespeichert.</span>
+          </label>
           <p class="hint">Das Höhenmodell wird immer genutzt. Ohne Satellit/OSM folgt die Linie nur dem Talboden und kann in engen Schluchten Kurven abschneiden.</p>
         </details>
 
@@ -156,8 +160,10 @@
             <button id="ww-export" class="ghost">Markierungen exportieren</button>
             <button id="ww-import" class="ghost">Importieren</button>
             <button id="ww-reset" class="ghost" title="Gelernte Schwelle verwerfen (Markierungen bleiben)">Schwelle zurücksetzen</button>
+            <button id="ww-clear" class="ghost" title="Alle eigenen Markierungen in diesem Browser löschen (vorher exportieren!)">Alle Markierungen löschen</button>
             <input type="file" id="ww-file" accept="application/json,.json" hidden />
           </div>
+          <p id="ww-learn-result" class="learn-result" hidden></p>
           <p id="ww-learn-info" class="hint"></p>
           </details>
           <h3>Engstellen &amp; Schluchten</h3>

@@ -26,6 +26,7 @@ import {
   applyLabels, binFeat, GRADES, LABEL_KINDS, labelText, modelProb, modelThreshold, trainModel, type Grade, type LabelKind, type WwModel,
   imageUsable, SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, tunedParams, typicalWidth, widthFactor,
 } from "./whitewater";
+import { ghToken, setGhToken, uploadLabels } from "./githubUpload";
 import { browserDecoder, exportJson, loadLabels, loadModel, loadParams, mergeLabels, parseImport, saveLabels, saveModel, saveParams } from "./whitewaterStore";
 
 // ---------- DOM ----------
@@ -138,7 +139,7 @@ const style: StyleSpecification = {
       },
     },
     {
-      id: "ww-labels", type: "circle", source: "ww-labels",
+      id: "ww-labels", type: "circle", source: "ww-labels", layout: { visibility: "none" }, // nur beim Markieren sichtbar
       paint: { "circle-radius": 7, "circle-color": ["case", ["get", "gefahr"], "#d62828", ["get", "schwall"], "#00b4d8", "#9e9e9e"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
     },
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
@@ -341,6 +342,8 @@ const MODE_HELP: Record<Mode, string> = {
 
 function setMode(m: Mode) {
   mode = m;
+  // eigene Markierungen nur im Markier-Modus zeigen – sonst stören sie bei der Planung (bleiben gespeichert, zählen fürs Lernen)
+  if (map.getLayer("ww-labels")) map.setLayoutProperty("ww-labels", "visibility", m === "ww-label" ? "visible" : "none");
   $("mode-help").textContent = MODE_HELP[m];
   const group = m.startsWith("osm") ? "osm" : m.startsWith("route") ? "route" : m === "draw" ? "draw" : "";
   document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === group));
@@ -777,6 +780,7 @@ function computeSpots(): WhitewaterSpot[] {
   const a = current.analysis;
   const gradientAt = (d: number) => (a.segments.find((sg) => d >= sg.d0 && d <= sg.d1) ?? a.segments[a.segments.length - 1]).gradient;
   if (!imageUsable(ww.bins)) return [];
+  fillLabelFeatures();
   const steps = (ww.breaks ?? []).map((b) => ({ d0: b.d - 20, d1: b.d + 20 }));
   const par = effParams(), m = wwModel, thr = modelThreshold(wwSensitivity);
   const accept = m ? (b: WhitewaterBin) => b.width !== null && modelProb(m, b) >= thr : undefined;
@@ -883,7 +887,7 @@ function renderLabels() {
     (wwModel
       ? `Erkennung mit gelerntem Modell (${wwModel.pos + wwModel.neg} Markierungen, Trefferquote ${Math.round(wwModel.acc * 100)} %, ${fmtDate(wwModel.date)}), Empfindlichkeit ${wwSensitivity}. `
       : `Feste Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter (Empfindlichkeit ${wwSensitivity}, Flussbreite); Modell ab je 5 Markierungen „Schwall“/„kein Schwall“. `) +
-    `Markierungen bleiben bei neuen Analysen erhalten und überstimmen die Erkennung. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
+    `Markierungen bleiben bei neuen Analysen erhalten, überstimmen die Erkennung und sind nur im Modus „Stellen markieren“ als Punkte sichtbar. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
 }
 
 let labelPopup: maplibregl.Popup | null = null;
@@ -943,6 +947,17 @@ function addLabelAt(p: LngLat) {
   });
   labelPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "300px" }).setLngLat(at).setDOMContent(box).addTo(map);
 }
+/** Markierungen ohne Bildmerkmale (ältere Version, oder vor der Analyse gesetzt) an der aktuellen Strecke ergänzen –
+ *  bei jeder Auswertung automatisch, damit sie fürs Lernen zählen. */
+function fillLabelFeatures() {
+  let n = 0;
+  for (const l of wwLabels) {
+    if (l.feat) continue;
+    const f = featAt(l.p);
+    if (f.feat) { Object.assign(l, f); n++; }
+  }
+  if (n) saveLabels(wwLabels);
+}
 function afterLabelChange() {
   saveLabels(wwLabels);
   if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
@@ -971,13 +986,21 @@ $("ww-learn").addEventListener("click", () => {
   const pos = samples.filter((x) => x.schwall).length, neg = samples.length - pos;
   const m = trainModel(samples);
   if (!m) {
-    return setStatus(`Für das Modell braucht es je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild-Auswertung (bisher ${pos} / ${neg}). Markierungen ohne Analyse an der Stelle zählen erst, wenn du die Strecke auswertest und erneut lernst.`, true);
+    showLearnResult(`✗ Noch kein Modell: ${pos} Schwall / ${neg} kein Schwall mit Luftbild-Merkmalen nutzbar (nötig je 5). ${wwLabels.length - samples.length} von ${wwLabels.length} Markierungen haben noch keine Merkmale – die jeweilige Strecke einmal auswerten, dann werden sie ergänzt.`, false);
+    return setStatus(`Für das Modell braucht es je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild-Auswertung (bisher ${pos} / ${neg}). ${wwLabels.length - samples.length} Markierungen haben noch keine Luftbild-Merkmale – sie werden ergänzt, sobald du die jeweilige Strecke auswertest (nur bis 60 m neben der Flusslinie, nur mit auswertbarem Luftbild).`, true);
   }
   wwModel = m;
   saveModel(m);
   if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
   else renderLabels();
-  setStatus(`Modell gelernt aus ${pos + neg} Markierungen (${pos} Schwall, ${neg} kein Schwall), alle Flüsse. Trefferquote bei Prüfung an zurückgehaltenen Markierungen: ${Math.round(m.acc * 100)} %.`);
+  const kinds = LABEL_KINDS.map((k) => [k.text, wwLabels.filter((l) => l.feat && l.kind === k.id).length] as const).filter(([, n]) => n);
+  showLearnResult(
+    `✓ Verarbeitet: ${samples.length} von ${wwLabels.length} Markierungen fürs Lernen genutzt (${pos} Schwall, ${neg} kein Schwall${kinds.length ? `; ${kinds.map(([t, n]) => `${t} ${n}`).join(", ")}` : ""}). ` +
+      `Trefferquote an zurückgehaltenen Markierungen: <b>${Math.round(m.acc * 100)} %</b>.` +
+      (wwLabels.length > samples.length ? ` ${wwLabels.length - samples.length} Markierungen noch ohne Luftbild-Merkmale – die zugehörige Strecke auswerten und erneut lernen.` : ""),
+    true,
+  );
+  setStatus(`Modell gelernt aus ${pos + neg} Markierungen (${pos} Schwall, ${neg} kein Schwall), alle Flüsse${wwLabels.length > samples.length ? `; ${wwLabels.length - samples.length} weitere noch ohne Luftbild-Merkmale (Strecke dazu auswerten)` : ""}. Trefferquote bei Prüfung an zurückgehaltenen Markierungen: ${Math.round(m.acc * 100)} %.`);
 });
 $("ww-reset").addEventListener("click", () => {
   wwParams = { ...DEFAULT_PARAMS };
@@ -988,7 +1011,41 @@ $("ww-reset").addEventListener("click", () => {
   if (current) showResults();
   else renderLabels();
 });
-$("ww-export").addEventListener("click", () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, exportJson(wwLabels, wwParams, wwModel), "application/json"));
+// Export: mit GitHub-Schlüssel direkt ins Repo (daten/markierungen/), sonst – oder bei Fehler – als Datei
+$("ww-export").addEventListener("click", async () => {
+  const json = exportJson(wwLabels, wwParams, wwModel);
+  const saveFile = () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, json, "application/json");
+  const token = ghToken();
+  if (!token) {
+    saveFile();
+    return setStatus("Als Datei gespeichert. Für den direkten Upload ins Repo den GitHub-Schlüssel unter „Analyse-Parameter“ eintragen.");
+  }
+  setStatus(`Lade ${wwLabels.length} Markierungen zu GitHub hoch …`);
+  try {
+    const r = await uploadLabels(json, token, { count: wwLabels.length });
+    showLearnResult(`✓ ${wwLabels.length} Markierungen hochgeladen nach <a href="${r.url}" target="_blank" rel="noopener">${r.path}</a> – bereit für die Auswertung.`, true);
+    setStatus("");
+  } catch (e) {
+    saveFile();
+    setStatus(`Upload fehlgeschlagen (${(e as Error).message}) – stattdessen als Datei gespeichert.`, true);
+  }
+});
+$<HTMLInputElement>("gh-token").value = ghToken();
+$("gh-token").addEventListener("change", () => setGhToken($<HTMLInputElement>("gh-token").value));
+/** sichtbare Rückmeldung zu Lernen/Upload (bleibt stehen, bis zur nächsten Aktion) */
+function showLearnResult(html: string, ok: boolean) {
+  const el = $("ww-learn-result");
+  el.innerHTML = html;
+  el.classList.toggle("bad", !ok);
+  el.hidden = false;
+}
+$("ww-clear").addEventListener("click", () => {
+  if (!wwLabels.length) return setStatus("Keine eigenen Markierungen gespeichert.");
+  if (!confirm(`Alle ${wwLabels.length} eigenen Markierungen in diesem Browser löschen? Das gelernte Modell bleibt erhalten. Tipp: vorher „Markierungen exportieren“.`)) return;
+  wwLabels = [];
+  afterLabelChange();
+  setStatus("Eigene Markierungen gelöscht.");
+});
 $("ww-import").addEventListener("click", () => $<HTMLInputElement>("ww-file").click());
 $("ww-file").addEventListener("change", async (e) => {
   const input = e.target as HTMLInputElement;

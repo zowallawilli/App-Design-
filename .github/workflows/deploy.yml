@@ -3,6 +3,7 @@ name: Deploy auf GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore: ["daten/**"] # hochgeladene Markierungen brauchen keinen neuen Deploy
   workflow_dispatch:
 
 permissions:

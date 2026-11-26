@@ -393,7 +393,15 @@ erscheint immer als rote Welle. Beim Markieren speichert die App die Bildmerkmal
 **alle** markierten Flüsse, sobald je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild vorliegen.
 Das Modell ersetzt dann die festen Schwellen; der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
 1 = 88 %, 9 = 12 %). Die Trefferquote wird ehrlich an zurückgehaltenen Markierungen geprüft (5-fache
-Kreuzvalidierung). Alles bleibt im Browser (localStorage); Export/Import als JSON enthält Markierungen und Modell.
+Kreuzvalidierung). Alles bleibt im Browser (localStorage); Export/Import als JSON enthält Markierungen und Modell. Eigene
+Markierungen sind nur im Modus „Stellen markieren“ als Punkte sichtbar; ältere Markierungen ohne Bildmerkmale bekommen
+sie bei jeder Analyse der Strecke automatisch. „Aus Markierungen lernen“ zeigt eine bleibende Rückmeldung, wie viele
+Markierungen genutzt wurden (je Art) und wie viele noch Merkmale brauchen.
+
+**Direkt ins Repo hochladen (Repo-Inhaber):** Mit einem persönlichen fein eingeschränkten GitHub-Schlüssel (nur dieses
+Repo, „Contents: Read and write“, unter „Analyse-Parameter“ eintragen, bleibt nur im Browser) lädt „Markierungen
+exportieren“ die Datei direkt nach `daten/markierungen/markierungen-<Datum>-<Uhrzeit>.json` (GitHub-Contents-API, Commit
+auf `main`, löst keinen Pages-Deploy aus). Ohne Schlüssel oder bei Fehler wird wie bisher eine Datei gespeichert.
 
 
 ### Messung an den Referenzflüssen
