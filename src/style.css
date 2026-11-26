@@ -93,11 +93,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .disclaimer { margin-top: auto; background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 9px 10px; font-size: 0.82rem; line-height: 1.35; }
 
 .basemap {
+  flex-wrap: wrap; max-width: calc(100% - 70px);
   position: absolute; top: 10px; left: 10px; display: flex; gap: 2px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 8px; padding: 3px; align-items: center; box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
 }
 .basemap button { background: transparent; color: var(--fg); font-weight: 500; padding: 4px 9px; }
 .basemap button.on { background: var(--accent); color: var(--accent-fg); }
+.basemap .ext-view { padding: 0 8px; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.basemap .ext-view a { color: var(--fg); }
 .basemap label { padding: 0 8px; display: flex; gap: 4px; align-items: center; cursor: pointer; }
 
 #profile-wrap { height: 230px; flex: none; background: var(--panel); border-top: 1px solid var(--line); }
@@ -108,6 +111,10 @@ button:disabled { opacity: 0.5; cursor: default; }
 .profile-svg .grid { stroke: var(--line); stroke-width: 1; }
 .profile-svg .seg-area { opacity: 0.55; }
 .profile-svg .raw-line { fill: none; stroke: var(--muted); stroke-width: 1; opacity: 0.6; }
+.profile-svg .profile-hit { cursor: pointer; }
+.profile-svg .img-stretch { cursor: pointer; }
+.profile-svg .img-stretch:hover rect, .profile-svg .img-stretch:focus rect { stroke: var(--fg); stroke-width: 1.5; }
+.profile-svg .img-stretch-label { fill: #fff; font-size: 10px; font-weight: 600; pointer-events: none; paint-order: stroke; stroke: rgba(0,0,0,.35); stroke-width: 2px; }
 .profile-svg .z-line { fill: none; stroke: var(--fg); stroke-width: 1.8; }
 .profile-svg .hotspot-band { fill: var(--hot); opacity: 0.14; }
 .profile-svg .cursor { stroke: var(--fg); stroke-dasharray: 3 3; }

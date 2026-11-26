@@ -18,35 +18,42 @@ export function spotText(s: WhitewaterSpot): string {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const km = (m: number) => (m / 1000).toFixed(2);
 
+/** GPX 1.1 für GPS-Apps (Gaia GPS, OsmAnd, Garmin …): Strecke mit Höhen als Track, Ein-/Ausstieg,
+ *  Gefahren-, Schwallstellen und Schluchten als Wegpunkte (mit Höhe, km und Beschreibung). */
 export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = []): string {
-  const bkWpts = hazards
-    .map((h) => `  <wpt lat="${h.center[1].toFixed(6)}" lon="${h.center[0].toFixed(6)}">\n    <name>${esc(`Gefahrenstelle km ${km(h.d)}`)}</name>\n    <desc>${esc(`${h.title}: ${h.text}. Indikator – vor Ort prüfen.`)}</desc>\n    <sym>Danger Area</sym>\n  </wpt>`)
-    .join("\n");
-  const nrWpts = (narrows?.features ?? [])
-    .map(
-      (f) =>
-        `  <wpt lat="${f.center[1].toFixed(6)}" lon="${f.center[0].toFixed(6)}">\n` +
-        `    <name>${esc(f.title)}</name>\n    <desc>${esc(f.detail)}</desc>\n    <sym>${f.kind === "engstelle" ? "Caution" : "Danger Area"}</sym>\n  </wpt>`,
-    )
-    .join("\n");
-  const wwWpts = whitewater
-    .map(
-      (s) =>
-        `  <wpt lat="${s.center[1].toFixed(6)}" lon="${s.center[0].toFixed(6)}">\n` +
-        `    <name>${esc(`Schwall km ${km(s.dPeak)}`)}</name>\n    <desc>${esc(spotText(s))}</desc>\n    <sym>Caution</sym>\n  </wpt>`,
-    )
-    .join("\n");
+  const zAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).z;
+  const wpt = (p: LngLat, d: number, title: string, desc: string, sym: string, type: string) =>
+    `  <wpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}">\n    <ele>${zAt(d).toFixed(1)}</ele>\n    <name>${esc(title)}</name>\n` +
+    `    <desc>${esc(desc)}</desc>\n    <sym>${sym}</sym>\n    <type>${esc(type)}</type>\n  </wpt>`;
+  const first = a.profile[0], last = a.profile[a.profile.length - 1];
+  const ends = [
+    wpt(first.p, 0, `Einstieg ${name}`.trim(), `Einstieg · ${Math.round(first.z)} m ü. M.`, "Boat Ramp", "Einstieg"),
+    wpt(last.p, a.length, `Ausstieg ${name}`.trim(), `Ausstieg nach ${km(a.length)} km · ${Math.round(last.z)} m ü. M. · ${a.drop.toFixed(0)} m Höhenverlust`, "Boat Ramp", "Ausstieg"),
+  ];
+  const bkWpts = hazards.map((h) => wpt(h.center, h.d, `Gefahrenstelle km ${km(h.d)}`, `${h.title}: ${h.text}. Indikator – vor Ort prüfen.`, "Danger Area", "Gefahrenstelle"));
+  const nrWpts = (narrows?.features ?? []).map((f) =>
+    wpt(f.center, (f.d0 + f.d1) / 2, f.title, `km ${km(f.d0)}–${km(f.d1)}: ${f.detail}`, f.kind === "engstelle" ? "Caution" : "Danger Area", f.kind === "engstelle" ? "Engstelle" : "Schlucht"));
+  const wwWpts = whitewater.map((s) => wpt(s.center, s.dPeak, `Schwall km ${km(s.dPeak)}`, spotText(s), "Caution", "Schwallstelle"));
   const trkpts = a.profile
     .map((p) => `      <trkpt lat="${p.p[1].toFixed(6)}" lon="${p.p[0].toFixed(6)}"><ele>${p.z.toFixed(1)}</ele></trkpt>`)
     .join("\n");
+  // Gefälle je Abschnitt als Text (GPX kennt keine Linienfarben je Abschnitt)
+  const steep = a.segments
+    .filter((s) => s.gradient >= 15)
+    .map((s) => `km ${km(s.d0)}–${km(s.d1)} ${s.gradient.toFixed(0)} m/km (${s.cls.label})`)
+    .slice(0, 30);
+  const desc =
+    `${km(a.length)} km, ${a.drop.toFixed(0)} m Höhenverlust, Ø ${a.meanGradient.toFixed(1)} m/km. ` +
+    (steep.length ? `Steile Abschnitte: ${steep.join("; ")}. ` : "") +
+    "Gefälle ist ein Indikator, keine Schwierigkeitsbewertung – vor Ort besichtigen. Erstellt mit Packraft-Planer.";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata><name>${esc(name)}</name></metadata>
-${nrWpts}
-${bkWpts}
-${wwWpts}
+  <metadata><name>${esc(name)}</name><desc>${esc(desc)}</desc></metadata>
+${[...ends, ...nrWpts, ...bkWpts, ...wwWpts].join("\n")}
   <trk>
     <name>${esc(name)}</name>
+    <desc>${esc(desc)}</desc>
+    <type>Packrafting</type>
     <trkseg>
 ${trkpts}
     </trkseg>
@@ -95,6 +102,21 @@ export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult, wh
       })),
     ],
   });
+}
+
+/** Datei über das Teilen-Menü des Geräts weitergeben (iPhone/Android: z. B. „Gaia GPS“ wählen).
+ *  Gibt false zurück, wenn der Browser das Teilen von Dateien nicht kann. */
+export async function shareFile(filename: string, content: string, mime: string, title: string): Promise<boolean> {
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  if (typeof nav.share !== "function" || typeof File === "undefined") return false;
+  const file = new File([content], filename, { type: mime });
+  if (nav.canShare && !nav.canShare({ files: [file] })) return false;
+  try {
+    await nav.share({ files: [file], title });
+  } catch (e) {
+    if ((e as Error).name !== "AbortError") throw e;
+  }
+  return true;
 }
 
 export function download(filename: string, content: string, mime: string) {

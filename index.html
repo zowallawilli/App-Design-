@@ -162,6 +162,11 @@
             <button id="exp-csv">CSV</button>
             <button id="exp-geojson">GeoJSON</button>
           </div>
+          <div class="row exports">
+            <button id="exp-share" hidden title="GPX über das Teilen-Menü des Geräts direkt an eine GPS-App geben (z. B. Gaia GPS, OsmAnd)">GPX an Gaia / GPS-App senden</button>
+          </div>
+          <p class="hint">GPX enthält die Strecke mit Höhen (Höhenprofil in der GPS-App), Ein-/Ausstieg sowie Gefahren-, Schwallstellen und Schluchten als Wegpunkte.
+            Gaia GPS: Datei am Handy über „Teilen → Gaia GPS“ öffnen oder am Rechner auf gaiagps.com unter „Import“ hochladen.</p>
         </section>
 
         <footer class="disclaimer">
@@ -175,7 +180,6 @@
         <div id="map"></div>
         <div id="basemap" class="basemap" role="group" aria-label="Kartenhintergrund">
           <button data-base="esri" class="on" title="Hochauflösendes Luft-/Satellitenbild (Esri World Imagery, je nach Region 0,25–1 m)">Luftbild</button>
-          <button data-base="ortho" title="Offenes Orthofoto Österreich (basemap.at, CC BY 4.0, 15–30 cm) – Grundlage der Weißwasser-Suche, gut für Wellenmessung">Orthofoto AT</button>
           <button data-base="s2">Sentinel-2</button>
           <button data-base="topo">Topo</button>
           <label><input type="checkbox" id="terrain" /> 3D</label>
@@ -186,6 +190,9 @@
             <button id="rot-north" aria-label="Norden oben" title="Norden oben">N</button>
           </span>
           <span id="img-date" class="img-date" title="Quelle, Aufnahmedatum und Auflösung des Luftbilds in der Kartenmitte"></span>
+          <span id="ext-view" class="ext-view" hidden title="Dieselbe Stelle in anderen Luftbildern ansehen (neues Fenster) – oft feiner aufgelöst oder anderes Aufnahmedatum">
+            Schärfer ↗ <a id="ext-gmaps" target="_blank" rel="noopener">Google Maps</a> · <a id="ext-gearth" target="_blank" rel="noopener">Google Earth</a> · <a id="ext-apple" target="_blank" rel="noopener">Apple</a>
+          </span>
         </div>
         <div id="profile-wrap" hidden>
           <div id="profile"></div>

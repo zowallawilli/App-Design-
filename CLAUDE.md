@@ -48,7 +48,10 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/estimate.ts` | Abfluss für Pegel ohne Q aus Nachbarpegeln (Einzugsgebiet, Flusskilometer, Ausleitungs-Erkennung) |
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
 | `src/vectorWater.ts` | OSM-Gewässer aus OpenFreeMap-Vektorkacheln (Overpass nur Fallback) |
-| `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung je Abschnitt |
+| `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung/feinste Stufe je Abschnitt |
+| `src/esriTiles.ts` | Protokoll `esri://`: fehlende feine Esri-Stufen aus gröberer Kachel vergrößern (Tilemap), statt grauer Platzhalter |
+| `src/profileChart.ts` | Höhenprofil (SVG): Klick → Karte springt zur Stelle; Leiste Bildabschnitte B1… (Datum, Tendenz) |
+| `src/export.ts` | GPX (Track mit Höhen, Ein-/Ausstieg, Stellen als Wegpunkte), CSV, GeoJSON, Teilen-Menü (Gaia GPS) |
 | `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023, NÁTT Island), Streifenbild, Textur, Lernen; Abbruchkanten (`findBreaklines`) |
 | `src/whitewaterStore.ts` | eigene Markierungen + gelernte Schwelle (localStorage, JSON-Export/-Import), Browser-Dekoder |
 | `scripts/breakline-eval.mts` | Messung Gefahrenstellen gegen `tests/fixtures/abbruchkanten.json` |
@@ -65,6 +68,11 @@ Gefälleklassen: < 3 m/km Zahmwasser · 3–8 WW I · 8–15 WW II · 15–30 WW
 Wucht-Grenzen (W/m): 300 / 1000 / 2500 / 6000 / 15000. Großvolumige Flüsse (Wuchtwasser) dürfen
 nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus Gefälle und Wucht) als Standard.
 
+## Bedienung (Nutzerwünsche 26.11.2026)
+- Kein Hintergrund „Orthofoto AT“ (nur Österreich; App dient v. a. Expeditionen) – basemap.at bleibt nur für die Auswertung.
+- Kein farbiges Band neben der Strecke für Bildabschnitte; Zuordnung über Profil-Leiste + kleines Schild.
+- Höhere Auflösung nur als Anzeige/Link (Google Maps/Earth, Apple); keine kostenpflichtigen Kachel-APIs.
+
 ## Referenzflüsse und bekannte Ergebnisse
 - **Soča (SI)** Srpenica–Trnovo, Soča-Dorf: Hauptreferenz, Literatur WW II–III+.
 - **Koritnica (SI)**: Mäander/Schlucht, Einstieg am Ende der Kluže-Schlucht – Testfall fürs Tracking.
@@ -79,6 +87,7 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   190 cm (eigener Datenzugang). App-Schätzung Magerbach 64–75 m³/s (Schwall).
 - **Salzach Taxenbach – Lend (AT)** [12.9640, 47.2925] → [13.0480, 47.2990]: breiter, milchiger Fluss; Nutzer meldete
   fehlende Schwallstellen → relatives Weißwasser-Kriterium + ±45-m-Streifen (3/6 sichtbare Schwälle, vorher 0/6).
+- **Charyn/Şarın (KZ)** [79.1009, 43.3599] → [79.1631, 43.4215] (Zoom 12.6): Esri 0,34 m, aber nur bis Stufe 17 → Testfall Vergrößerung/„Schärfer ↗“.
 - **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
 ## Schwallstellen (Weißwasser) – Vorgaben des Nutzers

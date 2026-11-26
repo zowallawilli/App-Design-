@@ -36,10 +36,10 @@ NODE_USE_ENV_PROXY=1 npx tsx scripts/soca.mts
 | **Ein-/Ausstieg** | Zwei Punkte anklicken → der Flusslauf dazwischen wird automatisch nachgezogen (siehe unten) |
 | **Fluss aus OSM** | Fluss anklicken → wird aus OpenStreetMap geladen und verkettet. Danach Ein- und Ausstieg anklicken. |
 | **Zeichnen** | Strecke flussabwärts selbst klicken |
-| **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte |
+| **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte, **Klick springt dorthin** (liegt dort eine markierte Stelle, direkt in die Detailansicht). Die Leiste darunter zeigt die Luftbild-Abschnitte B1, B2 … mit Aufnahmedatum und Wasserstand-Tendenz; Klick zoomt zum Abschnitt und öffnet die Hinweise. |
 | **Schwall-/Gefahrenstellen** | Weißwasser und Abbruchkanten im offenen Orthofoto (siehe unten); Klick zoomt hin. Das Gefälle zeigen die Abschnittsfarben – eigene Hotspot-Marker gibt es nicht mehr. |
-| **Export** | GPX (Track + Gefahren-, Schwallstellen, Stufen und Schluchten als Wegpunkte, z. B. für GPS/Offline-Karten), CSV, GeoJSON |
-| **Hintergrund** | Esri-Satellitenbild, Orthofoto AT (basemap.at), Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände |
+| **Export** | GPX (Track mit Höhen, Ein-/Ausstieg, Gefahren-, Schwallstellen und Schluchten als Wegpunkte mit Höhe und Beschreibung), CSV, GeoJSON. „GPX an Gaia / GPS-App senden“ öffnet am Handy das Teilen-Menü (siehe unten). |
+| **Hintergrund** | Esri-Satellitenbild, Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände. „Schärfer ↗“ öffnet dieselbe Stelle in Google Maps, Google Earth oder Apple Karten. |
 | **3D drehen** | In der 3D-Ansicht: ⟲ ⟳ dreht um 45°, „Rundflug“ kreist langsam um die Kartenmitte (Klick in die Karte stoppt), „N“ stellt Norden nach oben. Außerdem rechte Maustaste bzw. Strg + Ziehen, zwei Finger oder Umschalt + Pfeiltasten. |
 
 ## Flusslauf automatisch nachziehen (Modus „Ein-/Ausstieg“)
@@ -90,9 +90,10 @@ Nachbarpegeln geschätzt, siehe unten) und, wo kein Pegelwert vorliegt, **Hinwei
     letzten 3 Tage, Nachwirkung bis 10 Tage; bis 3 000 km² 4/12 Tage; größer 6/13 Tage.
   - **Speicher/Kraftwerke oberhalb** (OSM-Seenamen wie Stausee, Speicher, Lago; erkannte Ausleitungen): Hinweis
     „Wetter wirkt gedämpft, Schwall möglich“.
-- **Bildabschnitte auf der Karte:** farbiges Band neben der Strecke und Schild „B1 · Datum · Tendenz“; dieselbe
-  Nummer und Farbe an der Karte im Panel. Klick auf eine Panelkarte zoomt zum Abschnitt, Klick aufs Schild springt
-  zur Panelkarte. Der Kartenkopf zeigt zum Bild in der Kartenmitte zusätzlich die Tendenz.
+- **Bildabschnitte:** Leiste unter dem Höhenprofil „B1 · Datum · Tendenz“ (Ausdehnung des Abschnitts) und ein
+  kleines Schild auf der Karte; dieselbe Nummer und Farbe im Panel. Klick auf Leiste, Schild oder Panelkarte zoomt
+  zum Abschnitt und markiert die Hinweise. Das frühere farbige Band neben der Strecke ist entfernt (zu unruhig neben
+  Strecke und Schluchtlinie). Der Kartenkopf zeigt zum Bild in der Kartenmitte zusätzlich die Tendenz.
 - **Übliche Jahreszeit** der Region (Alpen, Norden, Island, Mittelgebirge), z. B. Schneeschmelze April–Juni in den
   Alpen, „vårflom“ Mai/Juni in Skandinavien.
 - Daraus eine **Tendenz** (eher niedrig / unauffällig / eher erhöht / eher hoch) – ausdrücklich keine Messung.
@@ -132,6 +133,39 @@ führen als helfen. GloFAS wird nur noch intern genutzt, um bei mehreren Pegeln 
 
 Grenzen: GloFAS ist ein Modell; für kleine Flüsse (< ~500 km² Einzugsgebiet) und nahe Mündungen
 kann der gewählte Rasterpunkt am falschen Fluss liegen (er wird auf der Karte blau angezeigt).
+
+## Luftbild schärfer ansehen (Recherche 11/2026)
+
+Angezeigt wird Esri World Imagery; ausgewertet werden nur offene Orthofotos (siehe Schwallstellen). Befund am
+**Charyn Canyon (KZ)**: Esri hat dort ein 0,34-m-Bild (Vantor, 07.08./09.10.2025), gibt es aber **nur bis
+Kachelstufe 17** heraus (~0,9 m je Bildpunkt). Für feinere Stufen lieferte Esri graue Kacheln „Map data not yet
+available“ – auch die Stellen-Tour (Zoom 17,5) landete dort im Grau. Auch alle älteren Stände im Esri-Archiv
+(Wayback, 199 Stände seit 2014) enden dort bei Stufe 17.
+
+| Möglichkeit | weltweit | Kosten/Schlüssel | Stand |
+|---|---|---|---|
+| Fehlende Esri-Stufen aus der feinsten vorhandenen Kachel vergrößern (dokumentierter Tilemap-Endpunkt, `src/esriTiles.ts`) | ✓ | – | **eingebaut** – kein Grau mehr, Kartenkopf: „Esri hier nur vergrößert“ |
+| Hochauflösende Bildschirme: Luftbild eine Stufe feiner laden (128-px-Kacheln) | ✓ | – | **eingebaut** – schärfer, wo Esri feinere Stufen hat (Alpen, Skandinavien …) |
+| Link „Schärfer ↗“: dieselbe Stelle in **Google Maps (Satellit), Google Earth, Apple Karten** | ✓ | – | **eingebaut** – oft feinere Stufen bzw. andere Aufnahmedaten; Google Earth (Desktop) hat zusätzlich historische Bilder |
+| Google-Satellitenbild direkt als Ebene | ✓ | Map Tiles API: Schlüssel + Abrechnungskonto | nicht eingebaut (Kosten, Schlüssel); Kacheln ohne API sind laut Nutzungsbedingungen verboten |
+| Bing Aerial | ✓ | Bing Maps for Enterprise wird abgekündigt, neue Basis-Schlüssel gibt es nicht mehr | nicht eingebaut |
+| Mapbox Satellite | ✓ | persönlicher Token (kostenloses Kontingent) | möglich wie der NVE-Schlüssel (nur im Browser) – meist dieselben Vantor/Maxar-Bilder wie Esri, daher bisher nicht |
+| Esri Wayback (älterer Bildstand) | ✓ | – | geprüft: am Charyn kein feinerer Stand; Kachelhost in der Cloud-Testumgebung gesperrt |
+
+Die Auswertung (Weißwasser) bleibt bei offenen Orthofotos: Google, Apple, Bing und Esri dürfen nur angezeigt werden.
+
+## GPX für Gaia GPS und andere GPS-Apps
+
+Der GPX-Export (GPX 1.1) enthält die Strecke als **Track mit Höhen je Punkt** (alle 25 m, geglättetes Profil),
+Einstieg/Ausstieg und alle markierten Stellen als **Wegpunkte mit Höhe, Name, Beschreibung und Typ**; die
+Track-Beschreibung nennt Länge, Höhenverlust und die steilen Abschnitte (≥ 15 m/km). Gaia GPS liest GPX (Tracks und
+Wegpunkte mit Namen/Notizen) und zeigt zum Track ein eigenes Höhenprofil. Nicht übertragbar: die Farben der
+Gefälleabschnitte (GPX kennt keine Linienfarben je Abschnitt) – deshalb steht das Gefälle im Text.
+
+**Direkt zu Gaia:** Gaia GPS hat keine öffentliche Schnittstelle zum Hochladen. Der Weg ohne Umweg: Knopf
+„GPX an Gaia / GPS-App senden“ (iPhone/iPad/Android, Browser mit Teilen-Funktion) → im Teilen-Menü **Gaia GPS**
+wählen. Sonst die GPX-Datei herunterladen und in Gaia über *Import* (App: Dateien → Teilen → Gaia GPS; Web:
+gaiagps.com → Import) öffnen. Ebenso für OsmAnd, Locus, Garmin Explore, Komoot (nur Track).
 
 ## Wucht: Gefälle × Abfluss
 
@@ -322,8 +356,6 @@ Schwall“. „Aus Markierungen lernen“ passt die Schwelle (m²/m) so an, dass
 Strecke möglichst gut getroffen werden. Alles bleibt im Browser (localStorage); „Markierungen
 exportieren/importieren“ sichert es als JSON-Datei (inkl. gelernter Schwelle).
 
-**Hintergrund „Orthofoto AT“:** das basemap.at-Bild (bis 15–30 cm) direkt als Karte – in Österreich
-schärfer als das Esri-Luftbild, gut für die Wellenmessung.
 
 ### Messung an den Referenzflüssen
 
@@ -405,7 +437,7 @@ Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit ei
 | Gewässer | OpenStreetMap über Overpass API (3 Server, gestaffelt) | © OSM-Mitwirkende, ODbL |
 | Ortssuche | Nominatim | Nutzungsbedingungen beachten (sparsame Nutzung) |
 | Satellitenbild | Esri World Imagery | nur Anzeige, keine automatisierte Auswertung (Metadaten liefern das Aufnahmedatum) |
-| Orthofoto Österreich | [basemap.at](https://basemap.at) | CC BY 4.0; Anzeige („Orthofoto AT“) und Weißwasser-Suche |
+| Orthofoto Österreich | [basemap.at](https://basemap.at) | CC BY 4.0; Weißwasser-Suche (als Hintergrund entfernt 11/2026 – gilt nur für Österreich) |
 | Orthofoto Island | NÁTT „Grunnkort – Loftmynd“ (gis.natt.is, WMS) | CC BY 4.0 („Náttúrufræðistofnun, Grunnkort – Loftmynd“); Weißwasser- und Abbruchkanten-Suche |
 | Orthofoto Slowenien | GURS DOF 2023 (Kachelcache auf gisportal.furs.gov.si) | CC BY 4.0 („Javne informacije Slovenije, Geodetska uprava RS“); Weißwasser-Suche |
 | Satellitenbild | Sentinel-2 cloudless 2023 (EOX) | CC BY-NC-SA 4.0 |

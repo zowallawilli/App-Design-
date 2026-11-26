@@ -211,6 +211,21 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.hover('#profile svg', { position: { x: 600, y: 100 } });
   const cur = await page.evaluate(() => window.__map.getSource('cursor')._data?.geometry?.type);
   check('Profil-Hover zeigt Punkt auf Karte', cur === 'Point');
+  // Klick ins Profil: Karte springt zur Stelle
+  await view([13.0, 46.0], 9);
+  await page.click('#profile svg .profile-hit', { position: { x: 300, y: 60 } }); await page.waitForTimeout(1500);
+  const jc = await page.evaluate(() => ({ c: window.__map.getCenter(), z: window.__map.getZoom(), p: window.__map.getSource('cursor')._data?.geometry?.coordinates }));
+  check('Profil-Klick springt zur Stelle', jc.p && Math.abs(jc.c.lng - jc.p[0]) < 0.01 && Math.abs(jc.c.lat - jc.p[1]) < 0.01 && jc.z >= 15, `Zoom ${jc.z.toFixed(1)}`);
+  // Bildabschnitte als Leiste im Profil statt Band auf der Karte
+  const nStrip = await page.locator('#profile .img-stretch').count();
+  check('Bildabschnitte als Leiste unter dem Profil, kein Band auf der Karte', nStrip > 0 && !(await page.evaluate(() => window.__map.getLayer('imgsec'))), `${nStrip} Abschnitte`);
+  if (nStrip) {
+    await page.click('#profile .img-stretch >> nth=0'); await page.waitForTimeout(1200);
+    check('Klick auf Bildabschnitt markiert Panelkarte', (await page.locator('#flow-info .day.active').count()) === 1);
+  }
+  check('Kein Hintergrund „Orthofoto AT“ mehr', (await page.locator('[data-base="ortho"]').count()) === 0);
+  const gl = await page.getAttribute('#ext-gmaps', 'href');
+  check('Links Google Maps/Earth/Apple zur Kartenmitte', /google\.com\/maps\/@\?api=1.*basemap=satellite/.test(gl || '') && /earth\.google\.com\/web\/@/.test(await page.getAttribute('#ext-gearth', 'href') || ''), gl);
 
   // Gefahrenstellen: Wasserfälle der Jökulsá á Fjöllum (NÁTT-Luftbild)
   await page.selectOption('#preset', 'jokulsa-dettifoss'); await page.click('#load-preset'); await waitIdle(400000);

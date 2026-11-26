@@ -13,6 +13,14 @@ describe("export", async () => {
     expect(g).toContain("<ele>");
     expect(g).toContain("Test &amp; Co");
   });
+  it("GPX hat Ein-/Ausstieg als Wegpunkte mit Höhe und ist gültiges XML-Gerüst", () => {
+    const g = toGpx(a, "Fluss");
+    expect(g).toMatch(/<wpt [^>]+>\s*<ele>[\d.]+<\/ele>\s*<name>Einstieg Fluss<\/name>/);
+    expect(g).toContain("<name>Ausstieg Fluss</name>");
+    expect((g.match(/<wpt /g) ?? []).length).toBe(2);
+    expect((g.match(/<\/wpt>/g) ?? []).length).toBe(2);
+    expect(g).not.toContain("\\n");
+  });
   it("CSV hat Kopfzeile und eine Zeile je Abschnitt", () => {
     expect(toCsv(a).trim().split("\n")).toHaveLength(a.segments.length + 1);
   });
