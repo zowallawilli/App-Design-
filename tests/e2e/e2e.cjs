@@ -167,9 +167,10 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Empfindlichkeit: Regler ändert die Zahl der Schwallstellen', n9 > n1 && n9 >= n5 && n5 >= n1, `Stufe 1: ${n1} · 5: ${n5} · 9: ${n9} · ${await page.textContent('#ww-sens-out')}`);
   // eigene Markierung: Schnellauswahl Art + Grad, Klick daneben bearbeitet statt zu doppeln, Löschen
   {
+    await page.locator('#ww-list li button').first().click(); await page.waitForTimeout(1500); // springt zur Stelle (Kartenmitte)
     await page.click('#ww-label');
-    const mb = await page.locator('.ww-marker').first().boundingBox();
-    const px = mb.x + mb.width / 2 + 45, py = mb.y + mb.height / 2;
+    const cb = await page.locator('#map canvas').boundingBox();
+    const px = cb.x + cb.width / 2 + 45, py = cb.y + cb.height / 2;
     const info = async () => (await page.textContent('#ww-learn-info')).replace(/\s+/g, ' ');
     await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
     await page.click('.ww-popup button[data-g="III"]'); await page.click('.ww-popup button[data-k="walze"]'); await page.waitForTimeout(400);
