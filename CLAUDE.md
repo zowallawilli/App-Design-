@@ -119,6 +119,9 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Kostenlose Schlüssel (MML Finnland, LINZ) erst später, wenn der Nutzer es will.
 
 ## Offene Punkte / Ideen
+- **Später (Nutzer 26.11.2026, noch nicht umsetzen):** Gaia importiert die Route als einen zusammenhängenden Track –
+  Abschnitte (z. B. nach Gefälle) sollen in Gaia getrennt erscheinen. Export zu Gaia funktioniert sonst sehr gut.
+- Prüfauftrag für einen neuen Chat (Funktionstest, Fehler, Risiken, Optimierungen, 80/20-Fazit): `docs/PRUEFAUFTRAG.md`.
 - Weißwasser: Kalkblöcke am Ufer vs. Schaum, Weißwasser im Schatten; weitere offene Orthofotos;
   Abbruchkanten im Schatten/als Kaskade (Krimml); Markarfljót, sobald das NÁTT-Mosaik dort Bilder hat.
 - Tirol: Archiv der Tagesmittel erst ab 24.11.2026 → Eichung ab ~10 Tagen, Aufnahmetage älterer Luftbilder
