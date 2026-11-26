@@ -142,8 +142,7 @@ export interface RiverLine {
  * Benannte Flüsse (Ebene „waterway“) und Namen von Wasserflächen (Ebene „water_name“, z. B. Stauseen)
  * im Ausschnitt [W, S, O, N] aus groben Kacheln (Zoom 9, ~40 km je Kachel) – für das Einzugsgebiet.
  */
-export async function riversInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<{ rivers: RiverLine[]; waterNames: { name: string; p: LngLat }[] }> {
-  const z = 9;
+export async function riversInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch, z = 9): Promise<{ rivers: RiverLine[]; waterNames: { name: string; p: LngLat }[] }> {
   const tmpl = await template(fetchFn);
   const rivers: RiverLine[] = [];
   const waterNames: { name: string; p: LngLat }[] = [];
@@ -223,4 +222,39 @@ export async function glacierAreaAround(points: LngLat[], radiusKm = 8, fetchFn:
     }),
   );
   return area;
+}
+
+/**
+ * Für Verbindungswege zu Fuß: Wege (Ebene „transportation“: Pfade, Fahrwege, Straßen – ohne Autobahn/Bahn),
+ * Flüsse/Bäche, Wasserflächen und Gletscher im Ausschnitt [W, S, O, N] (Zoom 13, bei großen Ausschnitten 12).
+ */
+export async function hikeLayersInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<{ paths: LngLat[][]; rivers: LngLat[][]; water: LngLat[][]; glacier: LngLat[][] }> {
+  const tmpl = await template(fetchFn);
+  let z = 13;
+  const count = (zz: number) => (lon2tile(bbox[2], zz) - lon2tile(bbox[0], zz) + 1) * (lat2tile(bbox[1], zz) - lat2tile(bbox[3], zz) + 1);
+  while (z > 11 && count(z) > 64) z--;
+  const out = { paths: [] as LngLat[][], rivers: [] as LngLat[][], water: [] as LngLat[][], glacier: [] as LngLat[][] };
+  const NO_WALK = new Set(["motorway", "trunk", "rail", "transit", "ferry", "aerialway", "busway"]);
+  const jobs: Promise<void>[] = [];
+  for (let x = lon2tile(bbox[0], z); x <= lon2tile(bbox[2], z); x++)
+    for (let y = lat2tile(bbox[3], z); y <= lat2tile(bbox[1], z); y++)
+      jobs.push(
+        (async () => {
+          const res = await fetchFn(tmpl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
+          if (!res.ok) return;
+          const vt = new VectorTile(new Pbf(new Uint8Array(await res.arrayBuffer())));
+          const each = (name: string, fn: (props: Record<string, unknown>, g: GeoJSON.Geometry) => void) => {
+            const l = vt.layers[name];
+            if (l) for (let i = 0; i < l.length; i++) { const f = l.feature(i); fn(f.properties, (f.toGeoJSON(x, y, z) as GeoJSON.Feature).geometry); }
+          };
+          const lines = (g: GeoJSON.Geometry) => (g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : []) as LngLat[][];
+          const rings = (g: GeoJSON.Geometry) => (g.type === "Polygon" ? [g.coordinates[0]] : g.type === "MultiPolygon" ? g.coordinates.map((p) => p[0]) : []) as LngLat[][];
+          each("transportation", (p, g) => { if (!NO_WALK.has(String(p.class)) && p.brunnel !== "tunnel") out.paths.push(...lines(g)); });
+          each("waterway", (p, g) => { if (p.brunnel !== "tunnel" && p.brunnel !== "bridge") out.rivers.push(...lines(g)); });
+          each("water", (_p, g) => out.water.push(...rings(g)));
+          each("landcover", (p, g) => { if (p.class === "ice") out.glacier.push(...rings(g)); });
+        })().catch(() => undefined),
+      );
+  await Promise.all(jobs);
+  return out;
 }

@@ -37,6 +37,7 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | Datei | Inhalt |
 |---|---|
 | `src/main.ts` | UI, Modi (Ein-/Ausstieg / Zeichnen / Strecke bearbeiten / Wellen / Eigene Stellen), Abbrechen, Ergebnisanzeige, Abfluss-Tabelle |
+| `src/hike.ts` | Verbindungswege zu Fuß: Dijkstra über Gehzeit (Tobler, weglos/Wasser/Gletscher-Faktoren), Fluss→Fluss (Mehrfachstart), Alternativen, DIN-33466-Zeit |
 | `src/icons.ts` | Strich-Symbole für eigene und OSM-Stellen (sprachunabhängig, keine Buchstaben) |
 | `src/route.ts` | Flusslauf zwischen Ein-/Ausstieg: Least-Cost-Pfad aus OSM + Sentinel-2 (NDWI) + Höhenmodell |
 | `src/analysis.ts` | Profil (isoton, geglättet), Gefälleklassen, Hotspots, Steilstufen (≥ 8 m / 100 m) |
@@ -102,8 +103,9 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Keine konkreten Wetterdaten; Hinweise aus Jahreszeit, Aufnahmedatum, Regime; Einzugsgebiet standardmäßig sichtbar.
 - Pegel nur gemessen und selber Fluss (keine Schätzungen anzeigen, `estimate.ts` bleibt im Code).
 - Eigene/OSM-Stellen mit Symbolen statt Buchstaben (`src/icons.ts`).
-- Geplant (PR B): Tour-Liste mit mehreren Flüssen, Nebenflüsse blau gestrichelt + per Klick analysieren,
-  Verbindungswege zwischen Flusstälern (zwei Flüsse wählen → bestes Tal + Alternativen, oder zwei Punkte; Ziel kürzeste Gehzeit).
+- Tour (`trip`, `active` in main.ts): mehrere Abschnitte + Verbindungswege, Klick wechselt, „Zurücksetzen“ löscht alles,
+  Tour-GPX. Nebenflüsse blau gestrichelt (`loadTribs`), Klick → Abschnitt bis zur Mündung. Verbindungsweg (`#hike-btn`):
+  Fluss → Fluss oder Punkt → Punkt, Ziel kürzeste Gehzeit, bis zu 2 Alternativen.
 
 ## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
 - Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter

@@ -365,6 +365,29 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Island: Wasserfälle als Gefahrenstellen (Abbruchkante + Höhenverlust)', nBreak >= 2, `${nBreak} Gefahrenstellen · ${(await page.textContent('#ww-list')).replace(/\s+/g, ' ').slice(0, 200)}`);
   check('Keine Hotspot-Marker mehr', (await page.locator('.hs-marker').count()) === 0);
 
+  // 16b Tour: Nebenfluss anklicken, Verbindungsweg, Tour-GPX, Zurücksetzen löscht alles
+  {
+    await page.click('#reset');
+    await page.selectOption('#preset', 'koritnica'); await page.click('#load-preset'); await waitIdle();
+    await page.waitForFunction(() => window.__map.getSource('tribs').serialize().data.features?.length > 0, null, { timeout: 60000 }).catch(() => {});
+    const trib = await page.evaluate(() => { const f = window.__map.getSource('tribs').serialize().data.features; if (!f?.length) return null; const l = f[0].geometry.coordinates; return { name: f[0].properties.name, p: l[Math.floor(l.length / 2)] }; });
+    if (trib) { await view(trib.p, 13); await clickLL(trib.p); await waitIdle(); }
+    const t1 = (await page.textContent('#tour-list')).replace(/\s+/g, ' ');
+    check('Nebenfluss blau gestrichelt, Klick → zweiter Abschnitt der Tour', !!trib && (await page.locator('#tour-list > li').count()) === 2 && t1.includes(trib.name), `${trib?.name} · ${t1.slice(0, 140)}`);
+    await page.click('#hike-btn'); await page.check('#hike-points');
+    await view([13.615, 46.345], 12);
+    await clickLL([13.5863, 46.3612]); await clickLL([13.6456, 46.3326]); await waitIdle();
+    const t2 = (await page.textContent('#tour-list')).replace(/\s+/g, ' ');
+    check('Verbindungsweg Punkt → Punkt: Route mit Länge, Höhenmetern, Gehzeit, höchstem Punkt', /Verbindungsweg/.test(t2) && /Beste Route: [\d.]+ km, ↑ \d+ m ↓ \d+ m, ~\d+:\d\d h, höchster Punkt/.test(t2) && (await page.locator('.pass-marker').count()) >= 1, t2.slice(-220));
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#tour-gpx')]);
+    const g = fs.readFileSync(await dl.path(), 'utf8');
+    check('Tour-GPX: Flussabschnitte + Verbindungsweg', (g.match(/<trk>/g) || []).length === 3 && /<type>Wandern<\/type>/.test(g) && /Höchster Punkt/.test(g), `${(g.match(/<trk>/g) || []).length} Tracks`);
+    await page.locator('#tour-list > li').first().locator('.tour-item').click(); await page.waitForTimeout(800);
+    const back = await page.isVisible('#results') && /Koritnica/.test(await page.textContent('#res-title'));
+    await page.click('#reset');
+    check('Abschnitt wieder anzeigen; Zurücksetzen löscht die Tour', back && !(await page.isVisible('#tour-panel')), '');
+  }
+
   // 17 Kartenwechsel + 3D
   await page.click('[data-base="s2"]'); await page.click('[data-base="topo"]'); await page.check('#terrain'); await page.waitForTimeout(1500); await page.uncheck('#terrain');
   await page.check('#terrain'); await page.waitForTimeout(800);

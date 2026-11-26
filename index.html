@@ -38,6 +38,10 @@
             <button data-mode="route" title="Ein- und Ausstieg anklicken – der Flusslauf dazwischen wird aus Satellitenbild, OSM und Höhenmodell nachgezogen">Ein-/Ausstieg</button>
             <button data-mode="draw" title="Strecke flussabwärts Punkt für Punkt zeichnen">Zeichnen</button>
           </div>
+          <div id="hike-opts" class="row" hidden>
+            <label class="check"><input type="radio" name="hike-how" id="hike-rivers" checked /> Fluss → Fluss <span class="hint">(beste Stelle zum Aus-/Einsteigen wird gesucht)</span></label>
+            <label class="check"><input type="radio" name="hike-how" id="hike-points" /> Punkt → Punkt</label>
+          </div>
           <label id="edit-opts" class="check" hidden><input type="checkbox" id="edit-trace" checked /> geänderte Teilstücke am Fluss nachziehen <span class="hint">(aus = gerade Linie, z. B. für eigene Linien)</span></label>
           <p id="mode-help" class="hint">Wähle einen Modus oder lade die Referenzstrecke.</p>
           <div class="row">
@@ -45,6 +49,7 @@
             <button id="undo-draw" class="ghost" hidden>Letzten Punkt löschen</button>
             <button id="reset" class="ghost">Zurücksetzen</button>
             <button id="wave-btn" class="ghost" title="Kämme einer Wellenfolge im Luftbild anklicken → Wellenabstand und Fließgeschwindigkeit">Wellen messen</button>
+            <button id="hike-btn" class="ghost" title="Wanderverbindung zwischen zwei Flusstälern (oder zwei Punkten) mit der kürzesten Gehzeit">Verbindungsweg</button>
             <button id="edit-btn" class="ghost" title="Strecke anpassen: Ein-/Ausstieg und Zwischenpunkte ziehen, Punkte einfügen oder löschen">Strecke bearbeiten</button>
             <button id="own-btn" class="ghost" title="Eigene Stellen setzen, verschieben, löschen (Stromschnelle, Gefahr, Umtragen, Lager …) – weltweit, gespeichert in diesem Browser, im GPX">Eigene Stellen</button>
             <button id="cancel" class="danger" hidden>Berechnung abbrechen</button>
@@ -107,6 +112,14 @@
         </details>
 
         <p id="status" class="status" role="status"></p>
+
+        <section id="tour-panel" hidden>
+          <h2>Tour</h2>
+          <p class="hint">Alle Abschnitte bleiben auf der Karte; Klick zeigt die Details. Nebenflüsse (blau gestrichelt) anklicken = weiteren Abschnitt analysieren. „Zurücksetzen“ löscht die ganze Tour.</p>
+          <ol id="tour-list" class="tour-list"></ol>
+          <p id="tour-sum" class="hint"></p>
+          <div class="row"><button id="tour-gpx" class="ghost" title="Alle Abschnitte und Verbindungswege als ein GPX">Tour als GPX</button></div>
+        </section>
 
         <section id="results" hidden>
           <h2 id="res-title"></h2>

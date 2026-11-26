@@ -212,6 +212,22 @@ Wasser; allgemein v = √(g·λ/2π · tanh(2πh/λ)). Weil die Tiefe h im Luftb
 flachem Wasser eher langsamer“. Die Kämme quer zu ihrer Ausrichtung (in Fließrichtung) anklicken. Dazu zeigt die
 App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem heutigen Wasserstand vergleichbar.
 
+## Tour: mehrere Flüsse und Verbindungswege (seit 26.11.2026)
+
+- **Tour-Liste:** Jede neu festgelegte Strecke wird ein weiterer Abschnitt; frühere bleiben blass auf der Karte und
+  lassen sich per Klick (Liste oder Linie) wieder anzeigen – ohne neu zu rechnen. „Zurücksetzen“ löscht die ganze Tour,
+  ✕ einen Abschnitt. „Tour als GPX“: je Abschnitt und Verbindungsweg ein Track, höchster Punkt als Wegpunkt.
+- **Nebenflüsse:** Benannte Flüsse, die die Strecke berühren (≤ 250 m, OSM-Vektorkacheln Zoom 11), sind blau gestrichelt.
+  Klick auf einen = Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt (Fließrichtung wird geprüft).
+- **Verbindungsweg** (`src/hike.ts`): „Fluss → Fluss“ (Klick auf Fluss A und B; Start an jeder Stelle von A, Ziel an
+  jeder Stelle von B – die Suche wählt selbst Aus-/Einstieg und meist den niedrigsten Sattel) oder „Punkt → Punkt“.
+  Gehzeit je Rasterzelle nach Tobler (Steigung), weglos ×1,6, Wasser queren ×12, Gletscher ×3, > ~37° gesperrt (außer auf
+  Wegen); Wege/Gewässer/Gletscher aus OpenFreeMap-Kacheln, Höhen AWS Terrain (Zoom ≤ 13, max. 1,2 Mio. Zellen). Bis zu zwei
+  Alternativen (Umgebung der besten Route verteuert, höchstens 1,6× Gehzeit, < 60 % Überlappung). Angezeigt: Länge,
+  Auf-/Abstieg, Gehzeit nach DIN 33466 (ohne Pausen, ohne Gepäckzuschlag), höchster Punkt, Anteil weglos.
+  Grenzen: Felsstufen unter der Rasterweite, Wald/Gebüsch/Sumpf, Flussquerungen, Schutzgebiete – **Indikator, vor Ort prüfen.**
+  Beispiel Ötztal (Sölden) → Pitztal: 10,7 km, ↑ 1.486 m, ~7:24 h, höchster Punkt ~2.630 m.
+
 ## Wasserstand ohne Pegel: Jahreszeit, Aufnahmedatum, Abflussregime (seit 26.11.2026)
 
 Die Wetterabfrage (Open-Meteo: Regen/Schnee der Tage davor) ist **eingefroren** (Code in `src/weather.ts` bleibt).

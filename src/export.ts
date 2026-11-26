@@ -134,6 +134,24 @@ ${[...main, ...steepTrks].join("\n")}
 `;
 }
 
+/** Gesamte Tour als GPX: je Flussabschnitt und Verbindungsweg ein Track, höchster Punkt der Wege als Wegpunkt */
+export function toTourGpx(items: { name: string; type: string; pts: { p: LngLat; z: number }[]; pass?: { p: LngLat; z: number; text: string } }[]): string {
+  const trk = (it: (typeof items)[number]) =>
+    `  <trk>\n    <name>${esc(it.name)}</name>\n    <type>${esc(it.type)}</type>\n${colorExt(it.type === "Wandern" ? "#e07a1f" : "#1f78b4")}    <trkseg>\n` +
+    it.pts.map((q) => `      <trkpt lat="${q.p[1].toFixed(6)}" lon="${q.p[0].toFixed(6)}"><ele>${q.z.toFixed(1)}</ele></trkpt>`).join("\n") + `\n    </trkseg>\n  </trk>`;
+  const wpts = items.flatMap((it) => (it.pass ? [`  <wpt lat="${it.pass.p[1].toFixed(6)}" lon="${it.pass.p[0].toFixed(6)}">\n    <ele>${it.pass.z.toFixed(1)}</ele>\n    <name>${esc(`Höchster Punkt · ${it.name}`)}</name>\n    <desc>${esc(`${it.pass.text}. Verbindungsweg aus Höhenmodell und OSM-Wegen – Indikator, vor Ort prüfen.`)}</desc>\n    <sym>Summit</sym>\n  </wpt>`] : []));
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+  xmlns:gpx_style="http://www.topografix.com/GPX/gpx_style/0/2"
+  xmlns:osmand="https://osmand.net">
+  <metadata><name>Tour</name><desc>${esc(items.map((i) => i.name).join(" · "))}</desc></metadata>
+${wpts.join("\n")}
+${items.map(trk).join("\n")}
+</gpx>
+`;
+}
+
 export function toCsv(a: Analysis): string {
   const rows = [["abschnitt", "km_von", "km_bis", "hoehe_von_m", "hoehe_bis_m", "gefaelle_m_pro_km", "klasse", "talenge"].join(";")];
   for (const s of a.segments) {

@@ -4,12 +4,13 @@ import "./style.css";
 
 import { analyzeRiver, monotoneDecreasing, type Analysis } from "./analysis";
 import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nearNorway, TERRARIUM_URL, type DemSource } from "./dem";
-import { download, shareFile, toCsv, toGeoJson, toGpx, type PlaceOut } from "./export";
+import { download, shareFile, toCsv, toGeoJson, toGpx, toTourGpx, type PlaceOut } from "./export";
 import { loadOsmPlaces, OSM_KIND, osmPlaceText, type OsmPlace } from "./osmPlaces";
 import { icon, KIND_ICON, OSM_ICON_NAME } from "./icons";
 import { haversine, lineLength, locateOnLine, type LngLat } from "./geo";
 import { geocode, waterwaysInBbox } from "./osm";
-import { glacierAreaAround, riversInBbox, waterInBbox } from "./vectorWater";
+import { glacierAreaAround, hikeLayersInBbox, riversInBbox, waterInBbox } from "./vectorWater";
+import { findHike, type HikeResult } from "./hike";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
 import { loadEsriTile } from "./esriTiles";
@@ -92,6 +93,8 @@ const style: StyleSpecification = {
       attribution: "Höhen: AWS Terrain Tiles (SRTM, EU-DEM u. a.)",
     },
     river: { type: "geojson", data: empty },
+    tour: { type: "geojson", data: empty },
+    tribs: { type: "geojson", data: empty },
     "ww-labels": { type: "geojson", data: empty },
     narrows: { type: "geojson", data: empty },
     gauge: { type: "geojson", data: empty },
@@ -116,6 +119,13 @@ const style: StyleSpecification = {
       paint: { "circle-radius": 5, "circle-color": "rgba(255,255,255,0.15)", "circle-stroke-color": "#4a90d9", "circle-stroke-width": 2 },
     },
     { id: "river", type: "line", source: "river", paint: { "line-color": "#7fd3ff", "line-width": 3, "line-opacity": 0.85 } },
+    // Nebenflüsse (anklicken = analysieren)
+    { id: "tribs-hit", type: "line", source: "tribs", paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
+    { id: "tribs", type: "line", source: "tribs", layout: { "line-cap": "round" }, paint: { "line-color": "#00b4d8", "line-width": 3.5, "line-dasharray": [1.2, 1.2] } },
+    // weitere Abschnitte der Tour (blass) und Verbindungswege
+    { id: "tour-river", type: "line", source: "tour", filter: ["==", ["get", "kind"], "fluss"], layout: { "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.55 } },
+    { id: "tour-hike-casing", type: "line", source: "tour", filter: ["==", ["get", "kind"], "weg"], layout: { "line-cap": "round" }, paint: { "line-color": "#fff", "line-width": ["match", ["get", "sel"], 2, 7, 1, 5, 3], "line-opacity": ["match", ["get", "sel"], 0, 0.4, 0.9] } },
+    { id: "tour-hike", type: "line", source: "tour", filter: ["==", ["get", "kind"], "weg"], layout: { "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["match", ["get", "sel"], 2, 4, 1, 3, 2], "line-dasharray": [2, 1], "line-opacity": ["match", ["get", "sel"], 0, 0.55, 1] } },
     { id: "section-casing", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#102027", "line-width": 9, "line-opacity": 0.7 } },
     { id: "section", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 6 } },
     {
@@ -244,7 +254,7 @@ map.on("moveend", () => void updateImageDate());
 map.on("load", () => void updateImageDate());
 
 // ---------- Zustand ----------
-type Mode = "idle" | "edit" | "route-in" | "route-out" | "draw" | "wave" | "ww-label";
+type Mode = "idle" | "edit" | "hike-a" | "hike-b" | "route-in" | "route-out" | "draw" | "wave" | "ww-label";
 let mode: Mode = "idle";
 let putIn: LngLat | null = null;
 let drawPts: LngLat[] = [];
@@ -281,7 +291,8 @@ interface WwState {
 }
 /** Stellen aus OpenStreetMap entlang der Strecke */
 interface OsmState { status: "loading" | "done" | "error" | "off"; places: OsmPlace[]; message?: string }
-let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo; ww?: WwState; osm?: OsmState } | null = null;
+type Cur = { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo; ww?: WwState; osm?: OsmState };
+let current: Cur | null = null;
 let wwParams: WhitewaterParams = loadParams();
 /** aus eigenen Markierungen gelerntes Modell (ersetzt die festen Schwellen, sobald genug Markierungen) */
 let wwModels: WwModel[] = loadModels();
@@ -306,7 +317,8 @@ export const NARROW_STYLE: Record<NarrowKind, { color: string; letter: string; l
   // Klammen werden als Schlucht gezeigt; sehr steile, im Bild verdeckte Abschnitte zusätzlich als Gefahrenstelle
   klamm: { color: "#8e44ad", letter: "S", label: "Schlucht (Fluss im Luftbild verdeckt, steile Hänge)" },
 };
-let lastSection: { line: LngLat[]; name: string; source: string; literature?: string } | null = null;
+type Section = { line: LngLat[]; name: string; source: string; literature?: string };
+let lastSection: Section | null = null;
 let markers: maplibregl.Marker[] = [];
 /** Schwallstellen-Marker (im Markier-Modus ziehbar) */
 let wwMarkers: maplibregl.Marker[] = [];
@@ -349,6 +361,8 @@ const MODE_HELP: Record<Mode, string> = {
   "route-in": "Klicke auf den Einstieg am Fluss.",
   "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
   edit: "Strecke bearbeiten: Punkte ziehen = Strecke anpassen (Ein-/Ausstieg, Zwischenpunkte). Klick auf die Strecke fügt einen Zwischenpunkt ein, Klick auf einen Punkt löscht ihn. Esc oder erneut „Strecke bearbeiten“ beendet.",
+  "hike-a": "Verbindungsweg: Klicke auf Fluss A (bzw. den Startpunkt).",
+  "hike-b": "Verbindungsweg: Klicke auf Fluss B (bzw. den Zielpunkt) – die App sucht den Weg mit der kürzesten Gehzeit.",
   draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
   "ww-label": "Eigene Stellen: Klick in die Karte setzt eine Stelle (Art, Grad, Notiz). Stelle anklicken = bearbeiten/löschen, ziehen = verschieben. Klick neben das Fenster schließt es. Gespeichert in diesem Browser, im GPX enthalten. Esc oder erneut „Eigene Stellen“ beendet.",
   wave: "Weit ins Luftbild zoomen und nacheinander die Kämme einer Wellenfolge anklicken (mind. 3) – quer zu den Kämmen, also in Fließrichtung. Doppelklick oder „Messung beenden“ wertet aus, Esc bricht ab.",
@@ -371,6 +385,8 @@ function setMode(m: Mode) {
   $("wave-btn").classList.toggle("on", m === "wave");
   $("edit-btn").classList.toggle("on", m === "edit");
   $("edit-opts").hidden = m !== "edit";
+  $("hike-btn").classList.toggle("on", m.startsWith("hike"));
+  $("hike-opts").hidden = !m.startsWith("hike");
   renderEditHandles();
   $("own-btn").classList.toggle("on", m === "ww-label");
   // Doppelklick beendet im Zeichenmodus die Linie statt zu zoomen
@@ -501,8 +517,11 @@ function renderEditHandles() {
   });
 }
 
-function resetAll() {
+/** Aktuelle Strecke verwerfen. `all` = auch die Tour (alle Abschnitte und Verbindungswege) löschen. */
+function resetAll(all = false) {
   runId++;
+  active = -1;
+  if (all) trip = [];
   setBusy(false);
   lastSection = null;
   routeEdit = null;
@@ -521,14 +540,240 @@ function resetAll() {
   selectedD = null;
   $("results").hidden = true;
   $("profile-wrap").hidden = true;
+  src("tribs").setData(empty);
   map.resize();
   setStatus("");
+  renderTour();
 }
 
 function fitLine(line: LngLat[]) {
   const b = new maplibregl.LngLatBounds(line[0], line[0]);
   line.forEach((p) => b.extend(p));
   map.fitBounds(b, { padding: 60, duration: 800 });
+}
+
+// ---------- Tour: mehrere Flussabschnitte und Verbindungswege ----------
+interface TourItem {
+  kind: "fluss" | "weg";
+  cur?: Cur;
+  edit?: RouteEdit | null;
+  last?: Section | null;
+  /** Verbindungsweg: Routen (beste + Alternativen), gewählte, Art der Suche */
+  hike?: HikeResult[];
+  sel?: number;
+  how?: string;
+}
+let trip: TourItem[] = [];
+let active = -1;
+const TOUR_COLORS = ["#e07a1f", "#9d4edd", "#2a9d8f", "#d62828"];
+const fmtH = (h: number) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, "0")} h`;
+const fmtElev = (m: number) => `${Math.round(m)} m`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+function itemTitle(t: TourItem, i: number): { title: string; meta: string } {
+  if (t.kind === "fluss" && t.cur) {
+    const a = t.cur.analysis;
+    return { title: `${i + 1} · ${t.cur.name}`, meta: `${fmtKm(a.length)} · ${Math.round(a.profile[0].z)} → ${Math.round(a.profile[a.profile.length - 1].z)} m · Ø ${a.meanGradient.toFixed(1).replace(".", ",")} m/km` };
+  }
+  const r = t.hike?.[t.sel ?? 0];
+  return { title: `${i + 1} · ⇄ Verbindungsweg${t.how ? ` (${t.how})` : ""}`, meta: r ? `${fmtKm(r.lengthM)} · ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m · ~${fmtH(r.hours)} · höchster Punkt ${fmtElev(r.maxElev)}` : "" };
+}
+/** Karte: inaktive Abschnitte blass in Gefällefarben, Verbindungswege gestrichelt orange */
+function renderTourLayer() {
+  const features: GeoJSON.Feature[] = [];
+  trip.forEach((t, i) => {
+    if (t.kind === "fluss" && t.cur && i !== active)
+      for (const sg of t.cur.analysis.segments) features.push({ type: "Feature", properties: { i, kind: "fluss", color: sg.cls.color }, geometry: { type: "LineString", coordinates: sg.coords } });
+    if (t.kind === "weg")
+      (t.hike ?? []).forEach((r, k) => features.push({ type: "Feature", properties: { i, k, kind: "weg", sel: k === (t.sel ?? 0) && i === active ? 2 : k === (t.sel ?? 0) ? 1 : 0, color: TOUR_COLORS[k % TOUR_COLORS.length] }, geometry: { type: "LineString", coordinates: r.line } }));
+  });
+  src("tour").setData({ type: "FeatureCollection", features });
+  hikeMarkers.forEach((m) => m.remove());
+  hikeMarkers = [];
+  trip.forEach((t, i) => {
+    const r = t.kind === "weg" ? t.hike?.[t.sel ?? 0] : undefined;
+    if (!r) return;
+    const el = document.createElement("div");
+    el.className = "pass-marker";
+    el.innerHTML = `▲ ${fmtElev(r.maxElev)}`;
+    el.title = `Höchster Punkt des Verbindungswegs ${i + 1}`;
+    hikeMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.pass).addTo(map));
+  });
+}
+let hikeMarkers: maplibregl.Marker[] = [];
+function renderTour() {
+  renderTourLayer();
+  const panel = $("tour-panel");
+  panel.hidden = trip.length < 2 && !trip.some((t) => t.kind === "weg");
+  const list = $("tour-list");
+  list.innerHTML = "";
+  let sumKm = 0, sumH = 0;
+  trip.forEach((t, i) => {
+    const li = document.createElement("li");
+    li.className = i === active ? "active" : "";
+    const { title, meta } = itemTitle(t, i);
+    const b = document.createElement("button");
+    b.className = "tour-item ghost";
+    b.innerHTML = `<span><b>${title}</b></span><span class="meta">${meta}</span>`;
+    b.addEventListener("click", () => activate(i));
+    const del = document.createElement("button");
+    del.className = "ghost tour-del";
+    del.title = "Aus der Tour entfernen";
+    del.textContent = "✕";
+    del.addEventListener("click", () => removeItem(i));
+    li.append(b, del);
+    if (t.kind === "weg" && t.hike && i === active) {
+      const alts = document.createElement("ol");
+      alts.className = "hike-alts";
+      t.hike.forEach((r, k) => {
+        const ab = document.createElement("button");
+        ab.className = `ghost${k === (t.sel ?? 0) ? " sel" : ""}`;
+        ab.innerHTML = `<span class="sw" style="background:${TOUR_COLORS[k % TOUR_COLORS.length]}"></span> ${k ? `Alternative ${k}` : "Beste Route"}: ${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)}, höchster Punkt ${fmtElev(r.maxElev)}, ${Math.round(r.offTrail * 100)} % weglos`;
+        ab.addEventListener("click", () => { t.sel = k; renderTour(); });
+        const al = document.createElement("li");
+        al.appendChild(ab);
+        alts.appendChild(al);
+      });
+      li.appendChild(alts);
+    }
+    list.appendChild(li);
+    if (t.kind === "fluss" && t.cur) sumKm += t.cur.analysis.length;
+    const r = t.hike?.[t.sel ?? 0];
+    if (r) { sumKm += r.lengthM; sumH += r.hours; }
+  });
+  $("tour-sum").textContent = trip.length ? `Gesamt ${fmtKm(sumKm)}${sumH ? ` · Fußwege ~${fmtH(sumH)} (DIN 33466, ohne Pausen und Gepäckzuschlag)` : ""}` : "";
+}
+/** Abschnitt der Tour anzeigen (ohne neu zu rechnen) */
+function activate(i: number) {
+  const t = trip[i];
+  if (!t || busy) return;
+  if (mode !== "idle") setMode("idle");
+  runId++;
+  active = i;
+  clearMarkers();
+  if (t.kind === "fluss" && t.cur) {
+    current = t.cur;
+    routeEdit = t.edit ?? null;
+    lastSection = t.last ?? null;
+    const line = current.analysis.profile.map((q) => q.p);
+    src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
+    updateQOptions();
+    showResults();
+    void updateImageDate();
+    fitLine(line);
+    renderTour();
+    return;
+  }
+  current = null;
+  routeEdit = null;
+  lastSection = null;
+  for (const id of ["river", "section", "narrows", "gauge", "catch", "tribs", "cursor"]) src(id).setData(empty);
+  clearImgMarkers();
+  $("results").hidden = true;
+  $("profile-wrap").hidden = true;
+  map.resize();
+  const r = t.hike?.[t.sel ?? 0];
+  if (r) fitLine(r.line);
+  renderTour();
+}
+function removeItem(i: number) {
+  if (busy) return;
+  const wasActive = i === active;
+  trip.splice(i, 1);
+  if (wasActive) { resetAll(); return; }
+  if (active > i) active--;
+  renderTour();
+}
+
+// ---------- Nebenflüsse: blau gestrichelt, anklicken = analysieren ----------
+/** benannte Flüsse, die die Strecke berühren (Nebenflüsse bzw. der Fluss, in den sie mündet) */
+async function loadTribs(a: Analysis, id: number) {
+  const line = a.profile.map((q) => q.p);
+  const lons = line.map((p) => p[0]), lats = line.map((p) => p[1]);
+  const pad = 0.06;
+  const bb: [number, number, number, number] = [Math.min(...lons) - pad * 1.5, Math.min(...lats) - pad, Math.max(...lons) + pad * 1.5, Math.max(...lats) + pad];
+  const { rivers } = await riversInBbox(bb, fetch, 11).catch(() => ({ rivers: [] }));
+  if (id !== runId || current?.analysis !== a) return;
+  const step = Math.max(1, Math.floor(line.length / 400));
+  const coarse = line.filter((_, i) => i % step === 0);
+  const near = (p: LngLat, m: number) => coarse.some((q) => haversine(p, q) < m);
+  // Name des analysierten Flusses: die Linie, die am meisten an der Strecke liegt
+  const share = new Map<string, number>();
+  for (const r of rivers) share.set(r.name, (share.get(r.name) ?? 0) + r.coords.filter((p) => near(p, 120)).length);
+  const main = [...share.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
+  const byName = new Map<string, LngLat[][]>();
+  for (const r of rivers) if (r.name !== main) byName.set(r.name, [...(byName.get(r.name) ?? []), r.coords]);
+  const features: GeoJSON.Feature[] = [];
+  for (const [name, parts] of byName) {
+    // berührt die Strecke? (Mündung bzw. Zusammenfluss ≤ 250 m)
+    let contact: LngLat | null = null, best = Infinity;
+    for (const l of parts) for (const p of l) { const at = locateOnLine(line, p); if (at.offset < best) { best = at.offset; contact = at.point; } }
+    if (!contact || best > 250) continue;
+    for (const l of parts) features.push({ type: "Feature", properties: { name, cx: contact[0], cy: contact[1] }, geometry: { type: "LineString", coordinates: l } });
+  }
+  src("tribs").setData({ type: "FeatureCollection", features });
+}
+/** Klick auf einen Nebenfluss: Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt der Tour */
+async function analyzeTrib(name: string, at: LngLat, contact: LngLat) {
+  if (busy) return;
+  resetAll();
+  const id = runId;
+  setBusy(true);
+  setStatus(`${name}: Flusslauf bis zur Mündung nachziehen …`);
+  try {
+    const sec = await traceSection(at, contact, id);
+    if (id !== runId) return;
+    setBusy(false);
+    src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
+    setRouteEdit([sec.line[0], sec.line[sec.line.length - 1]], [sec.line], [true]);
+    await runAnalysis(sec.line, name, sec.source, sec.note);
+  } catch (e) {
+    if (id !== runId || isCancel(e)) return;
+    setBusy(false);
+    setStatus(`${name}: ${(e as Error).message}`, true);
+  }
+}
+
+// ---------- Verbindungswege zu Fuß ----------
+let hikeA: LngLat | null = null;
+const hikeHow = () => ($<HTMLInputElement>("hike-rivers").checked ? "rivers" : "points");
+/** benannter Fluss nächst dem Klick (alle Teilstücke mit diesem Namen im Ausschnitt) */
+async function riverAt(p: LngLat, bb: [number, number, number, number]): Promise<{ name: string; lines: LngLat[][] } | null> {
+  const { rivers } = await riversInBbox(bb, fetch, 11);
+  let best: { name: string; d: number } | null = null;
+  for (const r of rivers) {
+    const d = locateOnLine(r.coords, p).offset;
+    if (d < 1000 && (!best || d < best.d)) best = { name: r.name, d };
+  }
+  return best ? { name: best.name, lines: rivers.filter((r) => r.name === best!.name).map((r) => r.coords) } : null;
+}
+async function runHike(a: LngLat, b: LngLat) {
+  const id = ++runId;
+  setBusy(true);
+  const progress = progressFor(id);
+  try {
+    const { hikeBbox } = await import("./hike");
+    const bb = hikeBbox(a, b);
+    let from: LngLat[][] = [[a]], to: LngLat[][] = [[b]], how = "Punkt → Punkt";
+    if (hikeHow() === "rivers") {
+      progress("Verbindungsweg: Flüsse an den Klickpunkten suchen …");
+      const [ra, rb] = await Promise.all([riverAt(a, bb).catch(() => null), riverAt(b, bb).catch(() => null)]);
+      if (ra) from = ra.lines;
+      if (rb) to = rb.lines;
+      how = `${ra?.name ?? "Punkt"} → ${rb?.name ?? "Punkt"}`;
+      if (ra && rb && ra.name === rb.name) throw new Error(`Beide Klicks liegen am selben Fluss (${ra.name}) – bitte zwei verschiedene Flüsse wählen.`);
+    }
+    const res = await findHike({ from, to, loader: compositeTileLoader("global"), layers: (bbox) => hikeLayersInBbox(bbox), onProgress: progress }, a, b);
+    if (id !== runId) return;
+    setBusy(false);
+    resetAll();
+    trip.push({ kind: "weg", hike: res, sel: 0, how });
+    activate(trip.length - 1);
+    setStatus(`Verbindungsweg: ${res.length} Route${res.length > 1 ? "n" : ""} gefunden – Indikator aus Höhenmodell und OSM-Wegen, vor Ort prüfen.`);
+  } catch (e) {
+    if (id !== runId || isCancel(e)) return;
+    setBusy(false);
+    if (current) showResults();
+    setStatus(`Verbindungsweg: ${(e as Error).message}`, true);
+  }
 }
 
 // ---------- Analyse ----------
@@ -597,11 +842,16 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
         ? ` – Kartverket ${kv > 0 ? "teilweise " : ""}nicht erreichbar (${kartverketBreaker.lastError || "Fehler"})`
         : "");
     current = { analysis: a, name, source, dem, literature };
+    // Tour: neue Strecke als eigener Abschnitt, Bearbeitung/Parameter ersetzen den aktiven Abschnitt
+    if (active >= 0 && trip[active]?.kind === "fluss") Object.assign(trip[active], { cur: current, edit: routeEdit, last: lastSection });
+    else { trip.push({ kind: "fluss", cur: current, edit: routeEdit, last: lastSection }); active = trip.length - 1; }
+    renderTour();
     selectedD = null;
     showResults();
     // Luftbild-Datum und Abfluss parallel laden (blockiert die übrige Analyse nicht)
     void loadFlowInfo(a, id);
     void loadOsm(a, id);
+    void loadTribs(a, id);
     if ($<HTMLInputElement>("opt-narrows").checked) {
       // Querprofile: mit Kartverket fein (3 m), sonst 10 m
       const fine = kv > 0 && gl === 0;
@@ -1302,6 +1552,45 @@ function afterLabelChange() {
 
 $("own-export").addEventListener("click", () => $("ww-export").click());
 $("own-import").addEventListener("click", () => $("ww-import").click());
+$("hike-btn").addEventListener("click", () => {
+  if (busy) return;
+  hikeA = null;
+  setMode(mode.startsWith("hike") ? "idle" : "hike-a");
+});
+$("tour-gpx").addEventListener("click", () => {
+  const items = trip.flatMap((t, i) => {
+    if (t.kind === "fluss" && t.cur) return [{ name: `${i + 1} ${t.cur.name}`, type: "Packrafting", pts: t.cur.analysis.profile.map((q) => ({ p: q.p, z: q.z })) }];
+    const r = t.hike?.[t.sel ?? 0];
+    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), pass: { p: r.pass, z: r.maxElev, text: `${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)} (DIN 33466)` } }] : [];
+  });
+  if (items.length) download(`tour-${new Date().toISOString().slice(0, 10)}.gpx`, toTourGpx(items), "application/gpx+xml");
+});
+map.on("click", "tribs-hit", (e) => {
+  if (mode !== "idle" || busy) return;
+  const f = e.features?.[0];
+  if (!f) return;
+  const pr = f.properties as { name: string; cx: number; cy: number };
+  void analyzeTrib(pr.name, [e.lngLat.lng, e.lngLat.lat], [pr.cx, pr.cy]);
+});
+map.on("mouseenter", "tribs-hit", (e) => {
+  if (mode !== "idle") return;
+  map.getCanvas().style.cursor = "pointer";
+  const name = (e.features?.[0]?.properties as { name?: string } | undefined)?.name;
+  if (name) setStatus(`${name}: anklicken = ab hier bis zur Mündung analysieren (wird als weiterer Abschnitt der Tour angelegt).`);
+});
+map.on("mouseleave", "tribs-hit", () => { if (mode === "idle") map.getCanvas().style.cursor = ""; });
+map.on("click", "tour-river", (e) => {
+  if (mode !== "idle" || busy) return;
+  const i = (e.features?.[0]?.properties as { i?: number } | undefined)?.i;
+  if (i !== undefined) activate(i);
+});
+map.on("click", "tour-hike", (e) => {
+  if (mode !== "idle" || busy) return;
+  const pr = e.features?.[0]?.properties as { i?: number; k?: number } | undefined;
+  if (pr?.i === undefined) return;
+  trip[pr.i].sel = pr.k ?? 0;
+  activate(pr.i);
+});
 $("edit-btn").addEventListener("click", () => {
   if (busy) return;
   if (!routeEdit) return setStatus("Erst eine Strecke festlegen (Ein-/Ausstieg, Zeichnen oder Referenzstrecke).", true);
@@ -1855,7 +2144,7 @@ document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) =>
     setMode(m === "route" ? "route-in" : "draw");
   }),
 );
-$("reset").addEventListener("click", () => { resetAll(); setMode("idle"); });
+$("reset").addEventListener("click", () => { resetAll(true); setMode("idle"); });
 $("cancel").addEventListener("click", () => {
   resetAll();
   setMode("idle");
@@ -1949,8 +2238,10 @@ document.addEventListener("keydown", (e) => {
     drawPts = [];
     src("draft").setData(empty);
     setMode("idle");
-  } else if (e.key === "Escape" && mode === "edit") {
+  } else if (e.key === "Escape" && (mode === "edit" || mode.startsWith("hike"))) {
+    hikeA = null;
     setMode("idle");
+    if (current) showResults();
   } else if (e.key === "Escape" && mode === "ww-label") {
     // Markieren: erst Fenster schließen, dann Modus beenden – Analyse bleibt
     if (labelPopup?.isOpen()) { labelPopup.remove(); labelPopup = null; }
@@ -1998,6 +2289,21 @@ map.on("click", async (e) => {
       src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: sec.line } });
       setRouteEdit([sec.line[0], sec.line[sec.line.length - 1]], [sec.line], [true]);
       await runAnalysis(sec.line, "Eigene Strecke", sec.source, sec.note);
+      break;
+    }
+    case "hike-a":
+      hikeA = p;
+      clearMarkers();
+      endpointMarker(p, "A", "#e07a1f");
+      setMode("hike-b");
+      break;
+    case "hike-b": {
+      if (!hikeA) return setMode("hike-a");
+      const from = hikeA;
+      hikeA = null;
+      setMode("idle");
+      endpointMarker(p, "B", "#e07a1f");
+      await runHike(from, p);
       break;
     }
     case "edit":
