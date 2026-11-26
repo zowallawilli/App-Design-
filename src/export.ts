@@ -7,6 +7,8 @@ import type { LngLat } from "./geo";
 
 /** Gefahrenstelle für den Export (siehe hazards() in main.ts) */
 export interface HazardOut { d: number; center: LngLat; kind: string; title: string; text: string }
+/** weitere Stelle als Wegpunkt: eigene Stelle oder aus OpenStreetMap (`source` landet im GeoJSON) */
+export interface PlaceOut { d: number; center: LngLat; title: string; text: string; sym: string; type: string; source: "eigene" | "osm"; kind: string }
 
 
 /** Kurzbeschreibung einer Schwallstelle (Indikator) für Wegpunkte/Export */
@@ -78,7 +80,7 @@ const wwShort = (hint: string) => /WW [IV+–]+/.exec(hint)?.[0] ?? hint.split("
 /** GPX 1.1 für GPS-Apps (Gaia GPS, Garmin Explore, OsmAnd …): Strecke mit Höhen als Track, Ein-/Ausstieg,
  *  Gefahren-, Schwallstellen und Schluchten als Wegpunkte (mit Höhe, km und Beschreibung). Steile Abschnitte
  *  zusätzlich als eigene, benannte Tracks + Wegpunkt am Beginn – Farben lesen nicht alle Apps (Gaia nicht). */
-export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = [], opt: GpxOptions = {}): string {
+export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = [], opt: GpxOptions = {}, places: PlaceOut[] = []): string {
   const o = { steep: true, steepFrom: 15, split: false, kmMarks: false, ...opt };
   const zAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).z;
   const pAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
@@ -94,6 +96,7 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitew
   const nrWpts = (narrows?.features ?? []).map((f) =>
     wpt(f.center, (f.d0 + f.d1) / 2, f.title, `km ${km(f.d0)}–${km(f.d1)}: ${f.detail}`, f.kind === "engstelle" ? "Caution" : "Danger Area", f.kind === "engstelle" ? "Engstelle" : "Schlucht"));
   const wwWpts = whitewater.map((s) => wpt(s.center, s.dPeak, `Schwall km ${km(s.dPeak)}`, spotText(s), "Caution", "Schwallstelle"));
+  const plWpts = places.map((q) => wpt(q.center, q.d, q.title, q.text, q.sym, q.type));
   const steep = o.steep ? stretches(a, { minGradient: o.steepFrom }) : [];
   const steepName = (s: Stretch) => `Steil km ${kmDe(s.d0)}–${kmDe(s.d1)} · ${Math.round(s.maxGradient)} m/km`;
   const steepDesc = (s: Stretch) =>
@@ -125,7 +128,7 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitew
   xmlns:gpx_style="http://www.topografix.com/GPX/gpx_style/0/2"
   xmlns:osmand="https://osmand.net">
   <metadata><name>${esc(name)}</name><desc>${esc(desc)}</desc></metadata>
-${[...ends, ...steepWpts, ...nrWpts, ...bkWpts, ...wwWpts, ...kmWpts].join("\n")}
+${[...ends, ...steepWpts, ...nrWpts, ...bkWpts, ...wwWpts, ...plWpts, ...kmWpts].join("\n")}
 ${[...main, ...steepTrks].join("\n")}
 </gpx>
 `;
@@ -141,7 +144,7 @@ export function toCsv(a: Analysis): string {
   return rows.join("\n") + "\n";
 }
 
-export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = []): string {
+export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = [], places: PlaceOut[] = []): string {
   return JSON.stringify({
     type: "FeatureCollection",
     properties: { name, length_m: a.length, drop_m: a.drop, mean_gradient_m_per_km: a.meanGradient },
@@ -168,6 +171,11 @@ export function toGeoJson(a: Analysis, name: string, narrows?: NarrowsResult, wh
           whitewater_m2: Math.round(s.area), density_m2_per_m: +s.peakDensity.toFixed(2), whitewater_share: +s.peakFrac.toFixed(3), notes: s.notes, text: spotText(s),
         },
         geometry: { type: "Point", coordinates: s.center },
+      })),
+      ...places.map((q) => ({
+        type: "Feature",
+        properties: { kind: q.kind, source: q.source, km: +(q.d / 1000).toFixed(3), title: q.title, text: q.text },
+        geometry: { type: "Point", coordinates: q.center },
       })),
     ],
   });

@@ -15,7 +15,7 @@ const [C, F] = process.argv.slice(2);
 const decode = async (buf: ArrayBuffer) => { const u = new Uint8Array(buf);
   if (u[0] === 0x89) { const p = PNG.sync.read(Buffer.from(u)); return { data: p.data, width: p.width, height: p.height }; }
   const d = jpeg.decode(u, { useTArray: true, formatAsRGBA: true }); return { data: d.data, width: d.width, height: d.height }; };
-const labels = JSON.parse(readFileSync(F, "utf8")).labels;
+const labels = JSON.parse(readFileSync(F, "utf8")).labels.filter((l: { kind?: string }) => !["holz", "umtragen", "zugang", "lager", "notiz"].includes(l.kind ?? "")); // Planungs-Stellen zählen nicht
 const rivers = [
   { id: "soca", putIn: [13.61913, 46.33766], takeOut: [13.48598, 46.31161] },
   { id: "soca2", putIn: [13.48598, 46.31161], takeOut: [13.58657, 46.24755] },

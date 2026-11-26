@@ -639,8 +639,10 @@ export function describeSpots(
 // Lernen aus eigenen Markierungen
 
 /** Art einer eigenen Markierung: vier Arten Schwall, vier Gegenbeispiele */
-export type LabelKind = "schwall" | "walze" | "wehr" | "gefahr" | "kiesbank" | "bruecke" | "ruhig" | "sonstiges";
-export const LABEL_KINDS: { id: LabelKind; text: string; schwall: boolean }[] = [
+export type LabelKind = "schwall" | "walze" | "wehr" | "gefahr" | "kiesbank" | "bruecke" | "ruhig" | "sonstiges"
+  | "holz" | "umtragen" | "zugang" | "lager" | "notiz";
+/** Arten eigener Stellen. `plan` = reine Planungsangabe (Umtragen, Lager …) – zählt nie fürs Lernen der Erkennung. */
+export const LABEL_KINDS: { id: LabelKind; text: string; schwall: boolean; plan?: boolean }[] = [
   { id: "schwall", text: "Stromschnelle", schwall: true },
   { id: "walze", text: "Walze / Loch", schwall: true },
   { id: "wehr", text: "Wehr", schwall: true },
@@ -649,11 +651,20 @@ export const LABEL_KINDS: { id: LabelKind; text: string; schwall: boolean }[] = 
   { id: "bruecke", text: "Brücke / Schatten", schwall: false },
   { id: "ruhig", text: "ruhiges Wasser", schwall: false },
   { id: "sonstiges", text: "sonstiges", schwall: false },
+  { id: "holz", text: "Holz / Baum", schwall: false, plan: true },
+  { id: "umtragen", text: "Umtragen", schwall: false, plan: true },
+  { id: "zugang", text: "Ein-/Ausstieg", schwall: false, plan: true },
+  { id: "lager", text: "Lagerplatz", schwall: false, plan: true },
+  { id: "notiz", text: "Notiz", schwall: false, plan: true },
 ];
+/** reine Planungsangabe (kein Bildbefund „Schwall/kein Schwall“) */
+export const isPlanKind = (k?: LabelKind) => !!k && !!LABEL_KINDS.find((x) => x.id === k)?.plan;
+/** Arten, die als Gefahrenstelle (rote Welle) gelten */
+export const isHazardKind = (k?: LabelKind) => k === "gefahr" || k === "holz";
 export const GRADES = ["I", "II", "III", "IV", "V", "VI"] as const;
 export type Grade = (typeof GRADES)[number];
 export const labelText = (l: Pick<WhitewaterLabel, "schwall" | "kind" | "grade">) =>
-  `${LABEL_KINDS.find((k) => k.id === l.kind)?.text ?? (l.schwall ? "Schwall" : "kein Schwall")}${l.schwall && l.grade ? ` · WW ${l.grade}` : ""}${!l.schwall && l.kind ? " (kein Schwall)" : ""}`;
+  `${LABEL_KINDS.find((k) => k.id === l.kind)?.text ?? (l.schwall ? "Schwall" : "kein Schwall")}${l.schwall && l.grade ? ` · WW ${l.grade}` : ""}${!l.schwall && l.kind && !isPlanKind(l.kind) ? " (kein Schwall)" : ""}`;
 
 /** Bildmerkmale an einer Markierung (aus der Analyse zum Zeitpunkt der Markierung) – damit lernt das Modell
  *  über alle Flüsse hinweg, auch wenn die Strecke später nicht mehr geladen ist. */
@@ -698,7 +709,8 @@ export const GRADE_STEPS = [1, 2, 3, 4] as const;
 export const gradeName = (k: number) => (k <= 1 ? "alle Schwälle" : `ab WW ${GRADES[k - 1]}`);
 /** Ziel einer Markierung für die Stufe k: true = Schwall mindestens Grad k, false = darunter bzw. kein Schwall,
  *  null = unbekannt (Schwall ohne Grad bei k ≥ 2 – zählt dort nicht). */
-export function gradeTarget(l: Pick<WhitewaterLabel, "schwall" | "grade">, k: number): boolean | null {
+export function gradeTarget(l: Pick<WhitewaterLabel, "schwall" | "grade" | "kind">, k: number): boolean | null {
+  if (isPlanKind(l.kind)) return null;
   if (!l.schwall) return false;
   if (k <= 1) return true;
   if (!l.grade) return null;
@@ -767,7 +779,8 @@ export const modelThreshold = (level: number) => 1 / (1 + Math.exp(-(SENSITIVITY
 export function applyLabels(
   spots: WhitewaterSpot[], labels: { label: WhitewaterLabel; d: number; p: LngLat }[],
 ): WhitewaterSpot[] {
-  labels = labels.filter((l) => l.label.show); // Markierungen nur zum Lernen ändern die Anzeige nicht
+  // Markierungen nur zum Lernen ändern die Anzeige nicht; Planungsangaben (Umtragen, Lager …) auch nicht
+  labels = labels.filter((l) => l.label.show && !isPlanKind(l.label.kind));
   const inSpot = (s: WhitewaterSpot, d: number) => d >= s.d0 - 25 && d <= s.d1 + 25;
   const out = spots
     .filter((s) => !labels.some((l) => !l.label.schwall && inSpot(s, l.d)))

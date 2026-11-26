@@ -255,6 +255,20 @@ describe("Eigene Markierungen und lernendes Modell", () => {
     expect(learnOnly[0].own).toBeUndefined();
   });
 
+  it("Planungs-Stellen (Umtragen, Lager …) zählen nie fürs Lernen und blenden keine Erkennung aus; Import behält sie", async () => {
+    const { applyLabels, gradeTarget, isPlanKind, isHazardKind } = await import("../src/whitewater");
+    expect(isPlanKind("umtragen")).toBe(true);
+    expect(isPlanKind("kiesbank")).toBe(false);
+    expect(isHazardKind("holz")).toBe(true);
+    expect(gradeTarget({ schwall: false, kind: "lager" }, 1)).toBeNull();
+    expect(gradeTarget({ schwall: false, kind: "kiesbank" }, 1)).toBe(false);
+    const spot = { d0: 100, d1: 150, dPeak: 125, center: [10, 47] as LngLat, peakFrac: 0.3, meanFrac: 0.2, peakDensity: 8, area: 300, width: 20, strong: true, notes: [] as string[] };
+    const out = applyLabels([spot], [{ label: { p: [10, 47], schwall: false, kind: "umtragen", show: true }, d: 120, p: [10, 47] }]);
+    expect(out).toHaveLength(1);
+    const imp = parseImport(exportJson([{ p: [10, 47], schwall: false, kind: "lager", note: "Sandbank", show: true }], DEFAULT_PARAMS));
+    expect(imp.labels[0]).toMatchObject({ kind: "lager", note: "Sandbank", show: true });
+  });
+
   it("Modell nur verwenden, wenn es die feste Schwelle schlägt; alte Modelle ohne Vergleich nicht", async () => {
     const { modelUsable, trainModel } = await import("../src/whitewater");
     expect(modelUsable({ w: [1, 1, 1], b: 0, pos: 20, neg: 14, acc: 0.62, date: "" })).toBe(false); // wie im Browser des Nutzers

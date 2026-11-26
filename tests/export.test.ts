@@ -21,6 +21,18 @@ describe("export", async () => {
     expect((g.match(/<\/wpt>/g) ?? []).length).toBe(2);
     expect(g).not.toContain("\\n");
   });
+  it("eigene und OSM-Stellen erscheinen als Wegpunkte und im GeoJSON", () => {
+    const pl = [
+      { d: 500, center: destination(o, 500, 90), title: "Umtragen km 0.50", text: "Eigene Stelle: Umtragen – links", sym: "Trail Head", type: "Eigene Stelle", source: "eigene" as const, kind: "umtragen" },
+      { d: 1200, center: destination(o, 1200, 90), title: "Wehr km 1.20 (OSM)", text: "Wehr – aus OpenStreetMap, nicht geprüft", sym: "Danger Area", type: "OSM, nicht geprüft", source: "osm" as const, kind: "weir" },
+    ];
+    const g = toGpx(a, "Fluss", undefined, [], [], { steep: false }, pl);
+    expect((g.match(/<wpt /g) ?? []).length).toBe(4);
+    expect(g).toContain("<name>Wehr km 1.20 (OSM)</name>");
+    expect(g).toContain("<type>OSM, nicht geprüft</type>");
+    const j = JSON.parse(toGeoJson(a, "x", undefined, [], [], pl));
+    expect(j.features.filter((f: { properties: { source?: string } }) => f.properties.source).map((f: { properties: { kind: string } }) => f.properties.kind)).toEqual(["umtragen", "weir"]);
+  });
   it("CSV hat Kopfzeile und eine Zeile je Abschnitt", () => {
     expect(toCsv(a).trim().split("\n")).toHaveLength(a.segments.length + 1);
   });
