@@ -109,7 +109,8 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Empfindlichkeits-Regler 1–9 (`tunedParams`: Regler × Flussbreite, localStorage `packraft.wwSensitivity`).
   Ohne auswertbares Luftbild **keine** Schwallstellen, nur deutlicher Hinweis (Nutzerwunsch).
 - Eigene Markierungen (Art + Grad + Notiz, Bildmerkmale) überstimmen die Erkennung (`applyLabels`); Modell
-  `trainModel` (logistische Regression, je ≥ 5 Beispiele) ersetzt die festen Schwellen. Teilen mit anderen Nutzern:
+  `trainGradeModels` (logistische Regression je Stufe „alle / ab WW II / III / IV“, je ≥ 5 Beispiele) ersetzt die
+  feste Schwelle nur, wenn nachweislich besser (`modelUsable`); Auswahl „Schwälle ab …“ (localStorage `packraft.wwMinGrade`). Teilen mit anderen Nutzern:
   GitHub-Konto als Hürde abgelehnt – später gemeinsam brainstormen.
 - Markierungen des Nutzers: Upload aus der App nach `daten/markierungen/*.json` (GitHub-Schlüssel nur im Browser,
   localStorage `packraft.ghToken`) → dort auswerten, Grundmodell daraus bauen.

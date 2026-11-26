@@ -148,6 +148,8 @@
             <label for="ww-sens" title="Wie empfindlich Weißwasser als Schwallstelle markiert wird. Die Schwelle passt sich zusätzlich der Flussbreite an (breite Flüsse strenger).">Empfindlichkeit</label>
             <input type="range" id="ww-sens" min="1" max="9" step="1" value="5" aria-describedby="ww-sens-out" />
             <span id="ww-sens-out" class="hint"></span>
+            <label for="ww-mingrade" title="Mit gelerntem Modell nur Schwälle ab diesem Grad zeigen (lernt aus deinen Markierungen mit Grad)">Schwälle ab</label>
+            <select id="ww-mingrade"><option value="1">alle</option><option value="2">WW II</option><option value="3">WW III</option><option value="4">WW IV</option></select>
           </div>
           <ol id="ww-list" class="hotspots"></ol>
           <details class="more"><summary>Bildquelle &amp; Hinweise</summary><p id="ww-meta" class="hint"></p></details>

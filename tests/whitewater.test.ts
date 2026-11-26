@@ -266,16 +266,48 @@ describe("Eigene Markierungen und lernendes Modell", () => {
 
   it("Export/Import erhält Art, Grad, Merkmale und Modell; alte Dateien bleiben lesbar", () => {
     const labels = [{ p: [10, 47] as LngLat, schwall: true, kind: "walze" as const, grade: "IV" as const, show: true, note: "Rücklauf", date: "2026-11-26", src: "basemap-at", feat: { density: 9, smooth: 0.3, width: 18 } }];
-    const model = { w: [1, 2, 3], b: -1, pos: 5, neg: 5, acc: 0.9, date: "2026-11-26" };
-    const imp = parseImport(exportJson(labels, DEFAULT_PARAMS, model));
+    const model = { w: [1, 2, 3], b: -1, pos: 5, neg: 5, acc: 0.9, minGrade: 2, date: "2026-11-26" };
+    const imp = parseImport(exportJson(labels, DEFAULT_PARAMS, [model]));
     expect(imp.labels[0]).toMatchObject({ kind: "walze", grade: "IV", show: true, feat: { density: 9 } });
-    expect(imp.model?.w).toEqual([1, 2, 3]);
+    expect(imp.models[0]).toMatchObject({ w: [1, 2, 3], minGrade: 2 });
+    // Datei der Vorversion mit einzelnem Modell → gilt als „alle Schwälle“
+    const v2 = parseImport(JSON.stringify({ format: "packraft-schwallstellen", version: 2, labels: [], model: { w: [1, 2, 3], b: 0, acc: 0.6 } }));
+    expect(v2.models[0].minGrade).toBe(1);
     const old = parseImport(JSON.stringify({ format: "packraft-schwallstellen", version: 1, labels: [{ p: [10, 47], schwall: false }] }));
     expect(old.labels[0]).toMatchObject({ schwall: false });
-    expect(old.model).toBeNull();
+    expect(old.models).toEqual([]);
     // ungültige Kombination (Grad bei „kein Schwall“, Art passt nicht) wird bereinigt
     const bad = parseImport(JSON.stringify({ format: "packraft-schwallstellen", labels: [{ p: [10, 47], schwall: false, kind: "walze", grade: "V" }] }));
     expect(bad.labels[0].kind).toBeUndefined();
     expect(bad.labels[0].grade).toBeUndefined();
+  });
+});
+
+describe("Grad lernen", () => {
+  it("Ziel je Stufe: WW I zählt bei „ab WW II“ als darunter, Schwall ohne Grad nur bei „alle“", async () => {
+    const { gradeTarget } = await import("../src/whitewater");
+    expect(gradeTarget({ schwall: false }, 1)).toBe(false);
+    expect(gradeTarget({ schwall: true }, 1)).toBe(true);
+    expect(gradeTarget({ schwall: true }, 2)).toBeNull();
+    expect(gradeTarget({ schwall: true, grade: "I" }, 2)).toBe(false);
+    expect(gradeTarget({ schwall: true, grade: "III" }, 2)).toBe(true);
+    expect(gradeTarget({ schwall: true, grade: "III" }, 4)).toBe(false);
+  });
+  it("lernt Stärke: viel Weiß = WW III, wenig Weiß = WW I", async () => {
+    const { trainGradeModels, modelProb, modelUsable } = await import("../src/whitewater");
+    const lab = (density: number, smooth: number, grade?: "I" | "III") => ({ p: [10, 47] as LngLat, schwall: !!grade, grade, feat: { density, smooth, width: 20 } });
+    const labels = [
+      ...Array.from({ length: 8 }, (_, i) => lab(14 + i, 0.45, "III")),
+      ...Array.from({ length: 8 }, (_, i) => lab(6 + i * 0.3, 0.22, "I")), // Weißwasser, aber schwach
+      ...Array.from({ length: 8 }, (_, i) => lab(0.5 + i * 0.2, 0.04)), // kein Schwall
+    ];
+    const res = trainGradeModels(labels);
+    const k2 = res.find((r) => r.k === 2)!;
+    expect(k2.pos).toBe(8);
+    expect(k2.neg).toBe(16);
+    expect(modelUsable(k2.model)).toBe(true); // feste Schwelle hält WW I für „Schwall“ → Modell klar besser
+    expect(modelProb(k2.model!, { density: 18, smooth: 0.45, width: 20 })).toBeGreaterThan(0.5);
+    expect(modelProb(k2.model!, { density: 7, smooth: 0.22, width: 20 })).toBeLessThan(0.5);
+    expect(res.find((r) => r.k === 4)!.model).toBeNull(); // keine Markierung ab WW IV
   });
 });

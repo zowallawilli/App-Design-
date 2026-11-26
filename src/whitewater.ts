@@ -689,10 +689,32 @@ export interface WwModel {
   w: number[]; b: number; pos: number; neg: number;
   /** Trefferquote (Kreuzvalidierung) */ acc: number;
   /** Trefferquote der festen Standardschwelle auf denselben Markierungen (Vergleich) */ accFixed?: number;
+  /** Modell beantwortet „Schwall ab diesem Grad?“ (1 = ab WW I, also jeder Schwall; 2 = ab WW II …) */
+  minGrade?: number;
   date: string;
 }
+/** Stufen, für die je ein Modell gelernt wird (ab WW I … ab WW IV) */
+export const GRADE_STEPS = [1, 2, 3, 4] as const;
+export const gradeName = (k: number) => (k <= 1 ? "alle Schwälle" : `ab WW ${GRADES[k - 1]}`);
+/** Ziel einer Markierung für die Stufe k: true = Schwall mindestens Grad k, false = darunter bzw. kein Schwall,
+ *  null = unbekannt (Schwall ohne Grad bei k ≥ 2 – zählt dort nicht). */
+export function gradeTarget(l: Pick<WhitewaterLabel, "schwall" | "grade">, k: number): boolean | null {
+  if (!l.schwall) return false;
+  if (k <= 1) return true;
+  if (!l.grade) return null;
+  return GRADES.indexOf(l.grade) + 1 >= k;
+}
+/** Je Stufe ein Modell aus den Markierungen mit Bildmerkmalen (null, wenn je Seite < MODEL_MIN). */
+export function trainGradeModels(labels: WhitewaterLabel[]): { k: number; pos: number; neg: number; model: WwModel | null }[] {
+  return GRADE_STEPS.map((k) => {
+    const samples = labels.filter((l) => l.feat && gradeTarget(l, k) !== null).map((l) => ({ f: l.feat!, schwall: gradeTarget(l, k)! }));
+    const pos = samples.filter((x) => x.schwall).length;
+    const m = trainModel(samples);
+    return { k, pos, neg: samples.length - pos, model: m ? { ...m, minGrade: k } : null };
+  });
+}
 /** Modell nur verwenden, wenn es die feste Schwelle nachweislich übertrifft (≥ 3 Prozentpunkte) */
-export const modelUsable = (m: WwModel | null): boolean => !!m && m.accFixed !== undefined && m.acc >= m.accFixed + 0.03; // ältere Modelle ohne Vergleich: nicht verwenden
+export const modelUsable = (m: WwModel | null | undefined): boolean => !!m && m.accFixed !== undefined && m.acc >= m.accFixed + 0.03 && m.acc >= 0.65; // ältere Modelle ohne Vergleich: nicht verwenden
 /** mindestens so viele Markierungen je Klasse, bevor das Modell die festen Schwellen ersetzt */
 export const MODEL_MIN = 5;
 const xOf = (f: LabelFeat) => [Math.log1p(f.density), f.smooth * 4, Math.log((f.width ?? WIDTH_REF) / WIDTH_REF)];

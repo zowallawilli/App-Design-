@@ -23,11 +23,11 @@ import { rateAnalysis, streamPower, waveVelocityRange, WAVE_DEPTHS, type RatingM
 import {
   DEFAULT_PARAMS, describeSpots, edgeCandidates, findBreaklines, findSpots, localProfile, type Breakline, orthoSourceFor, sampleStrip, whitewaterProfile,
   type OrthoSource, type WhitewaterBin, type WhitewaterLabel, type WhitewaterParams, type WhitewaterSpot,
-  applyLabels, binFeat, modelUsable, GRADES, LABEL_KINDS, labelText, modelProb, modelThreshold, trainModel, type Grade, type LabelKind, type WwModel,
+  applyLabels, binFeat, modelUsable, GRADES, LABEL_KINDS, labelText, modelProb, modelThreshold, gradeName, trainGradeModels, type Grade, type LabelKind, type WwModel,
   imageUsable, SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, tunedParams, typicalWidth, widthFactor,
 } from "./whitewater";
 import { ghToken, setGhToken, uploadLabels } from "./githubUpload";
-import { browserDecoder, exportJson, loadLabels, loadModel, loadParams, mergeLabels, parseImport, saveLabels, saveModel, saveParams } from "./whitewaterStore";
+import { browserDecoder, exportJson, loadLabels, loadModels, loadParams, mergeLabels, parseImport, saveLabels, saveModels, saveParams } from "./whitewaterStore";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -280,7 +280,12 @@ interface WwState {
 let current: { analysis: Analysis; name: string; source: string; dem: string; literature?: string; narrows?: NarrowsResult; flow?: FlowInfo; ww?: WwState } | null = null;
 let wwParams: WhitewaterParams = loadParams();
 /** aus eigenen Markierungen gelerntes Modell (ersetzt die festen Schwellen, sobald genug Markierungen) */
-let wwModel: WwModel | null = loadModel();
+let wwModels: WwModel[] = loadModels();
+/** „Schwälle anzeigen ab …“ (1 = alle, 2 = ab WW II …), nur in diesem Browser */
+const MINGRADE_KEY = "packraft.wwMinGrade";
+let wwMinGrade = (() => { try { const v = Number(localStorage.getItem(MINGRADE_KEY)); return v >= 1 && v <= 4 ? v : 1; } catch { return 1; } })();
+/** Modell für die gewählte Stufe – nur wenn es nachweislich besser ist als die feste Schwelle */
+const activeModel = (): WwModel | null => wwModels.find((m) => (m.minGrade ?? 1) === wwMinGrade && modelUsable(m)) ?? null;
 /** Empfindlichkeit der Schwallstellen-Suche (Regler 1–9, nur in diesem Browser) */
 const SENS_KEY = "packraft.wwSensitivity";
 let wwSensitivity = (() => { try { const v = Number(localStorage.getItem(SENS_KEY)); return v >= SENSITIVITY_MIN && v <= SENSITIVITY_MAX ? v : SENSITIVITY_DEFAULT; } catch { return SENSITIVITY_DEFAULT; } })();
@@ -782,7 +787,7 @@ function computeSpots(): WhitewaterSpot[] {
   if (!imageUsable(ww.bins)) return [];
   fillLabelFeatures();
   const steps = (ww.breaks ?? []).map((b) => ({ d0: b.d - 20, d1: b.d + 20 }));
-  const par = effParams(), m = modelUsable(wwModel) ? wwModel : null, thr = modelThreshold(wwSensitivity);
+  const par = effParams(), m = activeModel(), thr = modelThreshold(wwSensitivity);
   const accept = m ? (b: WhitewaterBin) => b.width !== null && modelProb(m, b) >= thr : undefined;
   const found = describeSpots(findSpots(ww.bins, par, accept), ww.track, ww.bins, { gradientAt, steps });
   return applyLabels(found, labelsOnLine());
@@ -884,10 +889,10 @@ function renderLabels() {
   const pos = wwLabels.filter((l) => l.schwall).length, withF = wwLabels.filter((l) => l.feat).length, shown = wwLabels.filter((l) => l.show).length;
   $("ww-learn-info").textContent =
     `${wwLabels.length} eigene Markierung${wwLabels.length === 1 ? "" : "en"} (${pos} Schwall, ${wwLabels.length - pos} kein Schwall; ${withF} mit Luftbild-Merkmalen; ${shown} auch in der Karte angezeigt, übrige nur zum Lernen) · ` +
-    (modelUsable(wwModel)
-      ? `Erkennung mit gelerntem Modell (${wwModel!.pos + wwModel!.neg} Markierungen, Trefferquote ${Math.round(wwModel!.acc * 100)} % statt ${Math.round((wwModel!.accFixed ?? 0) * 100)} % mit fester Schwelle, ${fmtDate(wwModel!.date)}), Empfindlichkeit ${wwSensitivity}. `
-      : wwModel ? `Gelerntes Modell (${Math.round(wwModel.acc * 100)} %${wwModel.accFixed !== undefined ? ` vs. feste Schwelle ${Math.round(wwModel.accFixed * 100)} %` : ", ohne Vergleich – neu lernen"}) ist nicht besser – Erkennung weiter mit fester Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m²/m. `
-      : `Feste Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter (Empfindlichkeit ${wwSensitivity}, Flussbreite); Modell ab je 5 Markierungen „Schwall“/„kein Schwall“. `) +
+    (activeModel()
+      ? `Erkennung „${gradeName(wwMinGrade)}“ mit gelerntem Modell (${activeModel()!.pos + activeModel()!.neg} Markierungen, Trefferquote ${Math.round(activeModel()!.acc * 100)} % statt ${Math.round((activeModel()!.accFixed ?? 0) * 100)} % mit fester Schwelle, ${fmtDate(activeModel()!.date)}), Empfindlichkeit ${wwSensitivity}. `
+      : wwMinGrade > 1 ? `Für „${gradeName(wwMinGrade)}“ gibt es noch kein brauchbares Modell – angezeigt werden alle erkannten Schwälle (feste Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m²/m). `
+      : `Feste Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter (Empfindlichkeit ${wwSensitivity}, Flussbreite); ein gelerntes Modell ersetzt sie erst, wenn es nachweislich besser trifft. `) +
     `Markierungen bleiben erhalten und sind nur im Modus „Stellen markieren“ als Punkte sichtbar; nur die mit Häkchen „anzeigen“ erscheinen auch sonst als eigene Stelle bzw. blenden Erkennungen aus. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
 }
 
@@ -974,6 +979,13 @@ function renderSensitivity() {
   const w = current?.ww?.bins ? typicalWidth(current.ww.bins) : null;
   $("ww-sens-out").textContent = `${SENS_TEXT(wwSensitivity)}${w ? ` · Fluss ~${Math.round(w)} m breit${Math.abs(widthFactor(w) - 1) > 0.02 ? ` (Schwelle ×${widthFactor(w).toFixed(2).replace(".", ",")})` : ""}` : ""}`;
 }
+$<HTMLSelectElement>("ww-mingrade").value = String(wwMinGrade);
+$("ww-mingrade").addEventListener("change", (e) => {
+  wwMinGrade = Number((e.target as HTMLSelectElement).value);
+  try { localStorage.setItem(MINGRADE_KEY, String(wwMinGrade)); } catch { /* privater Modus */ }
+  if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
+  else renderLabels();
+});
 $("ww-sens").addEventListener("input", (e) => {
   wwSensitivity = Number((e.target as HTMLInputElement).value);
   try { localStorage.setItem(SENS_KEY, String(wwSensitivity)); } catch { /* privater Modus */ }
@@ -985,39 +997,41 @@ $("ww-learn").addEventListener("click", () => {
   // Merkmale für Markierungen der aktuellen Strecke nachtragen (falls beim Markieren noch keine Analyse lief)
   for (const l of wwLabels) if (!l.feat) Object.assign(l, featAt(l.p));
   saveLabels(wwLabels);
-  const samples = wwLabels.filter((l) => l.feat).map((l) => ({ f: l.feat!, schwall: l.schwall }));
-  const pos = samples.filter((x) => x.schwall).length, neg = samples.length - pos;
-  const m = trainModel(samples);
-  if (!m) {
-    showLearnResult(`✗ Noch kein Modell: ${pos} Schwall / ${neg} kein Schwall mit Luftbild-Merkmalen nutzbar (nötig je 5). ${wwLabels.length - samples.length} von ${wwLabels.length} Markierungen haben noch keine Merkmale – die jeweilige Strecke einmal auswerten, dann werden sie ergänzt.`, false);
-    return setStatus(`Für das Modell braucht es je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild-Auswertung (bisher ${pos} / ${neg}). ${wwLabels.length - samples.length} Markierungen haben noch keine Luftbild-Merkmale – sie werden ergänzt, sobald du die jeweilige Strecke auswertest (nur bis 60 m neben der Flusslinie, nur mit auswertbarem Luftbild).`, true);
-  }
-  wwModel = m;
-  saveModel(m);
+  const withF = wwLabels.filter((l) => l.feat);
+  const res = trainGradeModels(wwLabels);
+  wwModels = res.map((r) => r.model).filter((m): m is WwModel => !!m);
+  saveModels(wwModels);
   if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
   else renderLabels();
-  const kinds = LABEL_KINDS.map((k) => [k.text, wwLabels.filter((l) => l.feat && l.kind === k.id).length] as const).filter(([, n]) => n);
+  const graded = withF.filter((l) => l.schwall && l.grade).length, ungraded = withF.filter((l) => l.schwall && !l.grade).length;
+  const rows = res.map((r) => {
+    const m = r.model;
+    const head = `<b>${gradeName(r.k)}</b>: ${r.pos} ${r.k === 1 ? "Schwall" : "ab diesem Grad"} / ${r.neg} ${r.k === 1 ? "kein Schwall" : "darunter oder kein Schwall"}`;
+    if (!m) return `${head} – zu wenige (je 5 nötig), feste Schwelle`;
+    return `${head} – Modell ${Math.round(m.acc * 100)} %, feste Schwelle ${Math.round((m.accFixed ?? 0) * 100)} % → ${modelUsable(m) ? "<b>Modell wird verwendet</b>" : "feste Schwelle bleibt"}`;
+  });
+  const ok = wwModels.some((m) => modelUsable(m));
   showLearnResult(
-    `✓ Verarbeitet: ${samples.length} von ${wwLabels.length} Markierungen fürs Lernen genutzt (${pos} Schwall, ${neg} kein Schwall${kinds.length ? `; ${kinds.map(([t, n]) => `${t} ${n}`).join(", ")}` : ""}). ` +
-      `Trefferquote an zurückgehaltenen Markierungen: <b>${Math.round(m.acc * 100)} %</b>, feste Schwelle auf denselben Markierungen: ${Math.round((m.accFixed ?? 0) * 100)} % → ` +
-      (modelUsable(m) ? "<b>Modell wird verwendet.</b>" : "<b>Modell ist nicht besser – die feste Schwelle bleibt.</b> Mehr und eindeutigere Markierungen helfen; die Merkmale werden weiter ausgebaut.") +
-      (wwLabels.length > samples.length ? ` ${wwLabels.length - samples.length} Markierungen noch ohne Luftbild-Merkmale – die zugehörige Strecke auswerten und erneut lernen.` : ""),
-    true,
+    `${ok ? "✓" : "✗"} Verarbeitet: ${withF.length} von ${wwLabels.length} Markierungen mit Luftbild-Merkmalen (${graded} Schwälle mit Grad, ${ungraded} ohne Grad – zählen nur bei „alle Schwälle“).<br>` +
+      rows.join("<br>") +
+      (wwLabels.length > withF.length ? `<br>${wwLabels.length - withF.length} Markierungen noch ohne Merkmale – die zugehörige Strecke auswerten und erneut lernen.` : "") +
+      `<br>Tipp: kleine, unwichtige Schwälle als „Stromschnelle WW I“ markieren statt „kein Schwall“ – dann lernt die App die Stärke.`,
+    ok,
   );
-  setStatus(`Modell gelernt aus ${pos + neg} Markierungen (${pos} Schwall, ${neg} kein Schwall), alle Flüsse${wwLabels.length > samples.length ? `; ${wwLabels.length - samples.length} weitere noch ohne Luftbild-Merkmale (Strecke dazu auswerten)` : ""}. Trefferquote bei Prüfung an zurückgehaltenen Markierungen: ${Math.round(m.acc * 100)} %.`);
+  setStatus(ok ? "Modell(e) gelernt – Details unter den Schwallstellen." : "Gelernt, aber noch kein Modell besser als die feste Schwelle – Details unter den Schwallstellen.", !ok);
 });
 $("ww-reset").addEventListener("click", () => {
   wwParams = { ...DEFAULT_PARAMS };
   saveParams(wwParams);
-  wwModel = null;
-  saveModel(null);
+  wwModels = [];
+  saveModels(wwModels);
   if (current?.ww?.bins) current.ww.spots = computeSpots();
   if (current) showResults();
   else renderLabels();
 });
 // Export: mit GitHub-Schlüssel direkt ins Repo (daten/markierungen/), sonst – oder bei Fehler – als Datei
 $("ww-export").addEventListener("click", async () => {
-  const json = exportJson(wwLabels, wwParams, wwModel);
+  const json = exportJson(wwLabels, wwParams, wwModels);
   const saveFile = () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, json, "application/json");
   const token = ghToken();
   if (!token) {
@@ -1061,11 +1075,11 @@ $("ww-file").addEventListener("change", async (e) => {
     wwLabels = mergeLabels(wwLabels, imp.labels);
     saveLabels(wwLabels);
     if (imp.params) { wwParams = imp.params; saveParams(wwParams); }
-    if (imp.model) { wwModel = imp.model; saveModel(wwModel); }
+    if (imp.models.length) { wwModels = imp.models; saveModels(wwModels); }
     if (current?.ww?.bins) current.ww.spots = computeSpots();
     if (current) showResults();
     else renderLabels();
-    setStatus(`${imp.labels.length} Markierungen importiert${imp.model ? " (inkl. gelerntem Modell)" : imp.params ? " (inkl. gelernter Schwelle)" : ""}.`);
+    setStatus(`${imp.labels.length} Markierungen importiert${imp.models.length ? " (inkl. gelernter Modelle)" : imp.params ? " (inkl. gelernter Schwelle)" : ""}.`);
   } catch (err) {
     setStatus(`Import fehlgeschlagen: ${(err as Error).message}`, true);
   }

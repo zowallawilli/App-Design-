@@ -402,8 +402,13 @@ liegendes Band, Länge, Rauheit der Wasseroberfläche – bestes Modell 69 %, fe
 angepasste Schwelle 69 % (je 5-fache Kreuzvalidierung, 20 Wiederholungen). Ursachen im Bild: (1) „kein Schwall“ steht
 auch an Stellen mit echtem Weißwasser zwischen Blöcken (für den Nutzer nicht relevant genug) – es geht um
 *Relevanz/Schwierigkeit*, nicht um Weißwasser; (2) Kalkkies und flaches, helles Bett an der Soča sieht wie Weißwasser
-aus; (3) Walzen und Wellenzüge am großvolumigen, milchigen Inn zeigen kaum Schaum. Nächster Schritt: Grad statt
-Ja/Nein lernen und kleine Schwälle als „Stromschnelle WW I“ statt „kein Schwall“ markieren. Neue Markierungen sind standardmäßig **nur zum Lernen**;
+aus; (3) Walzen und Wellenzüge am großvolumigen, milchigen Inn zeigen kaum Schaum. Deshalb **lernt die App seit 11/2026 den Grad**: je Stufe
+„alle Schwälle“, „ab WW II“, „ab WW III“, „ab WW IV“ ein eigenes Modell (Schwall unter der Stufe und „kein Schwall“ =
+Gegenbeispiel, Schwall ohne Grad zählt nur bei „alle“). Die Auswahl „Schwälle ab …“ neben dem Regler wählt die Stufe;
+ein Modell gilt nur, wenn es die feste Schwelle um ≥ 3 Prozentpunkte schlägt und ≥ 65 % trifft, sonst bleibt die feste
+Schwelle (mit Hinweis). Mit den ersten Daten: „alle“ 60 % (Schwelle 70 %) → Schwelle; „ab WW II“ 73 % (Schwelle 66 %,
+nur 14 Schwälle ab WW II) → Modell; „ab WW III/IV“ zu wenige. Kleine, unwichtige Schwälle daher als „Stromschnelle WW I“
+markieren statt „kein Schwall“. Neue Markierungen sind standardmäßig **nur zum Lernen**;
 mit dem Häkchen „auch später in der Karte anzeigen“ erscheinen sie als eigene Stelle bzw. blenden Erkennungen aus.
 Sonst gilt: der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
 1 = 88 %, 9 = 12 %). Die Trefferquote wird ehrlich an zurückgehaltenen Markierungen geprüft (5-fache
