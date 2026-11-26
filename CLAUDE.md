@@ -83,11 +83,14 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 
 ## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
 - Nur markieren, nicht einschätzen; Schwallstellen mit Wellensymbol ohne Nummer. Wehre ebenfalls markieren.
-- Gefahrenstelle = **rote Welle** (einziges Gefahrensymbol, `hazards()` in main.ts): Abbruchkante im Bild **und**
-  Höhenverlust (`findBreaklines`), Stufe nur im Höhenmodell, oder nicht einsehbare steile Klamm. Keine ▼- und K-Marker
+- Gefahrenstelle = **rote Welle** (einziges Gefahrensymbol, `hazards()` in main.ts). **Nutzerregel 11/2026:** nur
+  (1) deutlicher Höhenverlust **und** im Luftbild Abbruchkante (`findBreaklines`) oder deutliches Weißwasser
+  (Steilstufe + starke Schwallstelle), oder (2) Fluss wegen Verengung nicht sichtbar (Klamm, steil; mit Orthofoto
+  nur wo auch dieses kein Wasser zeigt). **Keine** Gefahrenstelle aus dem Höhenmodell allein (Brücken, Kiesbänke).
+  Referenzbilder des Nutzers: Desktop-Ordner „Gefahrenstellen“ und „Stromschnellen“ (nur über Remote Control erreichbar). Keine ▼- und K-Marker
   mehr (Klammen erscheinen als Schlucht S). Abbruchkanten
-  trainiert an Selfoss/Dettifoss/Hafragilsfoss (NÁTT); Messung `scripts/breakline-eval.mts` (3/5, 1 Fehlalarm: Koritnica-Kiesbank am Schattenrand;
-  Krimml im Schatten nicht erkannt). Hotspot-Marker entfernt (Gefälle zeigen die Abschnittsfarben).
+  trainiert an Selfoss/Dettifoss/Hafragilsfoss (NÁTT); Messung `scripts/breakline-eval.mts` (3/5, 0 Fehlalarme seit
+  „Gischt muss glatt sein“; Krimml im Schatten nicht erkannt). NAIP (USA) seit 11/2026 als Bildquelle. Hotspot-Marker entfernt (Gefälle zeigen die Abschnittsfarben).
 - Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),
   Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
 - Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
