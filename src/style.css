@@ -181,3 +181,10 @@ button.danger { background: #c0392b; color: #fff; }
 .ww-sens input[type="range"] { flex: 1 1 120px; min-width: 100px; max-width: 220px; }
 .ww-noimg { border-left: 3px solid #e09f3e; padding-left: 8px; }
 .ww-sens[hidden] { display: none; }
+.ww-popup .row.wrap { flex-wrap: wrap; }
+.ww-popup .lbl-sec { margin-top: 8px; font-size: 12px; color: #555; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ww-popup .lbl-grades { display: inline-flex; gap: 3px; }
+.ww-popup button.g { padding: 2px 7px; min-width: 28px; }
+.ww-popup button.sel { background: #0077b6; color: #fff; border-color: #0077b6; }
+.ww-popup .lbl-note { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 4px 6px; font: 13px system-ui; }
+.ww-popup button.danger { color: #d62828; }
