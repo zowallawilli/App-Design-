@@ -27,7 +27,7 @@ import {
   imageUsable, SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, tunedParams, typicalWidth, widthFactor,
 } from "./whitewater";
 import { ghToken, setGhToken, uploadLabels } from "./githubUpload";
-import { browserDecoder, exportJson, loadLabels, loadModels, loadParams, mergeLabels, parseImport, saveLabels, saveModels, saveParams } from "./whitewaterStore";
+import { browserDecoder, exportJson, loadHidden, loadLabels, loadModels, loadParams, saveHidden, mergeLabels, parseImport, saveLabels, saveModels, saveParams } from "./whitewaterStore";
 
 // ---------- DOM ----------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -281,6 +281,8 @@ let current: { analysis: Analysis; name: string; source: string; dem: string; li
 let wwParams: WhitewaterParams = loadParams();
 /** aus eigenen Markierungen gelerntes Modell (ersetzt die festen Schwellen, sobald genug Markierungen) */
 let wwModels: WwModel[] = loadModels();
+/** vom Nutzer gelöschte/verschobene erkannte Stellen (nur Anzeige, nicht fürs Lernen) */
+let wwHidden: LngLat[] = loadHidden();
 /** „Schwälle anzeigen ab …“ (1 = alle, 2 = ab WW II …), nur in diesem Browser */
 const MINGRADE_KEY = "packraft.wwMinGrade";
 let wwMinGrade = (() => { try { const v = Number(localStorage.getItem(MINGRADE_KEY)); return v >= 1 && v <= 4 ? v : 1; } catch { return 1; } })();
@@ -302,6 +304,8 @@ export const NARROW_STYLE: Record<NarrowKind, { color: string; letter: string; l
 };
 let lastSection: { line: LngLat[]; name: string; source: string; literature?: string } | null = null;
 let markers: maplibregl.Marker[] = [];
+/** Schwallstellen-Marker (im Markier-Modus ziehbar) */
+let wwMarkers: maplibregl.Marker[] = [];
 let chart: { highlight: (d: number | null) => void } | null = null;
 /** Jeder neue Vorgang erhöht den Zähler; ältere Ergebnisse werden verworfen. */
 let runId = 0;
@@ -341,7 +345,7 @@ const MODE_HELP: Record<Mode, string> = {
   "route-in": "Klicke auf den Einstieg am Fluss.",
   "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
   draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
-  "ww-label": "Stellen im Luftbild anklicken und per Schnellauswahl einordnen (Art, Grad). Klick auf eine vorhandene Markierung öffnet sie zum Ändern/Löschen. Esc oder erneut „Stellen markieren“ beendet.",
+  "ww-label": "Stellen im Luftbild anklicken und per Schnellauswahl einordnen (Art, Grad). Erkannte Stellen (Wellensymbol) anklicken = bearbeiten/löschen, ziehen = verschieben. Klick neben das Fenster schließt es. Esc oder erneut „Stellen markieren“ beendet.",
   wave: "Weit ins Luftbild zoomen und nacheinander die Kämme einer Wellenfolge anklicken (mind. 3) – quer zu den Kämmen, also in Fließrichtung. Doppelklick oder „Messung beenden“ wertet aus, Esc bricht ab.",
 };
 
@@ -349,6 +353,8 @@ function setMode(m: Mode) {
   mode = m;
   // eigene Markierungen nur im Markier-Modus zeigen – sonst stören sie bei der Planung (bleiben gespeichert, zählen fürs Lernen)
   if (map.getLayer("ww-labels")) map.setLayoutProperty("ww-labels", "visibility", m === "ww-label" ? "visible" : "none");
+  wwMarkers.forEach((mk) => mk.setDraggable(m === "ww-label"));
+  if (m !== "ww-label") labelPopup?.remove();
   $("mode-help").textContent = MODE_HELP[m];
   const group = m.startsWith("osm") ? "osm" : m.startsWith("route") ? "route" : m === "draw" ? "draw" : "";
   document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === group));
@@ -790,7 +796,7 @@ function computeSpots(): WhitewaterSpot[] {
   const par = effParams(), m = activeModel(), thr = modelThreshold(wwSensitivity);
   const accept = m ? (b: WhitewaterBin) => b.width !== null && modelProb(m, b) >= thr : undefined;
   const found = describeSpots(findSpots(ww.bins, par, accept), ww.track, ww.bins, { gradientAt, steps });
-  return applyLabels(found, labelsOnLine());
+  return applyLabels(found, labelsOnLine()).filter((s) => s.own || !wwHidden.some((h) => haversine(h, s.center) < 30));
 }
 
 /** eigene Markierungen, die höchstens 60 m neben der aktuellen Flusslinie liegen, mit Stationierung */
@@ -858,7 +864,8 @@ function renderWhitewater(a: Analysis) {
         : current?.flow ? "Aufnahmetag unbekannt – Wasserstand beim Bildflug nicht bestimmbar. " : "") +
       `Weißwasser hängt stark vom Abfluss ab; markiert werden helle, körnige Flächen im Wasser (auch Wehre). Ein Indikator, keine Schwierigkeitsbewertung – Stellen vor Ort besichtigen.`;
   }
-  // Marker
+  // Marker (im Modus „Stellen markieren“ verschieb- und bearbeitbar)
+  wwMarkers = [];
   ww?.spots.forEach((s, i) => {
     if (s.hazard || s.own?.kind === "gefahr") return; // dort steht schon die rote Welle (Gefahrenstelle)
     const el = document.createElement("button");
@@ -867,8 +874,18 @@ function renderWhitewater(a: Analysis) {
     el.innerHTML = WAVE_SVG("#fff", 15);
     el.setAttribute("aria-label", s.hazard ? "Gefahrenstelle" : "Schwallstelle");
     el.title = `${s.hazard ? "Gefahrenstelle" : "Schwallstelle"} ${kmRange(s)}: Weißwasser im Luftbild ${Math.round(s.area)} m²${s.notes.length ? `, ${s.notes.join(", ")}` : ""}`;
-    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusWw(i); });
-    markers.push(new maplibregl.Marker({ element: el }).setLngLat(s.center).addTo(map));
+    const mk = new maplibregl.Marker({ element: el, draggable: mode === "ww-label" }).setLngLat(s.center).addTo(map);
+    let dragged = false;
+    el.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (dragged) { dragged = false; return; }
+      if (mode === "ww-label") return addLabelAt(s.own ? s.own.p : s.center, { detected: true });
+      focusWw(i);
+    });
+    mk.on("dragstart", () => { dragged = true; labelPopup?.remove(); });
+    mk.on("dragend", () => moveSpot(s, [mk.getLngLat().lng, mk.getLngLat().lat]));
+    markers.push(mk);
+    wwMarkers.push(mk);
   });
   renderLabels();
 }
@@ -907,7 +924,7 @@ function featAt(p: LngLat) {
   if (at.offset > 60) return {};
   return { src: ww.source?.id, feat: binFeat(ww.bins, at.d) ?? undefined };
 }
-function addLabelAt(p: LngLat) {
+function addLabelAt(p: LngLat, opts: { detected?: boolean } = {}) {
   // vorhandene Markierung in der Nähe → bearbeiten statt doppelt anlegen
   const near = wwLabels.findIndex((l) => haversine(l.p, p) < 12 * 2 ** (17 - Math.min(17, map.getZoom())));
   const old = near >= 0 ? wwLabels[near] : undefined;
@@ -923,9 +940,10 @@ function addLabelAt(p: LngLat) {
     `<div class="lbl-sec">Schwall · Grad <span class="lbl-grades">${GRADES.map((g) => `<button data-g="${g}" class="g${grade === g ? " sel" : ""}">${g}</button>`).join("")}</span></div>` +
     `<div class="row wrap">${LABEL_KINDS.filter((k) => k.schwall).map(btn).join("")}</div>` +
     `<div class="lbl-sec">kein Schwall</div><div class="row wrap">${LABEL_KINDS.filter((k) => !k.schwall).map(btn).join("")}</div>` +
-    `<label class="lbl-show"><input type="checkbox" class="lbl-show-cb"${old?.show ? " checked" : ""}> auch später in der Karte anzeigen <span class="hint">(sonst nur zum Lernen)</span></label>` +
+    `<label class="lbl-show"><input type="checkbox" class="lbl-show-cb"${old?.show || (!old && opts.detected) ? " checked" : ""}> auch später in der Karte anzeigen <span class="hint">(sonst nur zum Lernen)</span></label>` +
     `<input class="lbl-note" maxlength="200" placeholder="Notiz (optional)" value="${(old?.note ?? "").replace(/"/g, "&quot;")}">` +
-    (old ? `<div class="row"><button data-del class="ghost danger">Markierung löschen</button></div>` : "");
+    (old ? `<div class="row"><button data-del class="ghost danger">Markierung löschen</button></div>` : "") +
+    (opts.detected && !old ? `<div class="row"><button data-hide class="ghost danger" title="Erkannte Stelle aus der Karte entfernen (ohne Bewertung fürs Lernen)">Erkannte Stelle löschen</button></div><p class="hint" style="margin:4px 0 0">Verschieben: Symbol mit der Maus ziehen.</p>` : "");
   box.querySelectorAll<HTMLButtonElement>("button[data-g]").forEach((b) =>
     b.addEventListener("click", () => {
       grade = grade === b.dataset.g ? undefined : (b.dataset.g as Grade);
@@ -953,6 +971,12 @@ function addLabelAt(p: LngLat) {
     afterLabelChange();
     labelPopup?.remove();
   });
+  box.querySelector("button[data-hide]")?.addEventListener("click", () => {
+    wwHidden.push(at);
+    saveHidden(wwHidden);
+    afterLabelChange();
+    labelPopup?.remove();
+  });
   labelPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "300px" }).setLngLat(at).setDOMContent(box).addTo(map);
 }
 /** Markierungen ohne Bildmerkmale (ältere Version, oder vor der Analyse gesetzt) an der aktuellen Strecke ergänzen –
@@ -965,6 +989,21 @@ function fillLabelFeatures() {
     if (f.feat) { Object.assign(l, f); n++; }
   }
   if (n) saveLabels(wwLabels);
+}
+/** Stelle verschieben: eigene Markierung wandert mit; eine erkannte Stelle wird ausgeblendet und als eigene,
+ *  angezeigte Markierung an der neuen Stelle übernommen (danach Auswahlfenster zum Anpassen). */
+function moveSpot(s: WhitewaterSpot, to: LngLat) {
+  const i = s.own ? wwLabels.indexOf(s.own) : -1;
+  if (i >= 0) {
+    wwLabels[i] = { ...wwLabels[i], p: to, feat: undefined, src: undefined };
+    Object.assign(wwLabels[i], featAt(to));
+  } else {
+    wwHidden.push(s.center);
+    saveHidden(wwHidden);
+    wwLabels.push({ p: to, schwall: true, kind: "schwall", grade: lastGrade, show: true, date: new Date().toISOString().slice(0, 10), ...featAt(to) });
+  }
+  afterLabelChange();
+  addLabelAt(to);
 }
 function afterLabelChange() {
   saveLabels(wwLabels);
@@ -1061,6 +1100,8 @@ $("ww-clear").addEventListener("click", () => {
   if (!wwLabels.length) return setStatus("Keine eigenen Markierungen gespeichert.");
   if (!confirm(`Alle ${wwLabels.length} eigenen Markierungen in diesem Browser löschen? Das gelernte Modell bleibt erhalten. Tipp: vorher „Markierungen exportieren“.`)) return;
   wwLabels = [];
+  wwHidden = [];
+  saveHidden(wwHidden);
   afterLabelChange();
   setStatus("Eigene Markierungen gelöscht.");
 });
@@ -1580,6 +1621,10 @@ document.addEventListener("keydown", (e) => {
     drawPts = [];
     src("draft").setData(empty);
     setMode("idle");
+  } else if (e.key === "Escape" && mode === "ww-label") {
+    // Markieren: erst Fenster schließen, dann Modus beenden – Analyse bleibt
+    if (labelPopup?.isOpen()) { labelPopup.remove(); labelPopup = null; }
+    else setMode("idle");
   } else if (e.key === "Escape" && mode !== "idle" && !busy) {
     resetAll();
     setMode("idle");
@@ -1676,6 +1721,8 @@ map.on("click", async (e) => {
       break;
     }
     case "ww-label":
+      // Klick neben ein offenes Auswahlfenster schließt es nur
+      if (labelPopup?.isOpen()) { labelPopup.remove(); labelPopup = null; break; }
       addLabelAt(p);
       break;
     case "draw":

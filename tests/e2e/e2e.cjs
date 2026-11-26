@@ -202,6 +202,26 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.evaluate(() => { const el = document.getElementById('gh-token'); el.value = ''; el.dispatchEvent(new Event('change')); });
     check('Lernen gibt Rückmeldung, Export lädt mit Schlüssel nach daten/markierungen/ hoch', /Verarbeitet: \d+ von \d+ Markierungen/.test(lr) && /alle Schwälle<\/b>: \d+ Schwall/.test(lrHtml) && /hochgeladen nach daten\/markierungen\/markierungen-/.test(up) && put && put.method() === 'PUT' && /contents\/daten\/markierungen\//.test(put.url()), `${lr.slice(0, 80)} | ${up.slice(0, 90)}`);
     check('Eigene Markierungen nur im Markier-Modus sichtbar', visIn === 'visible' && visOut === 'none', `${visIn} → ${visOut}`);
+    // Nachbearbeiten erkannter Stellen: Fenster per Kartenklick schließen, löschen, verschieben
+    await page.click('#ww-label');
+    await page.mouse.click(px, py + 60); await page.waitForSelector('.ww-popup');
+    await page.mouse.click(px - 120, py + 90); await page.waitForTimeout(400);
+    const closed = (await page.locator('.ww-popup').count()) === 0;
+    const n0 = await page.locator('.ww-marker').count();
+    const m1 = await page.locator('.ww-marker').first().boundingBox();
+    await page.mouse.click(m1.x + m1.width / 2, m1.y + m1.height / 2); await page.waitForSelector('.ww-popup button[data-hide]');
+    await page.click('.ww-popup button[data-hide]'); await page.waitForTimeout(500);
+    const n1 = await page.locator('.ww-marker').count();
+    const m2 = await page.locator('.ww-marker').first().boundingBox();
+    await page.mouse.move(m2.x + m2.width / 2, m2.y + m2.height / 2); await page.mouse.down();
+    await page.mouse.move(m2.x + m2.width / 2 + 30, m2.y + m2.height / 2 + 20, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(600);
+    const movedHead = (await page.locator('.ww-popup b').count()) ? await page.textContent('.ww-popup b') : '';
+    const ownInList = /✓|nur eigene Markierung/.test(await page.textContent('#ww-list'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+    const escOk = (await page.locator('.ww-popup').count()) === 0 && /ww-label|Stellen/.test(await page.textContent('#mode-help')) && (await page.locator('.ww-marker').count()) > 0;
+    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+    const escOut = !(await page.locator('#ww-label.on').count());
+    check('Erkannte Stellen: Fenster schließt per Kartenklick, Löschen, Verschieben; Esc behält Analyse', closed && escOk && escOut && n1 === n0 - 1 && /Markiert: Stromschnelle/.test(movedHead) && ownInList, `zu: ${closed} · Marker ${n0} → ${n1} · ${movedHead} · eigene in Liste: ${ownInList}`);
     check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^2 eigene Markierungen \(1 Schwall, 1 kein Schwall; 2 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^2 eigene Markierungen \(0 Schwall, 2 kein Schwall/.test(i2) && /^1 eigene Markierung \(/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
   }
   check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);

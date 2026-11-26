@@ -7,6 +7,7 @@ import { DEFAULT_PARAMS, GRADES, LABEL_KINDS, type Grade, type LabelKind, type R
 const KEY_LABELS = "packraft.wwLabels";
 const KEY_PARAMS = "packraft.wwParams";
 const KEY_MODEL = "packraft.wwModel";
+const KEY_HIDDEN = "packraft.wwHidden";
 export const EXPORT_FORMAT = "packraft-schwallstellen";
 
 function read<T>(key: string, fallback: T): T {
@@ -29,6 +30,11 @@ export const loadLabels = (): WhitewaterLabel[] => validLabels(read<unknown>(KEY
 export const saveLabels = (l: WhitewaterLabel[]) => write(KEY_LABELS, l);
 export const loadParams = (): WhitewaterParams => validParams(read<unknown>(KEY_PARAMS, null)) ?? { ...DEFAULT_PARAMS };
 export const saveParams = (p: WhitewaterParams) => write(KEY_PARAMS, p);
+export const loadHidden = (): LngLat[] => validPoints(read<unknown>(KEY_HIDDEN, []));
+export const saveHidden = (h: LngLat[]) => write(KEY_HIDDEN, h);
+function validPoints(v: unknown): LngLat[] {
+  return Array.isArray(v) ? v.filter((p): p is LngLat => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n))).map((p) => [p[0], p[1]] as LngLat) : [];
+}
 export const loadModels = (): WwModel[] => validModels(read<unknown>(KEY_MODEL, null));
 export const saveModels = (m: WwModel[]) => write(KEY_MODEL, m);
 
