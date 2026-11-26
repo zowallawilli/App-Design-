@@ -26,6 +26,7 @@ import {
   applyLabels, binFeat, GRADES, LABEL_KINDS, labelText, modelProb, modelThreshold, trainModel, type Grade, type LabelKind, type WwModel,
   imageUsable, SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, tunedParams, typicalWidth, widthFactor,
 } from "./whitewater";
+import { ghToken, setGhToken, uploadLabels } from "./githubUpload";
 import { browserDecoder, exportJson, loadLabels, loadModel, loadParams, mergeLabels, parseImport, saveLabels, saveModel, saveParams } from "./whitewaterStore";
 
 // ---------- DOM ----------
@@ -968,12 +969,20 @@ $("ww-learn").addEventListener("click", () => {
   const pos = samples.filter((x) => x.schwall).length, neg = samples.length - pos;
   const m = trainModel(samples);
   if (!m) {
+    showLearnResult(`✗ Noch kein Modell: ${pos} Schwall / ${neg} kein Schwall mit Luftbild-Merkmalen nutzbar (nötig je 5). ${wwLabels.length - samples.length} von ${wwLabels.length} Markierungen haben noch keine Merkmale – die jeweilige Strecke einmal auswerten, dann werden sie ergänzt.`, false);
     return setStatus(`Für das Modell braucht es je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild-Auswertung (bisher ${pos} / ${neg}). ${wwLabels.length - samples.length} Markierungen haben noch keine Luftbild-Merkmale – sie werden ergänzt, sobald du die jeweilige Strecke auswertest (nur bis 60 m neben der Flusslinie, nur mit auswertbarem Luftbild).`, true);
   }
   wwModel = m;
   saveModel(m);
   if (current?.ww?.bins) { current.ww.spots = computeSpots(); showResults(); }
   else renderLabels();
+  const kinds = LABEL_KINDS.map((k) => [k.text, wwLabels.filter((l) => l.feat && l.kind === k.id).length] as const).filter(([, n]) => n);
+  showLearnResult(
+    `✓ Verarbeitet: ${samples.length} von ${wwLabels.length} Markierungen fürs Lernen genutzt (${pos} Schwall, ${neg} kein Schwall${kinds.length ? `; ${kinds.map(([t, n]) => `${t} ${n}`).join(", ")}` : ""}). ` +
+      `Trefferquote an zurückgehaltenen Markierungen: <b>${Math.round(m.acc * 100)} %</b>.` +
+      (wwLabels.length > samples.length ? ` ${wwLabels.length - samples.length} Markierungen noch ohne Luftbild-Merkmale – die zugehörige Strecke auswerten und erneut lernen.` : ""),
+    true,
+  );
   setStatus(`Modell gelernt aus ${pos + neg} Markierungen (${pos} Schwall, ${neg} kein Schwall), alle Flüsse${wwLabels.length > samples.length ? `; ${wwLabels.length - samples.length} weitere noch ohne Luftbild-Merkmale (Strecke dazu auswerten)` : ""}. Trefferquote bei Prüfung an zurückgehaltenen Markierungen: ${Math.round(m.acc * 100)} %.`);
 });
 $("ww-reset").addEventListener("click", () => {
@@ -985,7 +994,34 @@ $("ww-reset").addEventListener("click", () => {
   if (current) showResults();
   else renderLabels();
 });
-$("ww-export").addEventListener("click", () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, exportJson(wwLabels, wwParams, wwModel), "application/json"));
+// Export: mit GitHub-Schlüssel direkt ins Repo (daten/markierungen/), sonst – oder bei Fehler – als Datei
+$("ww-export").addEventListener("click", async () => {
+  const json = exportJson(wwLabels, wwParams, wwModel);
+  const saveFile = () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, json, "application/json");
+  const token = ghToken();
+  if (!token) {
+    saveFile();
+    return setStatus("Als Datei gespeichert. Für den direkten Upload ins Repo den GitHub-Schlüssel unter „Analyse-Parameter“ eintragen.");
+  }
+  setStatus(`Lade ${wwLabels.length} Markierungen zu GitHub hoch …`);
+  try {
+    const r = await uploadLabels(json, token, { count: wwLabels.length });
+    showLearnResult(`✓ ${wwLabels.length} Markierungen hochgeladen nach <a href="${r.url}" target="_blank" rel="noopener">${r.path}</a> – bereit für die Auswertung.`, true);
+    setStatus("");
+  } catch (e) {
+    saveFile();
+    setStatus(`Upload fehlgeschlagen (${(e as Error).message}) – stattdessen als Datei gespeichert.`, true);
+  }
+});
+$<HTMLInputElement>("gh-token").value = ghToken();
+$("gh-token").addEventListener("change", () => setGhToken($<HTMLInputElement>("gh-token").value));
+/** sichtbare Rückmeldung zu Lernen/Upload (bleibt stehen, bis zur nächsten Aktion) */
+function showLearnResult(html: string, ok: boolean) {
+  const el = $("ww-learn-result");
+  el.innerHTML = html;
+  el.classList.toggle("bad", !ok);
+  el.hidden = false;
+}
 $("ww-clear").addEventListener("click", () => {
   if (!wwLabels.length) return setStatus("Keine eigenen Markierungen gespeichert.");
   if (!confirm(`Alle ${wwLabels.length} eigenen Markierungen in diesem Browser löschen? Das gelernte Modell bleibt erhalten. Tipp: vorher „Markierungen exportieren“.`)) return;

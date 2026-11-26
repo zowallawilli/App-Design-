@@ -188,3 +188,5 @@ button.danger { background: #c0392b; color: #fff; }
 .ww-popup button.sel, .ww-popup button.g.sel { background: #e09f3e; color: #fff; border-color: #e09f3e; }
 .ww-popup .lbl-note { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 4px 6px; font: 13px system-ui; }
 .ww-popup button.danger { color: #d62828; }
+.learn-result { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #2a9d8f; background: #2a9d8f14; font-size: 0.85rem; }
+.learn-result.bad { border-left-color: #e09f3e; background: #e09f3e14; }
