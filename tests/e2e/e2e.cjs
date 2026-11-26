@@ -106,6 +106,8 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   const sjNr = (await page.textContent('#narrows-list')).replace(/\s+/g, ' ');
   check('Norwegen: Åmot-Schlucht als Schlucht-/Klammstrecke', /Klamm|Schlucht/.test(sjNr), sjNr.slice(0, 160) + ' | ' + (await page.textContent('#narrows-meta')).slice(0, 120));
   check('Norwegen: Kartverket-Höhenmodell (oder klarer Hinweis bei Störung)', /Kartverket/.test(await stat('Höhenmodell') || ''), `${await stat('Höhenmodell')} · ${await stat('Flusslinie')} · ${await stat('Länge')} · ${await stat('Höhe')}`);
+  const sjWw = (await page.textContent('#ww-list')).replace(/\s+/g, ' ');
+  check('Norwegen: Hinweis statt Stromschnellen (kein auswertbares Luftbild)', /Kein öffentlich auswertbares Luftbild/.test(sjWw) && (await page.locator('.ww-marker').count()) === 0 && (await page.locator('#ww-sens').isHidden()), sjWw.slice(0, 120));
   await page.selectOption('#opt-dem', 'global'); await waitIdle();
   check('Norwegen: Umschalten auf global', /global/.test(await stat('Höhenmodell') || ''), `${await stat('Höhenmodell')} · ${await stat('Höhe')}`);
   await page.selectOption('#opt-dem', 'auto'); await waitIdle();
@@ -160,6 +162,9 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Koritnica: Band im Profil', (await page.locator('#profile .narrow-band').count()) > 0);
   const wwTxt = (await page.textContent('#ww-list')).replace(/\s+/g, ' ');
   check('Koritnica: Schwallstellen im Orthofoto (GURS) gesucht', /Schwallstelle|Gefahrenstelle/.test(wwTxt) && /21\.08\.2023/.test(await page.textContent('#ww-meta')), wwTxt.slice(0, 160));
+  const sens = async (v) => { await page.$eval('#ww-sens', (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input')); }, v); await page.waitForTimeout(300); return page.locator('#ww-list .ww-id').count(); };
+  const n9 = await sens(9), n1 = await sens(1), n5 = await sens(5);
+  check('Empfindlichkeit: Regler ändert die Zahl der Schwallstellen', n9 > n1 && n9 >= n5 && n5 >= n1, `Stufe 1: ${n1} · 5: ${n5} · 9: ${n9} · ${await page.textContent('#ww-sens-out')}`);
   check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
   check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
   // Nutzerregel: keine Gefahrenstelle nur aus dem Höhenmodell; Kluže-Ende ist im 0,25-m-Orthofoto sichtbar → keine

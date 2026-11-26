@@ -177,3 +177,6 @@ button.danger { background: #c0392b; color: #fff; }
 .rot[hidden] { display: none; }
 .rot button { padding: 2px 7px; font-size: 0.85rem; min-width: 28px; }
 .rot button.on { background: var(--accent); color: var(--accent-fg); }
+.ww-sens { align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; }
+.ww-sens input[type="range"] { flex: 1 1 120px; min-width: 100px; max-width: 220px; }
+.ww-noimg { border-left: 3px solid #e09f3e; padding-left: 8px; }

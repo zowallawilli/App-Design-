@@ -357,6 +357,20 @@ Kiesbänke an der Soča – deshalb nur die Flussmitte. Markarfljót,
 Gullfoss und Goðafoss liegen (noch) außerhalb des NÁTT-Mosaiks; Sjoa/Norwegen hat keine offene Bildquelle.
 Der Datensatz ist klein – Schwellen mit weiteren Fällen (eigene Markierungen, neue Mosaik-Gebiete) nachprüfen.
 
+**Empfindlichkeit (Regler 1–9, Standard 5):** Je Stufe ändern sich die Schwellen für Weißwasserdichte und -fläche um
+den Faktor 2^¼ (Stufe 1 = doppelt so streng, „nur große Schwälle“; Stufe 9 = halb so streng), der Mindestanteil mit
+der Wurzel davon. Zusätzlich passt sich die Schwelle der **Flussbreite** an (Median der erkennbaren Wasserbreite):
+Faktor √(Breite/25 m), begrenzt auf 0,8–1,6 – breite Flüsse (Inn, Soča ~45 m) werden strenger bewertet, schmale (Sanna)
+milder. Die Schwelle für „viel Weißwasser“, die zusammen mit einer Steilstufe eine Gefahrenstelle ergibt, hängt nur
+von der Breite ab, nicht vom Regler. Messung bei Stufe 5 (App-Linie): Treffer unverändert (Sanna 2/3, Salzach 3/6),
+weitere Stellen Soča 10 → 8, Koritnica 3 → 2. Stufe 3: Soča 4, Salzach 0/6; Stufe 7: Sanna 3/3, Soča 9, Salzach 11 Stellen.
+Der Regler wird im Browser gespeichert; „Aus Markierungen lernen“ passt die Grundschwelle so an, dass bei der
+aktuellen Stufe und Breite die eigenen Markierungen getroffen werden.
+
+**Ohne auswertbares Luftbild** (Norwegen, Kasachstan, Island außerhalb des NÁTT-Mosaiks …) markiert die App bewusst
+**keine** Stromschnellen, sondern zeigt nur einen deutlichen Hinweis. Liefert die Bildquelle an der Strecke keine
+Bilddaten (in < 30 % der Abschnitte Wasser erkennbar, z. B. leere Kacheln außerhalb des Mosaiks), gilt dasselbe.
+
 **Lernen aus eigenen Markierungen:** „Stellen markieren“ → im Luftbild klicken → „Schwall“ / „kein
 Schwall“. „Aus Markierungen lernen“ passt die Schwelle (m²/m) so an, dass die eigenen Markierungen der
 Strecke möglichst gut getroffen werden. Alles bleibt im Browser (localStorage); „Markierungen
