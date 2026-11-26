@@ -524,6 +524,8 @@ export interface WhitewaterSpot {
   gradient?: number;
   /** liegt an einer Abbruchkante (siehe findBreaklines) */
   hazard?: boolean;
+  /** eigene Markierung an dieser Stelle (bestätigt bzw. nur von dir eingetragen) */
+  own?: WhitewaterLabel;
   notes: string[];
 }
 
@@ -557,7 +559,9 @@ export function imageUsable(bins: WhitewaterBin[]): boolean {
   return bins.length > 0 && bins.filter((b) => b.width !== null).length / bins.length >= 0.3;
 }
 
-export function findSpots(bins: WhitewaterBin[], params: WhitewaterParams = DEFAULT_PARAMS): Omit<WhitewaterSpot, "center" | "notes">[] {
+export function findSpots(
+  bins: WhitewaterBin[], params: WhitewaterParams = DEFAULT_PARAMS, accept?: (b: WhitewaterBin) => boolean,
+): Omit<WhitewaterSpot, "center" | "notes">[] {
   const out: Omit<WhitewaterSpot, "center" | "notes">[] = [];
   let cur: { b0: number; b1: number } | null = null;
   const flush = () => {
@@ -576,7 +580,7 @@ export function findSpots(bins: WhitewaterBin[], params: WhitewaterParams = DEFA
   const GAP = 5; // Bins (50 m) Lücke zusammenfassen
   let gap = 0;
   for (let b = 0; b < bins.length; b++) {
-    if (bins[b].density >= params.spotDensity && bins[b].smooth >= params.minFrac) {
+    if (accept ? accept(bins[b]) : bins[b].density >= params.spotDensity && bins[b].smooth >= params.minFrac) {
       if (!cur) cur = { b0: b, b1: b };
       else cur.b1 = b;
       gap = 0;
@@ -634,12 +638,117 @@ export function describeSpots(
 // ---------------------------------------------------------------------------------------------
 // Lernen aus eigenen Markierungen
 
+/** Art einer eigenen Markierung: vier Arten Schwall, vier Gegenbeispiele */
+export type LabelKind = "schwall" | "walze" | "wehr" | "gefahr" | "kiesbank" | "bruecke" | "ruhig" | "sonstiges";
+export const LABEL_KINDS: { id: LabelKind; text: string; schwall: boolean }[] = [
+  { id: "schwall", text: "Stromschnelle", schwall: true },
+  { id: "walze", text: "Walze / Loch", schwall: true },
+  { id: "wehr", text: "Wehr", schwall: true },
+  { id: "gefahr", text: "Gefahrenstelle", schwall: true },
+  { id: "kiesbank", text: "Kiesbank / Blöcke", schwall: false },
+  { id: "bruecke", text: "Brücke / Schatten", schwall: false },
+  { id: "ruhig", text: "ruhiges Wasser", schwall: false },
+  { id: "sonstiges", text: "sonstiges", schwall: false },
+];
+export const GRADES = ["I", "II", "III", "IV", "V", "VI"] as const;
+export type Grade = (typeof GRADES)[number];
+export const labelText = (l: Pick<WhitewaterLabel, "schwall" | "kind" | "grade">) =>
+  `${LABEL_KINDS.find((k) => k.id === l.kind)?.text ?? (l.schwall ? "Schwall" : "kein Schwall")}${l.schwall && l.grade ? ` · WW ${l.grade}` : ""}${!l.schwall && l.kind ? " (kein Schwall)" : ""}`;
+
+/** Bildmerkmale an einer Markierung (aus der Analyse zum Zeitpunkt der Markierung) – damit lernt das Modell
+ *  über alle Flüsse hinweg, auch wenn die Strecke später nicht mehr geladen ist. */
+export interface LabelFeat { density: number; smooth: number; width: number | null }
+
 export interface WhitewaterLabel {
   p: LngLat;
   /** true = Schwallstelle, false = keine */
   schwall: boolean;
+  kind?: LabelKind;
+  grade?: Grade;
   note?: string;
   date?: string;
+  /** ausgewertete Bildquelle (id) und Merkmale an der Stelle */
+  src?: string;
+  feat?: LabelFeat;
+}
+
+/** Merkmale des 10-m-Abschnitts mit der höchsten Weißwasserdichte im Umkreis ±30 m. */
+export function binFeat(bins: WhitewaterBin[], d: number): LabelFeat | null {
+  const near = bins.filter((b) => Math.abs(b.d + BIN / 2 - d) <= 30);
+  if (!near.length) return null;
+  const b = near.reduce((m, x) => (x.density > m.density ? x : m));
+  return { density: b.density, smooth: b.smooth, width: b.width };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Lernendes Modell (logistische Regression) aus eigenen Markierungen
+
+export interface WwModel { w: number[]; b: number; pos: number; neg: number; /** Trefferquote (Kreuzvalidierung) */ acc: number; date: string }
+/** mindestens so viele Markierungen je Klasse, bevor das Modell die festen Schwellen ersetzt */
+export const MODEL_MIN = 5;
+const xOf = (f: LabelFeat) => [Math.log1p(f.density), f.smooth * 4, Math.log((f.width ?? WIDTH_REF) / WIDTH_REF)];
+export function modelProb(m: WwModel, f: LabelFeat): number {
+  const x = xOf(f);
+  return 1 / (1 + Math.exp(-(m.b + x.reduce((s, v, i) => s + v * m.w[i], 0))));
+}
+function fitLogistic(xs: number[][], ys: number[]): { w: number[]; b: number } {
+  const nP = ys.filter((y) => y).length, nN = ys.length - nP;
+  const wt = ys.map((y) => (y ? ys.length / (2 * nP) : ys.length / (2 * nN))); // Klassen ausgleichen
+  let w = xs[0].map(() => 0), b = 0;
+  const lr = 0.3, l2 = 0.01;
+  for (let it = 0; it < 2000; it++) {
+    const gw = w.map(() => 0);
+    let gb = 0;
+    xs.forEach((x, i) => {
+      const p = 1 / (1 + Math.exp(-(b + x.reduce((s, v, j) => s + v * w[j], 0))));
+      const e = (p - ys[i]) * wt[i];
+      x.forEach((v, j) => (gw[j] += e * v));
+      gb += e;
+    });
+    w = w.map((v, j) => v - lr * (gw[j] / xs.length + l2 * v));
+    b -= (lr * gb) / xs.length;
+  }
+  return { w, b };
+}
+/** Trainiert das Modell; null, solange je Klasse weniger als MODEL_MIN Markierungen mit Merkmalen vorliegen. */
+export function trainModel(samples: { f: LabelFeat; schwall: boolean }[]): WwModel | null {
+  const pos = samples.filter((s) => s.schwall).length, neg = samples.length - pos;
+  if (pos < MODEL_MIN || neg < MODEL_MIN) return null;
+  const xs = samples.map((s) => xOf(s.f)), ys = samples.map((s) => (s.schwall ? 1 : 0));
+  // Trefferquote ehrlich schätzen: 5-fache Kreuzvalidierung
+  let ok = 0;
+  for (let k = 0; k < 5; k++) {
+    const tr = xs.map((_, i) => i).filter((i) => i % 5 !== k), te = xs.map((_, i) => i).filter((i) => i % 5 === k);
+    if (new Set(tr.map((i) => ys[i])).size < 2) { ok += te.length; continue; }
+    const m = fitLogistic(tr.map((i) => xs[i]), tr.map((i) => ys[i]));
+    for (const i of te) ok += (1 / (1 + Math.exp(-(m.b + xs[i].reduce((s, v, j) => s + v * m.w[j], 0)))) >= 0.5 ? 1 : 0) === ys[i] ? 1 : 0;
+  }
+  const { w, b } = fitLogistic(xs, ys);
+  return { w, b, pos, neg, acc: ok / samples.length, date: new Date().toISOString().slice(0, 10) };
+}
+/** Wahrscheinlichkeitsschwelle je Reglerstufe: 5 → 0,5, 1 → 0,88 (nur deutliche), 9 → 0,12 */
+export const modelThreshold = (level: number) => 1 / (1 + Math.exp(-(SENSITIVITY_DEFAULT - level) / 2));
+
+/** Eigene Markierungen auf die Strecke legen: „kein Schwall“ blendet erkannte Stellen aus, eigene Schwälle ohne
+ *  erkannte Stelle kommen hinzu, erkannte Stellen mit eigener Markierung gelten als bestätigt. */
+export function applyLabels(
+  spots: WhitewaterSpot[], labels: { label: WhitewaterLabel; d: number; p: LngLat }[],
+): WhitewaterSpot[] {
+  const inSpot = (s: WhitewaterSpot, d: number) => d >= s.d0 - 25 && d <= s.d1 + 25;
+  const out = spots
+    .filter((s) => !labels.some((l) => !l.label.schwall && inSpot(s, l.d)))
+    .map((s) => {
+      const own = labels.find((l) => l.label.schwall && inSpot(s, l.d));
+      return own ? { ...s, own: own.label, notes: [`von dir markiert: ${labelText(own.label)}`, ...s.notes] } : s;
+    });
+  for (const l of labels) {
+    if (!l.label.schwall || out.some((s) => inSpot(s, l.d))) continue;
+    out.push({
+      d0: l.d - 15, d1: l.d + 15, dPeak: l.d, center: l.p, peakFrac: 0, meanFrac: 0, peakDensity: 0, area: 0, width: null,
+      strong: l.label.kind === "gefahr", own: l.label, notes: [`eigene Markierung: ${labelText(l.label)}`],
+    });
+  }
+  return out.sort((a, b) => a.d0 - b.d0);
 }
 
 /** Merkmal einer Markierung: höchste Weißwasserdichte (m²/m) im Umkreis ±30 m (Stationierung). */

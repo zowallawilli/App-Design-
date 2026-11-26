@@ -104,6 +104,9 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
 - Empfindlichkeits-Regler 1–9 (`tunedParams`: Regler × Flussbreite, localStorage `packraft.wwSensitivity`).
   Ohne auswertbares Luftbild **keine** Schwallstellen, nur deutlicher Hinweis (Nutzerwunsch).
+- Eigene Markierungen (Art + Grad + Notiz, Bildmerkmale) überstimmen die Erkennung (`applyLabels`); Modell
+  `trainModel` (logistische Regression, je ≥ 5 Beispiele) ersetzt die festen Schwellen. Teilen mit anderen Nutzern:
+  GitHub-Konto als Hürde abgelehnt – später gemeinsam brainstormen.
 - Referenzbilder des Nutzers kommen per Upload ins Repo (Ordner „Gefahrenstellen“/„Stromschnellen“) und werden ergänzt.
 - Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
   Zielregionen für später: Island, Skandinavien, Nordamerika, Zentralasien, Neuseeland (Recherche im README).

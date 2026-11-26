@@ -371,10 +371,18 @@ aktuellen Stufe und Breite die eigenen Markierungen getroffen werden.
 **keine** Stromschnellen, sondern zeigt nur einen deutlichen Hinweis. Liefert die Bildquelle an der Strecke keine
 Bilddaten (in < 30 % der Abschnitte Wasser erkennbar, z. B. leere Kacheln außerhalb des Mosaiks), gilt dasselbe.
 
-**Lernen aus eigenen Markierungen:** „Stellen markieren“ → im Luftbild klicken → „Schwall“ / „kein
-Schwall“. „Aus Markierungen lernen“ passt die Schwelle (m²/m) so an, dass die eigenen Markierungen der
-Strecke möglichst gut getroffen werden. Alles bleibt im Browser (localStorage); „Markierungen
-exportieren/importieren“ sichert es als JSON-Datei (inkl. gelernter Schwelle).
+**Eigene Markierungen und lernendes Modell:** „Stellen markieren“ → im Luftbild klicken → Schnellauswahl:
+Grad (WW I–VI, bleibt für die nächste Markierung vorausgewählt) und Art – Schwall: *Stromschnelle, Walze/Loch, Wehr,
+Gefahrenstelle*; kein Schwall: *Kiesbank/Blöcke, Brücke/Schatten, ruhiges Wasser, sonstiges*; optional eine Notiz.
+Ein Klick auf eine vorhandene Markierung öffnet sie zum Ändern oder Löschen (keine Doppelten). Markierungen bleiben
+bei neuen Analysen erhalten und **überstimmen die Erkennung**: „kein Schwall“ blendet eine erkannte Stelle aus, eigene
+Schwälle erscheinen auch ohne Erkennung (grün), erkannte Stellen mit eigener Markierung tragen ein ✓, „Gefahrenstelle“
+erscheint immer als rote Welle. Beim Markieren speichert die App die Bildmerkmale der Stelle (Weißwasserdichte,
+-anteil, Flussbreite, Bildquelle) – so lernt „Aus Markierungen lernen“ ein Modell (logistische Regression) über
+**alle** markierten Flüsse, sobald je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild vorliegen.
+Das Modell ersetzt dann die festen Schwellen; der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
+1 = 88 %, 9 = 12 %). Die Trefferquote wird ehrlich an zurückgehaltenen Markierungen geprüft (5-fache
+Kreuzvalidierung). Alles bleibt im Browser (localStorage); Export/Import als JSON enthält Markierungen und Modell.
 
 
 ### Messung an den Referenzflüssen

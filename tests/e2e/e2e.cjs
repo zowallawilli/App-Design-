@@ -165,6 +165,26 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   const sens = async (v) => { await page.$eval('#ww-sens', (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input')); }, v); await page.waitForTimeout(300); return page.locator('#ww-list .ww-id').count(); };
   const n9 = await sens(9), n1 = await sens(1), n5 = await sens(5);
   check('Empfindlichkeit: Regler ändert die Zahl der Schwallstellen', n9 > n1 && n9 >= n5 && n5 >= n1, `Stufe 1: ${n1} · 5: ${n5} · 9: ${n9} · ${await page.textContent('#ww-sens-out')}`);
+  // eigene Markierung: Schnellauswahl Art + Grad, Klick daneben bearbeitet statt zu doppeln, Löschen
+  {
+    await page.locator('#ww-list li button').first().click(); await page.waitForTimeout(1500); // springt zur Stelle (Kartenmitte)
+    await page.click('#ww-label');
+    const cb = await page.locator('#map canvas').boundingBox();
+    const px = cb.x + cb.width / 2 + 45, py = cb.y + cb.height / 2;
+    const info = async () => (await page.textContent('#ww-learn-info')).replace(/\s+/g, ' ');
+    await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
+    await page.click('.ww-popup button[data-g="III"]'); await page.click('.ww-popup button[data-k="walze"]'); await page.waitForTimeout(400);
+    const i1 = await info();
+    await page.mouse.click(px + 3, py + 2); await page.waitForSelector('.ww-popup');
+    const head = await page.textContent('.ww-popup b');
+    await page.click('.ww-popup button[data-k="kiesbank"]'); await page.waitForTimeout(400);
+    const i2 = await info();
+    await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
+    await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
+    const i3 = await info();
+    await page.click('#ww-label');
+    check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^1 eigene Markierung \(1 Schwall, 0 kein Schwall; 1 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^1 eigene Markierung \(0 Schwall, 1 kein Schwall/.test(i2) && /^0 eigene Markierungen/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
+  }
   check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
   check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
   // Nutzerregel: keine Gefahrenstelle nur aus dem Höhenmodell; Kluže-Ende ist im 0,25-m-Orthofoto sichtbar → keine
