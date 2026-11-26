@@ -58,31 +58,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.evaluate(() => { document.querySelector('#opt-osm').checked = true; });
   check('Referenz ohne OSM: Satellit + Höhenmodell', !/OpenStreetMap/.test(await stat('Flusslinie')) && /Sentinel-2/.test(await stat('Flusslinie')), `${await stat('Flusslinie')} · ${await stat('Länge')} · Status: ${await status()}`);
 
-  // 4 Modus OSM
-  await page.click('[data-mode="osm"]');
-  await view([13.60, 46.33], 12);
-  await clickLL([13.5583, 46.3238]); await waitIdle();
-  check('OSM: Fluss geladen', (await status()).includes('Soča'), await status());
-  check('OSM: Modus Einstieg', (await page.textContent('#mode-help')).includes('Einstieg'));
-  await clickLL([13.6239, 46.338]);
-  await clickLL([13.5583, 46.3238]); await waitIdle();
-  check('OSM: Ergebnis', await resultsVisible(), `${await stat('Länge')} · ${await stat('Höhe')} · Status: ${await status()}`);
-
-  // 5 OSM: Ein- und Ausstieg vertauscht (flussaufwärts geklickt)
-  await page.click('[data-mode="osm"]');
-  await clickLL([13.5583, 46.3238]); await waitIdle();
-  await clickLL([13.5583, 46.3238]);
-  await clickLL([13.6239, 46.338]); await waitIdle();
-  const h = await stat('Höhe');
-  check('OSM vertauscht: fällt trotzdem', h && Number(h.split('→')[0]) > Number(h.split('→')[1].replace(' m', '')), `${h} · Status: ${await status()}`);
-
-  // 6 OSM: Klick ins Leere (Fehler)
-  osmMode = 'empty';
-  await page.route(/overpass/, r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: osmMode === 'empty' ? '{"elements":[]}' : mock }));
-  await page.click('[data-mode="osm"]');
-  await clickLL([13.62, 46.30]); await waitIdle();
-  check('OSM leer: Fehlermeldung, Modus bleibt', (await page.textContent('#mode-help')).includes('Fluss in der Karte') && (await status()).includes('Kein Gewässer'), await status());
-  osmMode = 'ok';
+  check('Modus „Fluss aus OSM“ entfernt', (await page.locator('[data-mode="osm"]').count()) === 0);
 
   // 7 Ein-/Ausstieg (Koritnica, ohne OSM)
   await page.evaluate(() => { document.querySelector('#opt-osm').checked = false; });
@@ -92,6 +68,33 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await clickLL([13.5694, 46.3242]); await waitIdle();
   check('Ein-/Ausstieg Koritnica: Ergebnis mit Satellit', await resultsVisible() && /Sentinel-2/.test(await stat('Flusslinie')), `${await stat('Flusslinie')} · ${await stat('Länge')} · ${await stat('Ø Gefälle')}`);
   await page.locator('#map').screenshot({ path: S + '/e2e-koritnica.png' });
+  // Ein-/Ausstieg verschieben und Strecke über Zwischenpunkte bearbeiten
+  {
+    const len = async () => parseFloat((await stat('Länge')).replace(',', '.'));
+    const L0 = await len();
+    const dragTo = async (loc, ll) => {
+      const b = await loc.boundingBox();
+      const pt = await page.evaluate((ll) => window.__map.project(ll), ll);
+      const box = await page.locator('#map canvas').boundingBox();
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height - 2); await page.mouse.down();
+      await page.mouse.move(box.x + pt.x, box.y + pt.y - 6, { steps: 10 }); await page.mouse.up();
+      await waitIdle();
+    };
+    await dragTo(page.locator('.endpoint', { hasText: 'Ausstieg' }), [13.5752, 46.3318]);
+    const L1 = await len();
+    check('Ausstieg verschieben → Strecke neu berechnet (kürzer)', L1 < L0 - 0.3 && /von Hand angepasst/.test(await stat('Flusslinie')), `${L0} → ${L1} km · ${await stat('Flusslinie')}`);
+    await page.click('#edit-btn');
+    const mid = await page.evaluate(() => { const f = window.__map.querySourceFeatures('section').flatMap((x) => x.geometry.coordinates); return f[Math.floor(f.length / 2)]; });
+    await clickLL(mid);
+    const h1 = await page.locator('.edit-handle').count();
+    await dragTo(page.locator('.edit-handle').first(), [mid[0] + 0.002, mid[1]]);
+    const h2 = await page.locator('.edit-handle').count();
+    const L2 = await len();
+    await page.locator('.edit-handle').first().click(); await waitIdle();
+    const h3 = await page.locator('.edit-handle').count();
+    await page.keyboard.press('Escape');
+    check('Strecke bearbeiten: Zwischenpunkt einfügen, ziehen, löschen', h1 === 1 && h2 === 1 && h3 === 0 && (await resultsVisible()) && !(await page.locator('#edit-btn.on').count()), `Griffe ${h1}/${h2}/${h3} · ${L1} → ${L2} km`);
+  }
 
   // 8 Ein-/Ausstieg vertauscht → Linie trotzdem, Richtung korrigiert
   await page.click('[data-mode="route"]');
@@ -163,6 +166,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.waitForFunction(() => !/Wird geladen/.test(document.querySelector('#flow-info').textContent), null, { timeout: 60000 }).catch(() => {});
   const fi = (await page.textContent('#flow-info')).replace(/\s+/g, ' ');
   check('Luftbild-Datum + Hinweise, keine Modellzahl', /21\.08\.2023/.test(fi) && /eher niedrig|unauffällig|eher erhöht|eher hoch/.test(fi) && !/Modell/.test(fi), fi.slice(0, 160));
+  check('Regime (Gletscher/Schnee/Regen) statt Wetterdaten', /Abflussregime: (Gletscherfluss|Schneeschmelze|Regen)/.test(fi) && !/Open-Meteo|Wetterdaten|mm Regen/.test(fi), fi.slice(0, 200));
   await page.click('#tour-next'); await page.waitForTimeout(1500);
   check('Stellen-Tour zoomt ins Luftbild', (await page.evaluate(() => window.__map.getZoom())) > 17, await page.textContent('#tour-label'));
   check('Referenz Koritnica', await resultsVisible(), `${await stat('Länge')} · ${await stat('Ø Gefälle')} · ${await stat('Literatur')}`);
@@ -267,6 +271,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.fill('.ww-popup .lbl-note', 'Sandbank links');
     await page.click('.ww-popup button[data-k="lager"]'); await page.waitForTimeout(400);
     const n1 = await page.locator('.own-marker').count();
+    const icoOk = /<svg/.test(await page.locator('.own-marker').last().innerHTML()) && !(await page.locator('.own-marker').last().textContent()).trim();
     const lab = () => page.evaluate(() => JSON.parse(localStorage.getItem('packraft.wwLabels')).find((l) => l.kind === 'lager'));
     const l1 = await lab();
     const mk = await page.locator('.own-marker').last().boundingBox();
@@ -277,7 +282,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
     const n2 = await page.locator('.own-marker').count();
     await page.click('#own-btn');
-    check('Eigene Stellen weltweit ohne Analyse: setzen (Lagerplatz + Notiz), verschieben, löschen; ohne Lern-Arten', noLearn && n1 === n0 + 1 && l1 && l1.note === 'Sandbank links' && l1.show && !l1.feat && l2 && l2.p[0] !== l1.p[0] && /Markiert: Lagerplatz/.test(head) && n2 === n0, `${n0} → ${n1} → ${n2} · ${head}`);
+    check('Eigene Stellen weltweit ohne Analyse: setzen (Lagerplatz + Notiz, Zelt-Symbol), verschieben, löschen; ohne Lern-Arten', noLearn && icoOk && n1 === n0 + 1 && l1 && l1.note === 'Sandbank links' && l1.show && !l1.feat && l2 && l2.p[0] !== l1.p[0] && /Markiert: Lagerplatz/.test(head) && n2 === n0, `${n0} → ${n1} → ${n2} · ${head}`);
     await page.evaluate(() => { const c = document.querySelector('#opt-ww'); c.checked = true; c.dispatchEvent(new Event('change')); });
   }
   await page.selectOption('#preset', 'soca-trenta-kobarid');
@@ -329,10 +334,10 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   {
     const vis = () => page.evaluate(() => window.__map.getLayoutProperty('catch-line', 'visibility'));
     const v0 = await vis();
-    await page.click('#flow-info details.more > summary'); await page.check('#show-catch'); await page.waitForTimeout(300);
+    await page.click('#flow-info details.more > summary'); await page.uncheck('#show-catch'); await page.waitForTimeout(300);
     const v1 = await vis();
-    await page.uncheck('#show-catch');
-    check('Einzugsgebiet standardmäßig aus, per „Einzugsgebiet zeigen“ ein', v0 === 'none' && v1 === 'visible', `${v0} → ${v1}`);
+    await page.check('#show-catch');
+    check('Einzugsgebiet standardmäßig an (blau gestrichelt), abschaltbar', v0 === 'visible' && v1 === 'none', `${v0} → ${v1}`);
   }
   // 15 Profil-Hover
   await page.hover('#profile svg', { position: { x: 600, y: 100 } });

@@ -35,16 +35,17 @@
         <section>
           <span class="lbl">Eigene Strecke festlegen</span>
           <div class="modes" role="group" aria-label="Modus">
-            <button data-mode="osm" title="Gewässer aus OpenStreetMap laden, dann Ein- und Ausstieg anklicken">Fluss aus OSM</button>
             <button data-mode="route" title="Ein- und Ausstieg anklicken – der Flusslauf dazwischen wird aus Satellitenbild, OSM und Höhenmodell nachgezogen">Ein-/Ausstieg</button>
             <button data-mode="draw" title="Strecke flussabwärts Punkt für Punkt zeichnen">Zeichnen</button>
           </div>
+          <label id="edit-opts" class="check" hidden><input type="checkbox" id="edit-trace" checked /> geänderte Teilstücke am Fluss nachziehen <span class="hint">(aus = gerade Linie, z. B. für eigene Linien)</span></label>
           <p id="mode-help" class="hint">Wähle einen Modus oder lade die Referenzstrecke.</p>
           <div class="row">
             <button id="finish-draw" hidden>Zeichnen beenden</button>
             <button id="undo-draw" class="ghost" hidden>Letzten Punkt löschen</button>
             <button id="reset" class="ghost">Zurücksetzen</button>
             <button id="wave-btn" class="ghost" title="Kämme einer Wellenfolge im Luftbild anklicken → Wellenabstand und Fließgeschwindigkeit">Wellen messen</button>
+            <button id="edit-btn" class="ghost" title="Strecke anpassen: Ein-/Ausstieg und Zwischenpunkte ziehen, Punkte einfügen oder löschen">Strecke bearbeiten</button>
             <button id="own-btn" class="ghost" title="Eigene Stellen setzen, verschieben, löschen (Stromschnelle, Gefahr, Umtragen, Lager …) – weltweit, gespeichert in diesem Browser, im GPX">Eigene Stellen</button>
             <button id="cancel" class="danger" hidden>Berechnung abbrechen</button>
           </div>

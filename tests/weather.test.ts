@@ -96,3 +96,22 @@ describe("Einzugsgebiet: Fläche und Reaktionszeit", () => {
     expect(c.hints.some((h) => /Speicher\/Kraftwerke oberhalb \(Gepatschspeicher\)/.test(h.text))).toBe(true);
   });
 });
+
+describe("Regime: Gletscher-, Schneeschmelze oder Regen", async () => {
+  const { regimeOf, seasonHint, snowElevation } = await import("../src/weather");
+  it("erkennt Gletscher vor Schnee vor Regen", () => {
+    expect(regimeOf({ pct: 9.3 }, 3700, 47).kind).toBe("gletscher");
+    expect(regimeOf({ areaKm2: 0 }, 2400, 46.3).kind).toBe("schnee");
+    expect(regimeOf({ areaKm2: 0 }, 700, 49.8).kind).toBe("regen");
+    expect(regimeOf(null, 700, 61).kind).toBe("schnee"); // im Norden liegt auch tief Schnee
+    expect(regimeOf(null, undefined, 47).kind).toBe("regen");
+    expect(regimeOf({ areaKm2: 0 }, 2400, 46.3).text).toMatch(/2\.400 m/);
+    expect(snowElevation(-45)).toBe(snowElevation(45));
+  });
+  it("Jahreszeit nach Regime, Südhalbkugel versetzt", () => {
+    expect(seasonHint([75, 42], "2026-05-10", false, "schnee")?.effect).toBe(1); // Tian Shan im Mai
+    expect(seasonHint([75, 42], "2026-12-10", false, "schnee")?.effect).toBe(-1);
+    expect(seasonHint([170, -44], "2026-11-10", false, "schnee")?.effect).toBe(1); // Neuseeland im November = Mai
+    expect(seasonHint([11, 47.8], "2026-05-10", false, "regen")).toBeNull(); // Voralpenfluss: keine Schneeschmelze
+  });
+});

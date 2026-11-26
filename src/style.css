@@ -210,3 +210,9 @@ button.linkish { background: none; border: 0; padding: 0; color: inherit; font: 
 .own-marker { border-radius: 50%; border-color: #ffd166; }
 .osm-marker { border-radius: 5px; opacity: 0.92; }
 .ww-popup .lbl-plan button { font-size: 0.8rem; }
+.own-marker, .osm-marker { position: relative; }
+.own-marker .badge, .osm-marker .badge, .hotspots .ww-id .badge { position: absolute; right: -9px; bottom: -7px; background: #fff; color: #102027; font: 700 9px/1 system-ui; padding: 2px 3px; border-radius: 6px; box-shadow: 0 0 0 1px #0004; }
+.hotspots .ww-id { position: relative; }
+.ww-popup button[data-k] svg { vertical-align: -3px; }
+.regime { margin: 4px 0 8px; font-size: 0.88rem; }
+.edit-handle { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #264653; box-shadow: 0 1px 3px #0008; cursor: grab; }

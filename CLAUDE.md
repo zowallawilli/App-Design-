@@ -36,14 +36,15 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 
 | Datei | Inhalt |
 |---|---|
-| `src/main.ts` | UI, Modi (OSM / Ein-/Ausstieg / Zeichnen / Wellen), Abbrechen, Ergebnisanzeige, Abfluss-Tabelle |
+| `src/main.ts` | UI, Modi (Ein-/Ausstieg / Zeichnen / Strecke bearbeiten / Wellen / Eigene Stellen), Abbrechen, Ergebnisanzeige, Abfluss-Tabelle |
+| `src/icons.ts` | Strich-Symbole für eigene und OSM-Stellen (sprachunabhängig, keine Buchstaben) |
 | `src/route.ts` | Flusslauf zwischen Ein-/Ausstieg: Least-Cost-Pfad aus OSM + Sentinel-2 (NDWI) + Höhenmodell |
 | `src/analysis.ts` | Profil (isoton, geglättet), Gefälleklassen, Hotspots, Steilstufen (≥ 8 m / 100 m) |
 | `src/narrows.ts` | Schluchten (Talquerschnitt), verdeckte Klammen, optionale Sentinel-Engstellen |
 | `src/power.ts` | Wucht = Strömungsleistung Ω = ρ·g·Q·S, kombinierte Bewertung, Wellen → Fließgeschwindigkeit |
 | `src/discharge.ts` | GloFAS (Open-Meteo Flood API) – nur noch intern zur Pegelauswahl, nicht anzeigen; Länderlinks zu Pegeln |
 | `src/catchment.ts` | Einzugsgebiet oberhalb (Fluss + Zubringer flussaufwärts verfolgen, Bezugspunkte fürs Wetter, Fläche, Speicher) |
-| `src/weather.ts` | Hinweise ohne Pegel: Regen (verbreitet/örtlich)/Schnee/Schmelze/Gletscher im Einzugsgebiet + Jahreszeit → Tendenz; Zeitfenster nach Gebietsgröße |
+| `src/weather.ts` | Hinweise ohne Pegel: Jahreszeit + Abflussregime (`regimeOf`: Gletscher / Schneeschmelze / Regen) → Tendenz. Wetterabfrage (Open-Meteo) **eingefroren** seit 26.11.2026, Code bleibt |
 | `src/gauges.ts` | Offizielle Pegel: SMHI, SYKE, NVE, PEGELONLINE, BAFU, ARSO, HD Tirol, Hub'Eau (FR), Südtirol; `matchGauge` (auch Pegel bis 5 km ober-/unterhalb, interpoliert) |
 | `src/estimate.ts` | Abfluss für Pegel ohne Q aus Nachbarpegeln (Einzugsgebiet, Flusskilometer, Ausleitungs-Erkennung) |
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
@@ -95,6 +96,15 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - **Charyn/Şarın (KZ)** [79.1009, 43.3599] → [79.1631, 43.4215] (Zoom 12.6): Esri 0,34 m, aber nur bis Stufe 17 → Testfall Vergrößerung/„Schärfer ↗“.
 - **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
+## Umbau 26.11.2026 (zweite Runde, Nutzerentscheidung)
+- „Fluss aus OSM“ entfernt (lud zu lange). Strecke: Ein-/Ausstieg, Zeichnen, Referenz; Ein-/Ausstieg-Schilder ziehbar,
+  Modus „Strecke bearbeiten“ (`routeEdit`: Ankerpunkte + Teilstücke, nachgezogen oder gerade).
+- Keine konkreten Wetterdaten; Hinweise aus Jahreszeit, Aufnahmedatum, Regime; Einzugsgebiet standardmäßig sichtbar.
+- Pegel nur gemessen und selber Fluss (keine Schätzungen anzeigen, `estimate.ts` bleibt im Code).
+- Eigene/OSM-Stellen mit Symbolen statt Buchstaben (`src/icons.ts`).
+- Geplant (PR B): Tour-Liste mit mehreren Flüssen, Nebenflüsse blau gestrichelt + per Klick analysieren,
+  Verbindungswege zwischen Flusstälern (zwei Flüsse wählen → bestes Tal + Alternativen, oder zwei Punkte; Ziel kürzeste Gehzeit).
+
 ## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
 - Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter
   „Analyse-Parameter“ als experimentell; Regler/Grad/Lernen eingeklappt (`#ww-tune`). Code nicht löschen.
@@ -103,7 +113,7 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Ohne Luftbild-Auswertung keine Gefahrenstellen „Abbruchkante“/„Stufe mit Weißwasser“ – nur „nicht einsehbare Klamm“
   und eigene Gefahrenstelle/Holz; Steilstrecken zeigt die Gefälle-Farbe.
 - Nächste Schwerpunkte: weltweit Wirksames (OSM-Stellen ✓, Pegel weiterer Länder, Qualität Gefälle/Steilstufen/Schluchten).
-  Idee Nutzer: Wanderverbindungen zwischen Flüssen (Least-Cost-Pfad über Höhenmodell + OSM-Wege) – noch nicht umsetzen.
+  Wanderverbindungen zwischen Flüssen: siehe „Umbau 26.11.2026“ (PR B).
 
 ## Schwallstellen (Weißwasser) – Vorgaben des Nutzers (Funktion experimentell)
 - Nur markieren, nicht einschätzen; Schwallstellen mit Wellensymbol ohne Nummer. Wehre ebenfalls markieren.

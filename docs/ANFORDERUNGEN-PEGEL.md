@@ -1,4 +1,9 @@
-# Arbeitsauftrag: Pegel, Wasserstand und Hinweise (Stand 25.11.2026)
+# Arbeitsauftrag: Pegel, Wasserstand und Hinweise (Stand 25.11.2026, geändert 26.11.2026)
+
+> **Änderung 26.11.2026 (Nutzer):** keine konkreten Wetterdaten mehr – Wetterabfrage eingefroren. Hinweise nur aus
+> Jahreszeit, Aufnahmedatum und Abflussregime (Gletscher- oder Schneeschmelze oder Regen, aus Gletschern und Höhe des
+> Einzugsgebiets). Einzugsgebiet im Oberlauf auf der Karte markieren. Pegel nur, wenn gemessen und am selben Fluss –
+> keine Schätzungen aus Nachbarpegeln mehr anzeigen. Abschnitt 2 (Wetterhinweise) gilt deshalb nicht mehr.
 
 Gesammelte Anforderungen des Nutzers. Gilt zusätzlich zu `CLAUDE.md`.
 
