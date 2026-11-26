@@ -7,6 +7,7 @@ import { DEFAULT_PARAMS, GRADES, LABEL_KINDS, type Grade, type LabelKind, type R
 const KEY_LABELS = "packraft.wwLabels";
 const KEY_PARAMS = "packraft.wwParams";
 const KEY_MODEL = "packraft.wwModel";
+const KEY_HIDDEN = "packraft.wwHidden";
 export const EXPORT_FORMAT = "packraft-schwallstellen";
 
 function read<T>(key: string, fallback: T): T {
@@ -29,18 +30,23 @@ export const loadLabels = (): WhitewaterLabel[] => validLabels(read<unknown>(KEY
 export const saveLabels = (l: WhitewaterLabel[]) => write(KEY_LABELS, l);
 export const loadParams = (): WhitewaterParams => validParams(read<unknown>(KEY_PARAMS, null)) ?? { ...DEFAULT_PARAMS };
 export const saveParams = (p: WhitewaterParams) => write(KEY_PARAMS, p);
-export const loadModel = (): WwModel | null => validModel(read<unknown>(KEY_MODEL, null));
-export const saveModel = (m: WwModel | null) => (m ? write(KEY_MODEL, m) : (() => { try { localStorage.removeItem(KEY_MODEL); } catch { /* egal */ } })());
+export const loadHidden = (): LngLat[] => validPoints(read<unknown>(KEY_HIDDEN, []));
+export const saveHidden = (h: LngLat[]) => write(KEY_HIDDEN, h);
+function validPoints(v: unknown): LngLat[] {
+  return Array.isArray(v) ? v.filter((p): p is LngLat => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n))).map((p) => [p[0], p[1]] as LngLat) : [];
+}
+export const loadModels = (): WwModel[] => validModels(read<unknown>(KEY_MODEL, null));
+export const saveModels = (m: WwModel[]) => write(KEY_MODEL, m);
 
-export function exportJson(labels: WhitewaterLabel[], params: WhitewaterParams, model: WwModel | null = null): string {
-  return JSON.stringify({ format: EXPORT_FORMAT, version: 2, exported: new Date().toISOString(), params, model, labels }, null, 1);
+export function exportJson(labels: WhitewaterLabel[], params: WhitewaterParams, models: WwModel[] = []): string {
+  return JSON.stringify({ format: EXPORT_FORMAT, version: 3, exported: new Date().toISOString(), params, models, labels }, null, 1);
 }
 
 /** Liest eine exportierte Datei; wirft bei falschem Format. */
-export function parseImport(text: string): { labels: WhitewaterLabel[]; params: WhitewaterParams | null; model: WwModel | null } {
-  const j = JSON.parse(text) as { format?: string; labels?: unknown; params?: unknown; model?: unknown };
+export function parseImport(text: string): { labels: WhitewaterLabel[]; params: WhitewaterParams | null; models: WwModel[] } {
+  const j = JSON.parse(text) as { format?: string; labels?: unknown; params?: unknown; model?: unknown; models?: unknown };
   if (j.format !== EXPORT_FORMAT) throw new Error("Keine Schwallstellen-Datei dieser App.");
-  return { labels: validLabels(j.labels), params: validParams(j.params), model: validModel(j.model) };
+  return { labels: validLabels(j.labels), params: validParams(j.params), models: validModels(j.models ?? j.model ?? null) };
 }
 
 /** Zusammenführen; Markierungen im Umkreis von 5 m gelten als dieselbe (neuere gewinnt). */
@@ -72,12 +78,17 @@ function validLabels(v: unknown): WhitewaterLabel[] {
     });
 }
 
+/** Liste der Grad-Modelle; ein einzelnes älteres Modell gilt als „alle Schwälle“ (Stufe 1). */
+function validModels(v: unknown): WwModel[] {
+  const arr = Array.isArray(v) ? v : v ? [v] : [];
+  return arr.map(validModel).filter((m): m is WwModel => !!m);
+}
 function validModel(v: unknown): WwModel | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Record<string, unknown>;
   const num = (x: unknown) => typeof x === "number" && Number.isFinite(x);
   if (!Array.isArray(o.w) || o.w.length !== 3 || !o.w.every(num) || !num(o.b)) return null;
-  return { w: o.w as number[], b: o.b as number, pos: num(o.pos) ? (o.pos as number) : 0, neg: num(o.neg) ? (o.neg as number) : 0, acc: num(o.acc) ? (o.acc as number) : 0, accFixed: num(o.accFixed) ? (o.accFixed as number) : undefined, date: typeof o.date === "string" ? o.date.slice(0, 10) : "" };
+  return { w: o.w as number[], b: o.b as number, pos: num(o.pos) ? (o.pos as number) : 0, neg: num(o.neg) ? (o.neg as number) : 0, acc: num(o.acc) ? (o.acc as number) : 0, accFixed: num(o.accFixed) ? (o.accFixed as number) : undefined, minGrade: num(o.minGrade) ? Math.min(4, Math.max(1, Math.round(o.minGrade as number))) : 1, date: typeof o.date === "string" ? o.date.slice(0, 10) : "" };
 }
 
 function validParams(v: unknown): WhitewaterParams | null {

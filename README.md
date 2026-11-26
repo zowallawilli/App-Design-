@@ -402,8 +402,13 @@ liegendes Band, Länge, Rauheit der Wasseroberfläche – bestes Modell 69 %, fe
 angepasste Schwelle 69 % (je 5-fache Kreuzvalidierung, 20 Wiederholungen). Ursachen im Bild: (1) „kein Schwall“ steht
 auch an Stellen mit echtem Weißwasser zwischen Blöcken (für den Nutzer nicht relevant genug) – es geht um
 *Relevanz/Schwierigkeit*, nicht um Weißwasser; (2) Kalkkies und flaches, helles Bett an der Soča sieht wie Weißwasser
-aus; (3) Walzen und Wellenzüge am großvolumigen, milchigen Inn zeigen kaum Schaum. Nächster Schritt: Grad statt
-Ja/Nein lernen und kleine Schwälle als „Stromschnelle WW I“ statt „kein Schwall“ markieren. Neue Markierungen sind standardmäßig **nur zum Lernen**;
+aus; (3) Walzen und Wellenzüge am großvolumigen, milchigen Inn zeigen kaum Schaum. Deshalb **lernt die App seit 11/2026 den Grad**: je Stufe
+„alle Schwälle“, „ab WW II“, „ab WW III“, „ab WW IV“ ein eigenes Modell (Schwall unter der Stufe und „kein Schwall“ =
+Gegenbeispiel, Schwall ohne Grad zählt nur bei „alle“). Die Auswahl „Schwälle ab …“ neben dem Regler wählt die Stufe;
+ein Modell gilt nur, wenn es die feste Schwelle um ≥ 3 Prozentpunkte schlägt und ≥ 65 % trifft, sonst bleibt die feste
+Schwelle (mit Hinweis). Mit den ersten Daten: „alle“ 60 % (Schwelle 70 %) → Schwelle; „ab WW II“ 73 % (Schwelle 66 %,
+nur 14 Schwälle ab WW II) → Modell; „ab WW III/IV“ zu wenige. Kleine, unwichtige Schwälle daher als „Stromschnelle WW I“
+markieren statt „kein Schwall“. Neue Markierungen sind standardmäßig **nur zum Lernen**;
 mit dem Häkchen „auch später in der Karte anzeigen“ erscheinen sie als eigene Stelle bzw. blenden Erkennungen aus.
 Sonst gilt: der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
 1 = 88 %, 9 = 12 %). Die Trefferquote wird ehrlich an zurückgehaltenen Markierungen geprüft (5-fache
@@ -411,6 +416,13 @@ Kreuzvalidierung). Alles bleibt im Browser (localStorage); Export/Import als JSO
 Markierungen sind nur im Modus „Stellen markieren“ als Punkte sichtbar; ältere Markierungen ohne Bildmerkmale bekommen
 sie bei jeder Analyse der Strecke automatisch. „Aus Markierungen lernen“ zeigt eine bleibende Rückmeldung, wie viele
 Markierungen genutzt wurden (je Art) und wie viele noch Merkmale brauchen.
+
+**Nachbearbeiten erkannter Stellen (Modus „Stellen markieren“):** Wellensymbol anklicken → Art/Grad bestätigen
+(wird eigene, angezeigte Markierung) oder „Erkannte Stelle löschen“ (nur ausblenden, zählt nicht fürs Lernen);
+Wellensymbol ziehen → die erkannte Stelle wird ausgeblendet und an der neuen Position als eigene Markierung
+übernommen (eigene Stellen wandern einfach mit). Klick neben das Auswahlfenster schließt es; Esc schließt das Fenster
+bzw. beendet den Modus (die Analyse bleibt). „Aus Markierungen lernen“ und „Markierungen exportieren“ stehen direkt
+neben „Stellen markieren“.
 
 **Direkt ins Repo hochladen (Repo-Inhaber):** Mit einem persönlichen fein eingeschränkten GitHub-Schlüssel (nur dieses
 Repo, „Contents: Read and write“, unter „Analyse-Parameter“ eintragen, bleibt nur im Browser) lädt „Markierungen

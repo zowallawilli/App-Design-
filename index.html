@@ -148,22 +148,24 @@
             <label for="ww-sens" title="Wie empfindlich Weißwasser als Schwallstelle markiert wird. Die Schwelle passt sich zusätzlich der Flussbreite an (breite Flüsse strenger).">Empfindlichkeit</label>
             <input type="range" id="ww-sens" min="1" max="9" step="1" value="5" aria-describedby="ww-sens-out" />
             <span id="ww-sens-out" class="hint"></span>
+            <label for="ww-mingrade" title="Mit gelerntem Modell nur Schwälle ab diesem Grad zeigen (lernt aus deinen Markierungen mit Grad)">Schwälle ab</label>
+            <select id="ww-mingrade"><option value="1">alle</option><option value="2">WW II</option><option value="3">WW III</option><option value="4">WW IV</option></select>
           </div>
           <ol id="ww-list" class="hotspots"></ol>
           <details class="more"><summary>Bildquelle &amp; Hinweise</summary><p id="ww-meta" class="hint"></p></details>
           <div class="row ww-tools">
-            <button id="ww-label" class="ghost" title="Bekannte Schwallstellen (oder ruhige Stellen) im Luftbild anklicken und bewerten">Stellen markieren</button>
+            <button id="ww-label" class="ghost" title="Stellen im Luftbild anklicken und einordnen; erkannte Stellen anklicken (bearbeiten/löschen) oder ziehen (verschieben)">Stellen markieren</button>
+            <button id="ww-learn" class="ghost" title="Modelle aus allen eigenen Markierungen lernen (je Grad)">Aus Markierungen lernen</button>
+            <button id="ww-export" class="ghost" title="Mit GitHub-Schlüssel direkt ins Repo, sonst als Datei">Markierungen exportieren</button>
           </div>
-          <details class="more"><summary>Markierungen verwalten &amp; lernen</summary>
+          <p id="ww-learn-result" class="learn-result" hidden></p>
+          <details class="more"><summary>Markierungen verwalten</summary>
           <div class="row ww-tools">
-            <button id="ww-learn" class="ghost" title="Schwelle der Erkennung an die eigenen Markierungen dieser Strecke anpassen">Aus Markierungen lernen</button>
-            <button id="ww-export" class="ghost">Markierungen exportieren</button>
             <button id="ww-import" class="ghost">Importieren</button>
             <button id="ww-reset" class="ghost" title="Gelernte Schwelle verwerfen (Markierungen bleiben)">Schwelle zurücksetzen</button>
             <button id="ww-clear" class="ghost" title="Alle eigenen Markierungen in diesem Browser löschen (vorher exportieren!)">Alle Markierungen löschen</button>
             <input type="file" id="ww-file" accept="application/json,.json" hidden />
           </div>
-          <p id="ww-learn-result" class="learn-result" hidden></p>
           <p id="ww-learn-info" class="hint"></p>
           </details>
           <h3>Engstellen &amp; Schluchten</h3>
