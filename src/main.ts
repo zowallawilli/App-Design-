@@ -306,6 +306,7 @@ let lastSection: { line: LngLat[]; name: string; source: string; literature?: st
 let markers: maplibregl.Marker[] = [];
 /** Schwallstellen-Marker (im Markier-Modus ziehbar) */
 let wwMarkers: maplibregl.Marker[] = [];
+let lastDragEnd = 0;
 let chart: { highlight: (d: number | null) => void } | null = null;
 /** Jeder neue Vorgang erhöht den Zähler; ältere Ergebnisse werden verworfen. */
 let runId = 0;
@@ -883,7 +884,7 @@ function renderWhitewater(a: Analysis) {
       focusWw(i);
     });
     mk.on("dragstart", () => { dragged = true; labelPopup?.remove(); });
-    mk.on("dragend", () => moveSpot(s, [mk.getLngLat().lng, mk.getLngLat().lat]));
+    mk.on("dragend", () => { lastDragEnd = Date.now(); moveSpot(s, [mk.getLngLat().lng, mk.getLngLat().lat]); });
     markers.push(mk);
     wwMarkers.push(mk);
   });
@@ -1721,7 +1722,8 @@ map.on("click", async (e) => {
       break;
     }
     case "ww-label":
-      // Klick neben ein offenes Auswahlfenster schließt es nur
+      // Klick neben ein offenes Auswahlfenster schließt es nur (nicht direkt nach dem Ziehen eines Symbols)
+      if (Date.now() - lastDragEnd < 400) break;
       if (labelPopup?.isOpen()) { labelPopup.remove(); labelPopup = null; break; }
       addLabelAt(p);
       break;

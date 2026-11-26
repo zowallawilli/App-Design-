@@ -212,6 +212,8 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.mouse.click(m1.x + m1.width / 2, m1.y + m1.height / 2); await page.waitForSelector('.ww-popup button[data-hide]');
     await page.click('.ww-popup button[data-hide]'); await page.waitForTimeout(500);
     const n1 = await page.locator('.ww-marker').count();
+    await page.locator('#ww-list li button').first().click(); await page.waitForTimeout(1500); // zur verbliebenen Stelle springen
+    if (await page.locator('.ww-popup').count()) await page.keyboard.press('Escape');
     const m2 = await page.locator('.ww-marker').first().boundingBox();
     await page.mouse.move(m2.x + m2.width / 2, m2.y + m2.height / 2); await page.mouse.down();
     await page.mouse.move(m2.x + m2.width / 2 + 30, m2.y + m2.height / 2 + 20, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(600);

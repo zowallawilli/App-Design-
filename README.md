@@ -417,6 +417,13 @@ Markierungen sind nur im Modus „Stellen markieren“ als Punkte sichtbar; ält
 sie bei jeder Analyse der Strecke automatisch. „Aus Markierungen lernen“ zeigt eine bleibende Rückmeldung, wie viele
 Markierungen genutzt wurden (je Art) und wie viele noch Merkmale brauchen.
 
+**Nachbearbeiten erkannter Stellen (Modus „Stellen markieren“):** Wellensymbol anklicken → Art/Grad bestätigen
+(wird eigene, angezeigte Markierung) oder „Erkannte Stelle löschen“ (nur ausblenden, zählt nicht fürs Lernen);
+Wellensymbol ziehen → die erkannte Stelle wird ausgeblendet und an der neuen Position als eigene Markierung
+übernommen (eigene Stellen wandern einfach mit). Klick neben das Auswahlfenster schließt es; Esc schließt das Fenster
+bzw. beendet den Modus (die Analyse bleibt). „Aus Markierungen lernen“ und „Markierungen exportieren“ stehen direkt
+neben „Stellen markieren“.
+
 **Direkt ins Repo hochladen (Repo-Inhaber):** Mit einem persönlichen fein eingeschränkten GitHub-Schlüssel (nur dieses
 Repo, „Contents: Read and write“, unter „Analyse-Parameter“ eintragen, bleibt nur im Browser) lädt „Markierungen
 exportieren“ die Datei direkt nach `daten/markierungen/markierungen-<Datum>-<Uhrzeit>.json` (GitHub-Contents-API, Commit
