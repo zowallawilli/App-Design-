@@ -4,12 +4,13 @@ import "./style.css";
 
 import { analyzeRiver, monotoneDecreasing, type Analysis } from "./analysis";
 import { compositeTileLoader, demStats, ElevationSampler, kartverketBreaker, nearNorway, TERRARIUM_URL, type DemSource } from "./dem";
-import { download, toCsv, toGeoJson, toGpx } from "./export";
+import { download, shareFile, toCsv, toGeoJson, toGpx } from "./export";
 import { haversine, lineLength, locateOnLine, sliceLine, type LngLat } from "./geo";
 import { geocode, loadRiverAt, waterwaysInBbox } from "./osm";
 import { glacierAreaAround, riversInBbox, waterInBbox } from "./vectorWater";
 import { PRESETS } from "./presets";
 import { renderProfile } from "./profileChart";
+import { loadEsriTile } from "./esriTiles";
 import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
 import { analyzeNarrows, GORGE_FINE, GORGE_GLOBAL, type NarrowKind, type NarrowsResult } from "./narrows";
@@ -32,18 +33,15 @@ const setStatus = (msg: string, error = false) => {
   statusEl.textContent = msg;
   statusEl.classList.toggle("error", error);
 };
+const fmtDate = (iso: string) => iso.split("-").reverse().join(".");
 const fmtKm = (m: number) => `${(m / 1000).toFixed(m < 10000 ? 2 : 1)} km`;
 
 // ---------- Karte ----------
 const BASEMAPS = {
   esri: {
-    tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-    attribution: "Bilder © Esri, Maxar, Earthstar Geographics u. a.",
-    maxzoom: 19,
-  },
-  ortho: {
-    tiles: ["https://mapsneu.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg"],
-    attribution: 'Orthofoto: <a href="https://basemap.at">basemap.at</a> (CC BY 4.0)',
+    // eigenes Protokoll: fehlende feine Stufen werden aus der feinsten vorhandenen Kachel vergrößert (esriTiles.ts)
+    tiles: ["esri://tile/{z}/{y}/{x}"],
+    attribution: "Bilder © Esri, Vantor/Maxar, Earthstar Geographics u. a.",
     maxzoom: 19,
   },
   s2: {
@@ -65,7 +63,11 @@ const style: StyleSpecification = {
   version: 8,
   sources: {
     ...Object.fromEntries(
-      Object.entries(BASEMAPS).map(([k, b]) => [k, { type: "raster", tiles: [...b.tiles], tileSize: 256, attribution: b.attribution, maxzoom: b.maxzoom }]),
+      Object.entries(BASEMAPS).map(([k, b]) => [
+        k,
+        // Luftbild auf hochauflösenden Bildschirmen eine Stufe feiner laden (128 statt 256 px je Kachel)
+        { type: "raster", tiles: [...b.tiles], tileSize: k === "esri" && window.devicePixelRatio >= 1.5 ? 128 : 256, attribution: b.attribution, maxzoom: b.maxzoom },
+      ]),
     ),
     dem: {
       type: "raster-dem",
@@ -79,7 +81,6 @@ const style: StyleSpecification = {
     "ww-labels": { type: "geojson", data: empty },
     narrows: { type: "geojson", data: empty },
     gauge: { type: "geojson", data: empty },
-    imgsec: { type: "geojson", data: empty },
     catch: { type: "geojson", data: empty },
     section: { type: "geojson", data: empty },
     draft: { type: "geojson", data: empty },
@@ -103,10 +104,6 @@ const style: StyleSpecification = {
     { id: "river", type: "line", source: "river", paint: { "line-color": "#7fd3ff", "line-width": 3, "line-opacity": 0.85 } },
     { id: "section-casing", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#102027", "line-width": 9, "line-opacity": 0.7 } },
     { id: "section", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 6 } },
-    {
-      id: "imgsec", type: "line", source: "imgsec", layout: { "line-cap": "butt" },
-      paint: { "line-color": ["get", "color"], "line-width": 4, "line-offset": -15, "line-opacity": 0.95 },
-    },
     {
       id: "section-confined", type: "line", source: "section", filter: ["==", ["get", "confined"], true],
       paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [1.5, 1.5], "line-offset": 7 },
@@ -136,6 +133,8 @@ const style: StyleSpecification = {
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
   ],
 };
+
+maplibregl.addProtocol("esri", async (params, abort) => ({ data: await loadEsriTile(params.url, abort.signal) }));
 
 const map = new maplibregl.Map({
   container: "map",
@@ -198,6 +197,7 @@ for (const ev of ["mousedown", "touchstart", "wheel"] as const) map.on(ev, stopO
 let imgReq = 0;
 async function updateImageDate() {
   const el = $("img-date");
+  updateExternalLinks();
   const esriOn = map.getLayoutProperty("base-esri", "visibility") !== "none";
   if (!esriOn || map.getZoom() < 12) return (el.textContent = "");
   const id = ++imgReq;
@@ -206,10 +206,25 @@ async function updateImageDate() {
     const info = await imageryAt([c.lng, c.lat], Math.round(map.getZoom()) + 1);
     if (id !== imgReq) return;
     const cond = info ? current?.flow?.conditions.get(info.date) : undefined;
-    el.textContent = info ? `Bild: ${info.date.split("-").reverse().join(".")} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}` : "";
+    // Esri gibt manche Bilder nur bis zu einer gröberen Stufe heraus – dann wird vergrößert (unscharf)
+    const capped = info?.maxLevel !== undefined && info.maxLevel < 19 && map.getZoom() + 1 > info.maxLevel + 0.5;
+    el.textContent = info ? `Bild: ${fmtDate(info.date)} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}${capped ? " · Esri hier nur vergrößert – schärfer evtl. bei Google/Apple ↗" : ""}` : "";
   } catch {
     if (id === imgReq) el.textContent = "";
   }
+}
+/** Links zur selben Stelle in Google Maps, Google Earth und Apple Karten (oft feiner aufgelöst als Esri;
+ *  dürfen nur angezeigt, nicht eingebunden werden – deshalb als Link in einem neuen Fenster). */
+function updateExternalLinks() {
+  const c = map.getCenter(), z = map.getZoom();
+  const lat = c.lat.toFixed(6), lon = c.lng.toFixed(6);
+  const zi = Math.min(21, Math.max(3, Math.round(z + 1)));
+  // Kamerahöhe für Google Earth so, dass der Ausschnitt etwa der Karte entspricht
+  const dist = Math.round(Math.max(150, (40075016 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** (z + 1) * 1.6));
+  $<HTMLAnchorElement>("ext-gmaps").href = `https://www.google.com/maps/@?api=1&map_action=map&center=${lat},${lon}&zoom=${zi}&basemap=satellite`;
+  $<HTMLAnchorElement>("ext-gearth").href = `https://earth.google.com/web/@${lat},${lon},0a,${dist}d,35y,0h,0t,0r`;
+  $<HTMLAnchorElement>("ext-apple").href = `https://maps.apple.com/?ll=${lat},${lon}&z=${zi}&t=k`;
+  $("ext-view").hidden = z < 11;
 }
 map.on("moveend", () => void updateImageDate());
 map.on("load", () => void updateImageDate());
@@ -347,11 +362,11 @@ function resetAll() {
   src("section").setData(empty);
   src("narrows").setData(empty);
   src("gauge").setData(empty);
-  src("imgsec").setData(empty);
   src("catch").setData(empty);
   clearImgMarkers();
   src("draft").setData(empty);
   src("cursor").setData(empty);
+  selectedD = null;
   $("results").hidden = true;
   $("profile-wrap").hidden = true;
   map.resize();
@@ -430,6 +445,7 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
         ? ` – Kartverket ${kv > 0 ? "teilweise " : ""}nicht erreichbar (${kartverketBreaker.lastError || "Fehler"})`
         : "");
     current = { analysis: a, name, source, dem, literature };
+    selectedD = null;
     showResults();
     // Luftbild-Datum und Abfluss parallel laden (blockiert die übrige Analyse nicht)
     void loadFlowInfo(a, id);
@@ -724,7 +740,6 @@ function renderWhitewater(a: Analysis) {
   const ww = current?.ww;
   const list = $("ww-list"), meta = $("ww-meta");
   list.innerHTML = "";
-  const fmtDate = (iso: string) => iso.split("-").reverse().join(".");
   if (!ww || ww.status === "loading") {
     list.innerHTML = `<li class="hint">${ww ? `Wird im Orthofoto (${ww.source?.name}) gesucht …` : "Wird berechnet …"}</li>`;
     meta.textContent = "";
@@ -865,14 +880,53 @@ $("ww-file").addEventListener("change", async (e) => {
 });
 map.on("load", () => renderLabels());
 
+/** im Profil angeklickte Stelle (bleibt auf der Karte markiert, bis die Maus wieder übers Profil fährt) */
+let selectedD: number | null = null;
+
 function drawChart() {
   if (!current || $("profile-wrap").hidden) return;
   const a = rated() ?? current.analysis;
-  chart = renderProfile($("profile"), a, current.narrows, (d) => {
-    if (d === null) return src("cursor").setData(empty);
-    const p = a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
-    src("cursor").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p.p } });
-  }, [...(current.ww?.spots ?? []).filter((w) => !w.hazard), ...hazards().map((h) => ({ d0: h.d - 20, d1: h.d + 20, strong: true, hazard: true }))]);
+  const pointAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
+  const showCursor = (d: number | null) =>
+    src("cursor").setData(d === null ? empty : { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: pointAt(d) } });
+  const f = current.flow;
+  const stretches = (f?.imagery ?? []).map((im, k) => {
+    const c = f!.conditions.get(im.date);
+    const date = fmtDate(im.date);
+    return {
+      d0: im.d0, d1: im.d1, color: IMG_COLORS[k % IMG_COLORS.length],
+      label: `B${k + 1} · ${date}${c ? ` · ${c.tendency}` : ""}`,
+      title: `Luftbild B${k + 1}: aufgenommen ${date}, km ${(im.d0 / 1000).toFixed(1)}–${(im.d1 / 1000).toFixed(1)}` +
+        `${c ? ` · Wasserstand laut Wetter/Jahreszeit ${c.tendency}${c.hints.length ? ` (${c.hints.map((h) => h.text).join("; ")})` : ""}` : ""}` +
+        " – Klick: Abschnitt auf der Karte und Hinweise zeigen",
+    };
+  });
+  chart = renderProfile($("profile"), a, current.narrows, (d) => showCursor(d ?? selectedD),
+    [...(current.ww?.spots ?? []).filter((w) => !w.hazard), ...hazards().map((h) => ({ d0: h.d - 20, d1: h.d + 20, strong: true, hazard: true }))],
+    {
+      stretches,
+      onStretch: (k) => {
+        selectedD = null;
+        focusImageStretch(k);
+        document.querySelector(`#flow-info .day[data-sec="${k}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      },
+      onSelect: (d) => jumpTo(d),
+    });
+}
+
+/** Klick ins Höhenprofil: Karte springt zu dieser Stelle der Strecke. Liegt dort eine markierte Stelle
+ *  (Gefahren-, Schwallstelle, Schlucht), wird so weit hineingezoomt, dass sie im Luftbild erkennbar ist. */
+function jumpTo(d: number) {
+  if (!current) return;
+  const a = current.analysis;
+  selectedD = d;
+  const p = a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
+  src("cursor").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } });
+  const tol = Math.max(60, a.length / 150); // ~ein paar Pixel im Profil
+  const marked = tourStops().some((s) => Math.abs(s.d - d) <= tol) ||
+    (current.narrows?.features ?? []).some((f) => d >= f.d0 - tol && d <= f.d1 + tol);
+  const zoom = marked ? DETAIL_ZOOM : Math.max(map.getZoom(), 15.5);
+  map.flyTo({ center: p, zoom, duration: 800 });
 }
 
 const TENDENCY_COLOR: Record<string, string> = { "eher niedrig": "#ef8a62", unauffällig: "#4d9221", "eher erhöht": "#4393c3", "eher hoch": "#2166ac" };
@@ -1005,7 +1059,6 @@ function renderFlowInfo() {
     el.innerHTML = `<p class="hint">Wird geladen …</p>`;
     return;
   }
-  const fmtDate = (iso: string) => iso.split("-").reverse().join(".");
   const fmtQ = (q: number) => (q >= 10 ? q.toFixed(0) : q.toFixed(1)).replace(".", ",");
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const gm = f.gauge;
@@ -1108,18 +1161,13 @@ function clearImgMarkers() {
   imgMarkers.forEach((m) => m.remove());
   imgMarkers = [];
 }
-/** Bildabschnitte als farbiges Band neben der Strecke plus Schild „B1 · Datum“ am Beginn */
+/** Bildabschnitte: nur ein kleines Schild „B1 · Datum“ auf der Karte (keine eigene Linie mehr –
+ *  die Ausdehnung zeigt die Leiste unter dem Höhenprofil, Klick dort springt zum Abschnitt). */
 function drawImageStretches() {
   clearImgMarkers();
   const f = current?.flow;
-  if (!current || !f) return src("imgsec").setData(empty);
+  if (!current || !f) return;
   const prof = current.analysis.profile;
-  const feats = f.imagery.map((im, k) => ({
-    type: "Feature" as const,
-    properties: { color: IMG_COLORS[k % IMG_COLORS.length] },
-    geometry: { type: "LineString" as const, coordinates: prof.filter((p) => p.d >= im.d0 && p.d <= im.d1).map((p) => p.p) },
-  }));
-  src("imgsec").setData({ type: "FeatureCollection", features: feats.filter((x) => x.geometry.coordinates.length > 1) });
   f.imagery.forEach((im, k) => {
     // Schild in der Mitte des Abschnitts (am Beginn läge es auf dem Einstieg-Schild)
     const start = prof.find((p) => p.d >= (im.d0 + im.d1) / 2)?.p;
@@ -1483,6 +1531,25 @@ const fileBase = () =>
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strecke";
-$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, toGpx(current.analysis, current.name, current.narrows, current.ww?.spots, hazards()), "application/gpx+xml"));
+const gpxText = () => (current ? toGpx(current.analysis, current.name, current.narrows, current.ww?.spots, hazards()) : "");
+$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml"));
+// Teilen-Menü (iPhone/iPad/Android, teils Desktop): GPX direkt an Gaia GPS o. a. übergeben
+{
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  const probe = typeof File !== "undefined" ? new File(["<gpx/>"], "test.gpx", { type: "application/gpx+xml" }) : null;
+  $("exp-share").hidden = !(probe && typeof nav.share === "function" && (!nav.canShare || nav.canShare({ files: [probe] })));
+}
+$("exp-share").addEventListener("click", async () => {
+  if (!current) return;
+  try {
+    const ok = await shareFile(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml", current.name);
+    if (!ok) {
+      download(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml");
+      setStatus("Teilen wird hier nicht unterstützt – GPX wurde heruntergeladen (in Gaia über „Import“ öffnen).");
+    }
+  } catch (e) {
+    setStatus(`Teilen fehlgeschlagen: ${(e as Error).message}`, true);
+  }
+});
 $("exp-csv").addEventListener("click", () => current && download(`${fileBase()}.csv`, toCsv(current.analysis), "text/csv"));
 $("exp-geojson").addEventListener("click", () => current && download(`${fileBase()}.geojson`, toGeoJson(current.analysis, current.name, current.narrows, current.ww?.spots, hazards()), "application/geo+json"));

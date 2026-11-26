@@ -14,6 +14,8 @@ export interface ImageryInfo {
   /** Quelle, z. B. „Slovenia2023“ / „GURS“ oder „Vivid“ / „Vantor“ */
   name: string;
   provider: string;
+  /** feinste Kachelstufe, bis zu der Esri dieses Bild herausgibt (z. B. 17 am Charyn Canyon trotz 0,34 m) */
+  maxLevel?: number;
 }
 
 let serviceUrl: Promise<string> | null = null;
@@ -65,7 +67,8 @@ export async function imageryAt(p: LngLat, zoom = 18, fetchFn: typeof fetch = fe
   if (!all.length) return null;
   all.sort((a, b) => Number(b.DrawOrder) - Number(a.DrawOrder) || Number(a.SRC_RES) - Number(b.SRC_RES));
   const a = all[0];
-  return { date: parseDate(a.SRC_DATE), resolution: Number(a.SRC_RES), name: String(a.NICE_NAME), provider: String(a.NICE_DESC) };
+  const maxLevel = Number(a.MaxMapLevel);
+  return { date: parseDate(a.SRC_DATE), resolution: Number(a.SRC_RES), name: String(a.NICE_NAME), provider: String(a.NICE_DESC), ...(Number.isFinite(maxLevel) ? { maxLevel } : {}) };
 }
 
 export interface ImageryStretch extends ImageryInfo {

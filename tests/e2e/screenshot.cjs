@@ -2,6 +2,7 @@
 // Aufruf: node tests/e2e/screenshot.cjs <Name> '[lon,lat Einstieg]' '[lon,lat Ausstieg]' '[lon,lat Kartenmitte]' <Zoom> <datei.png>
 // Beispiel Sanna: node tests/e2e/screenshot.cjs Sanna '[10.4910,47.1176]' '[10.5630,47.1436]' '[10.527,47.13]' 13.3 tests/e2e/out/sanna.png
 // Zoom so wählen, dass beide Punkte im Kartenausschnitt liegen (sonst gehen die Klicks ins Leere).
+// Optional PROFILE_CLICK=0.4: Klick ins Höhenprofil (Sprung zur Stelle); SHOT=main: Karte + Profil ohne Panel.
 // Optional SHOT=flow: nur die Abfluss-Tabelle aufnehmen; SHOT=map: nur die Karte (Bildabschnitte, Einzugsgebiet).
 // Optional TIROL_DIR=<ordner mit tirol.json und tirol-archiv/>: Tirol-Spiegel aus lokalen Dateien
 // (z. B. frisch erzeugt mit scripts/tirol-mirror.mjs), bevor die Action den Branch aktualisiert hat.
@@ -40,11 +41,17 @@ const { chromium } = require('playwright');
   console.log('SCHWALL', (await t('#ww-list')).slice(0, 1500));
   console.log('SCHWALL-INFO', (await t('#ww-meta')).slice(0, 600));
   // Panel so scrollen, dass Kennzahlen + Schwierigkeit oben stehen
-  // FOCUS=<n> springt zur n-ten Schwallstelle (Detailansicht), BASE=<esri|ortho|s2|topo> wählt den Hintergrund
+  // FOCUS=<n> springt zur n-ten Schwallstelle (Detailansicht), BASE=<esri|s2|topo> wählt den Hintergrund
   if (process.env.BASE) { await page.click(`#basemap button[data-base="${process.env.BASE}"]`); await page.waitForTimeout(500); }
   if (process.env.FOCUS) { await page.click(`#ww-list li:nth-child(${process.env.FOCUS}) button`); await page.waitForTimeout(6000); }
   // ROT=<Grad> schaltet 3D ein und dreht die Karte (Blick auf die Topografie)
   if (process.env.ROT) { await page.check('#terrain'); await page.waitForTimeout(1500); await page.evaluate((b) => window.__map.easeTo({ bearing: b, pitch: 62, duration: 0 }), Number(process.env.ROT)); await page.waitForTimeout(5000); }
+  // PROFILE_CLICK=<0…1> klickt an diese Stelle des Höhenprofils (Karte springt dorthin), Aufnahme mit Profil
+  if (process.env.PROFILE_CLICK) {
+    const hb = await page.locator('#profile .profile-hit').boundingBox();
+    await page.mouse.click(hb.x + hb.width * Number(process.env.PROFILE_CLICK), hb.y + hb.height * 0.5);
+    await page.mouse.move(5, 5); await page.waitForTimeout(7000);
+  }
   // SCROLL=<CSS-Selektor> scrollt das Panel zu einem anderen Abschnitt (z. B. '#ww-list')
   await page.evaluate((sel) => document.querySelector(sel).scrollIntoView(), process.env.SCROLL || '#res-title');
   await page.waitForTimeout(500);
@@ -53,7 +60,8 @@ const { chromium } = require('playwright');
     // Karte auf die Strecke zurücksetzen (Bildabschnitte B1…, Einzugsgebiet gestrichelt)
     await page.evaluate(([c, z]) => window.__map.jumpTo({ center: c, zoom: z }), [center, zoom - 1.3]); await page.waitForTimeout(3000);
     await page.locator('#map').screenshot({ path: out });
-  } else if (process.env.SHOT === 'flow') await page.locator('#flow-info').screenshot({ path: out });
+  } else if (process.env.SHOT === 'main') await page.locator('#main').screenshot({ path: out });
+  else if (process.env.SHOT === 'flow') await page.locator('#flow-info').screenshot({ path: out });
   else await page.screenshot({ path: out });
   await browser.close();
 })();

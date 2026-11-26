@@ -21,17 +21,31 @@ function niceStep(range: number, target: number) {
   return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * mag;
 }
 
+/** Bildabschnitt (Luftbild B1, B2 …) für die Leiste unter dem Profil */
+export interface ProfileStretch { d0: number; d1: number; color: string; label: string; title: string }
+
+export interface ProfileOptions {
+  /** Klick ins Profil: zu dieser Stationierung springen */
+  onSelect?: (d: number) => void;
+  /** Bildabschnitte als Leiste unter dem Profil (Datum, Wetter-Tendenz) */
+  stretches?: ProfileStretch[];
+  onStretch?: (k: number) => void;
+}
+
 export function renderProfile(
   container: HTMLElement,
   a: Analysis,
   narrows: NarrowsResult | undefined,
   onHover: (d: number | null) => void,
   whitewater: { d0: number; d1: number; strong: boolean; hazard?: boolean }[] = [],
+  opts: ProfileOptions = {},
 ): { highlight: (d: number | null) => void } {
   container.innerHTML = "";
   const W = container.clientWidth || 600;
   const H = container.clientHeight || 220;
-  const m = { l: 48, r: 12, t: 12, b: 34 };
+  const stretches = opts.stretches ?? [];
+  const STRIP = stretches.length ? 18 : 0;
+  const m = { l: 48, r: 12, t: 12, b: 34 + STRIP };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const svg = el("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, class: "profile-svg", role: "img", "aria-label": "Längsprofil" }, container);
 
@@ -51,7 +65,7 @@ export function renderProfile(
   }
   const dStep = niceStep(a.length / 1000, 6) * 1000;
   for (let d = 0; d <= a.length + 1; d += dStep) {
-    el("text", { x: x(d), y: H - m.b + 16, "text-anchor": "middle" }, g).textContent = `${(d / 1000).toFixed(dStep < 1000 ? 1 : 0)}`;
+    el("text", { x: x(d), y: H - m.b + STRIP + 16, "text-anchor": "middle" }, g).textContent = `${(d / 1000).toFixed(dStep < 1000 ? 1 : 0)}`;
   }
   el("text", { x: W - m.r, y: H - 4, "text-anchor": "end", class: "axis-label" }, g).textContent = "km ab Einstieg";
   el("text", { x: 4, y: m.t + 2, "dominant-baseline": "hanging", class: "axis-label" }, g).textContent = "m ü. M.";
@@ -82,6 +96,24 @@ export function renderProfile(
   el("polyline", { points: a.profile.map((p) => `${x(p.d)},${y(p.floor)}`).join(" "), class: "raw-line" }, svg);
   el("polyline", { points: a.profile.map((p) => `${x(p.d)},${y(p.z)}`).join(" "), class: "z-line" }, svg);
 
+  // Bildabschnitte (Aufnahmedatum + Wetter-Tendenz) als Leiste direkt unter dem Profil
+  const stripG = el("g", { class: "img-strip" }, svg);
+  stretches.forEach((st, k) => {
+    const g2 = el("g", { class: "img-stretch", "data-k": k, tabindex: 0, role: "button" }, stripG);
+    el("title", {}, g2).textContent = st.title;
+    const x0 = x(st.d0), w = Math.max(3, x(st.d1) - x0 - 1);
+    el("rect", { x: x0, y: m.t + ih + 3, width: w, height: STRIP - 4, rx: 3, fill: st.color }, g2);
+    // Text nur, soweit er in den Abschnitt passt (ca. 6 px je Zeichen)
+    const room = Math.floor((w - 6) / 6);
+    if (room >= 2) {
+      const txt = st.label.length <= room ? st.label : st.label.slice(0, room - 1) + "…";
+      el("text", { x: x0 + 4, y: m.t + ih + 3 + (STRIP - 4) / 2, "dominant-baseline": "central", class: "img-stretch-label" }, g2).textContent = txt;
+    }
+    const go = () => opts.onStretch?.(k);
+    g2.addEventListener("click", go);
+    g2.addEventListener("keydown", (ev) => { if ((ev as KeyboardEvent).key === "Enter") go(); });
+  });
+
   // Hover
   const cursor = el("line", { y1: m.t, y2: m.t + ih, class: "cursor", visibility: "hidden" }, svg);
   const tip = el("text", { y: m.t + 14, class: "tip", visibility: "hidden" }, svg);
@@ -105,12 +137,21 @@ export function renderProfile(
     tip.textContent = `km ${(d / 1000).toFixed(2)} · ${Math.round(p.z)} m · ${seg.gradient.toFixed(1)} m/km${width}`;
     tip.setAttribute("visibility", "visible");
   };
-  const hit = el("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent" }, svg);
-  hit.addEventListener("pointermove", (ev) => {
+  const hit = el("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent", class: "profile-hit" }, svg);
+  el("title", {}, hit).textContent = "Klick: Karte springt zu dieser Stelle";
+  const dAt = (ev: MouseEvent) => {
     const r = svg.getBoundingClientRect();
-    const d = Math.max(0, Math.min(a.length, (((ev.clientX - r.left) * (W / r.width) - m.l) / iw) * a.length));
+    return Math.max(0, Math.min(a.length, (((ev.clientX - r.left) * (W / r.width) - m.l) / iw) * a.length));
+  };
+  hit.addEventListener("pointermove", (ev) => {
+    const d = dAt(ev);
     highlight(d);
     onHover(d);
+  });
+  hit.addEventListener("click", (ev) => {
+    const d = dAt(ev);
+    highlight(d);
+    opts.onSelect?.(d);
   });
   hit.addEventListener("pointerleave", () => {
     highlight(null);
