@@ -45,6 +45,7 @@
             <button id="undo-draw" class="ghost" hidden>Letzten Punkt löschen</button>
             <button id="reset" class="ghost">Zurücksetzen</button>
             <button id="wave-btn" class="ghost" title="Kämme einer Wellenfolge im Luftbild anklicken → Wellenabstand und Fließgeschwindigkeit">Wellen messen</button>
+            <button id="own-btn" class="ghost" title="Eigene Stellen setzen, verschieben, löschen (Stromschnelle, Gefahr, Umtragen, Lager …) – weltweit, gespeichert in diesem Browser, im GPX">Eigene Stellen</button>
             <button id="cancel" class="danger" hidden>Berechnung abbrechen</button>
           </div>
         </section>
@@ -92,9 +93,12 @@
           <span class="lbl" style="margin-top:10px">Engstellen &amp; Schluchten</span>
           <label class="check"><input type="checkbox" id="opt-narrows" checked /> Schluchten (Talquerschnitt) und verdeckte Klammen analysieren</label>
           <label class="check"><input type="checkbox" id="opt-width" /> Engstellen aus Sentinel-2-Flussbreite (10 m – nur grob, oft ungenau)</label>
-          <span class="lbl" style="margin-top:10px">Schwallstellen</span>
-          <label class="check"><input type="checkbox" id="opt-ww" checked /> Weißwasser im offenen Orthofoto suchen (Österreich, Slowenien, USA, Teile Islands)</label>
-          <label class="check" style="flex-direction:column;align-items:stretch">
+          <span class="lbl" style="margin-top:10px">Stellen aus OpenStreetMap</span>
+          <label class="check"><input type="checkbox" id="opt-osmplaces" checked /> Stromschnellen, Wehre, Wasserfälle, Ein-/Ausstiege und Umtragen aus OSM zeigen (weltweit, nicht geprüft)</label>
+          <span class="lbl" style="margin-top:10px">Schwallstellen-Erkennung <span class="exp-tag">experimentell</span></span>
+          <label class="check"><input type="checkbox" id="opt-ww" /> Weißwasser automatisch im offenen Orthofoto suchen</label>
+          <p class="hint">Nur wo offene Orthofotos vorliegen (Österreich, Slowenien, USA, Teile Islands), Trefferquote bisher ~70 %. Lädt viele Bildkacheln. Mit Erkennung zeigt die App zusätzlich Abbruchkanten als Gefahrenstellen.</p>
+          <label class="check" id="gh-token-wrap" style="flex-direction:column;align-items:stretch">
             <input id="gh-token" type="password" autocomplete="off" placeholder="GitHub-Schlüssel zum Hochladen der Markierungen" />
             <span class="hint">Optional, nur für den Repo-Inhaber: Mit einem persönlichen GitHub-Schlüssel lädt „Markierungen exportieren“ die Markierungen direkt nach <code>daten/markierungen/</code> im Repo hoch. Erstellen unter GitHub → Settings → Developer settings → Fine-grained tokens: nur das Repo App-Design-, Berechtigung „Contents: Read and write“. Bleibt nur in diesem Browser gespeichert.</span>
           </label>
@@ -137,13 +141,27 @@
           <div id="flow-info" class="flow-info"><p class="hint">Wird geladen …</p></div>
           <h3>Gefahrenstellen <span class="hint">(Indikator – vor Ort prüfen)</span></h3>
           <ul class="legend">
-            <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Abbruchkante (Bild + Höhenverlust), Stufe im Höhenmodell oder nicht einsehbare steile Klamm</li>
+            <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> nicht einsehbare steile Klamm oder eigene Gefahrenstelle (Gefahr, Holz). Steile Abschnitte zeigt die Gefälle-Farbe.</li>
           </ul>
           <ol id="hz-list" class="hotspots"></ol>
-          <h3>Schwallstellen <span class="hint">(Weißwasser im Luftbild – Indikator)</span></h3>
+          <h3>Eigene Stellen</h3>
+          <ol id="own-list" class="hotspots"></ol>
+          <p id="own-info" class="hint"></p>
+          <div class="row ww-tools">
+            <button id="own-export" class="ghost" title="Alle eigenen Stellen als Datei sichern (mit GitHub-Schlüssel direkt ins Repo)">Stellen sichern</button>
+            <button id="own-import" class="ghost" title="Gesicherte Datei laden (wird zusammengeführt)">Stellen laden</button>
+          </div>
+          <h3>Aus OpenStreetMap <span class="hint">(nicht geprüft)</span></h3>
+          <ol id="osm-list" class="hotspots"></ol>
+          <details class="more"><summary>Hinweis zu OSM</summary><p class="hint">Von Freiwilligen in OpenStreetMap eingetragen (whitewater=*, waterway=waterfall/weir/dam). Lage, Grad und Vollständigkeit sind nicht geprüft – wo nichts eingetragen ist, kann trotzdem eine Stromschnelle, ein Wehr oder ein Wasserfall sein. © OpenStreetMap-Mitwirkende (ODbL).</p></details>
+          <div id="ww-section" hidden>
+          <h3>Schwallstellen <span class="hint">(experimentell – Weißwasser im Luftbild)</span></h3>
           <ul class="legend">
             <li><span class="dia" style="background:#0077b6;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> viel Weißwasser im Luftbild (Schwall, Walze, Wehr) – nur Markierung</li>
           </ul>
+          <ol id="ww-list" class="hotspots"></ol>
+          <details class="more"><summary>Bildquelle &amp; Hinweise</summary><p id="ww-meta" class="hint"></p></details>
+          <details class="more" id="ww-tune"><summary>Erkennung einstellen &amp; lernen</summary>
           <div class="row ww-sens">
             <label for="ww-sens" title="Wie empfindlich Weißwasser als Schwallstelle markiert wird. Die Schwelle passt sich zusätzlich der Flussbreite an (breite Flüsse strenger).">Empfindlichkeit</label>
             <input type="range" id="ww-sens" min="1" max="9" step="1" value="5" aria-describedby="ww-sens-out" />
@@ -151,10 +169,8 @@
             <label for="ww-mingrade" title="Mit gelerntem Modell nur Schwälle ab diesem Grad zeigen (lernt aus deinen Markierungen mit Grad)">Schwälle ab</label>
             <select id="ww-mingrade"><option value="1">alle</option><option value="2">WW II</option><option value="3">WW III</option><option value="4">WW IV</option></select>
           </div>
-          <ol id="ww-list" class="hotspots"></ol>
-          <details class="more"><summary>Bildquelle &amp; Hinweise</summary><p id="ww-meta" class="hint"></p></details>
+          <p class="hint">Im Modus „Eigene Stellen“ lassen sich erkannte Stellen anklicken (bearbeiten/löschen) oder ziehen (verschieben). „kein Schwall“-Markierungen dienen nur dem Lernen.</p>
           <div class="row ww-tools">
-            <button id="ww-label" class="ghost" title="Stellen im Luftbild anklicken und einordnen; erkannte Stellen anklicken (bearbeiten/löschen) oder ziehen (verschieben)">Stellen markieren</button>
             <button id="ww-learn" class="ghost" title="Modelle aus allen eigenen Markierungen lernen (je Grad)">Aus Markierungen lernen</button>
             <button id="ww-export" class="ghost" title="Mit GitHub-Schlüssel direkt ins Repo, sonst als Datei">Markierungen exportieren</button>
           </div>
@@ -168,6 +184,8 @@
           </div>
           <p id="ww-learn-info" class="hint"></p>
           </details>
+          </details>
+          </div>
           <h3>Engstellen &amp; Schluchten</h3>
           <ul class="legend">
             <li><span class="dia" style="background:#8e44ad">S</span> Schlucht (enges, tiefes Tal oder Fluss verdeckt) · <span class="dia" style="background:#ff9f1c">E</span> Engstelle</li>
@@ -195,7 +213,7 @@
               <li><b>Gaia GPS:</b> „Teilen …“ → Gaia GPS (ggf. unter „Mehr“). Erscheint Gaia nicht: „In Dateien sichern“, dann in Gaia über Importieren die Datei wählen – oder am Rechner auf gaiagps.com importieren. Gaia übernimmt keine Linienfarben; die steilen Abschnitte erkennt man an Namen und Wegpunkten („Steil km 2,0–2,8 · 35 m/km“) und kann sie in Gaia selbst einfärben.</li>
               <li><b>Garmin Explore:</b> Datei sichern, in „Dateien“ antippen → Teilen → Explore, oder auf explore.garmin.com importieren. Garmin liest die Farben teilweise (benannte Farben).</li>
               <li><b>OsmAnd, Locus:</b> zeigen die Farben der Abschnitte.</li>
-              <li>Inhalt: Strecke mit Höhen (Höhenprofil in der App), Ein-/Ausstieg, Gefahren-, Schwallstellen und Schluchten als Wegpunkte. „Teilen …“ geht genauso an Messenger oder Mail.</li>
+              <li>Inhalt: Strecke mit Höhen (Höhenprofil in der App), Ein-/Ausstieg, Gefahrenstellen, eigene Stellen, OSM-Stellen (nicht geprüft) und Schluchten als Wegpunkte. „Teilen …“ geht genauso an Messenger oder Mail.</li>
             </ul>
           </details>
         </section>

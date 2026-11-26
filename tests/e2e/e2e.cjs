@@ -41,6 +41,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.click('#load-preset'); await waitIdle();
   check('Referenz: Ergebnis mit OSM + Sentinel-2', await resultsVisible() && /OpenStreetMap/.test(await stat('Flusslinie')) && /Sentinel-2/.test(await stat('Flusslinie')), `${await stat('Flusslinie')} · ${await stat('Länge')} · ${await stat('Ø Gefälle')} · Literatur: ${await stat('Literatur')} · Status: ${await status()}`);
   check('Referenz: Name', (await page.textContent('#res-title')).includes('Na Logu'), await page.textContent('#res-title'));
+  check('Schwallstellen-Erkennung standardmäßig aus (experimentell), Eigene Stellen + OSM-Abschnitt da', !(await page.isChecked('#opt-ww')) && !(await page.isVisible('#ww-section')) && await page.isVisible('#own-list') && await page.isVisible('#osm-list') && (await page.locator('.ww-marker').count()) === 0, (await page.textContent('#osm-list')).replace(/\s+/g, ' ').slice(0, 100));
 
   // 2 Parameter ändern → neu rechnen
   const before = await page.locator('#stats').textContent();
@@ -109,7 +110,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Norwegen: Åmot-Schlucht als Schlucht-/Klammstrecke', /Klamm|Schlucht/.test(sjNr), sjNr.slice(0, 160) + ' | ' + (await page.textContent('#narrows-meta')).slice(0, 120));
   check('Norwegen: Kartverket-Höhenmodell (oder klarer Hinweis bei Störung)', /Kartverket/.test(await stat('Höhenmodell') || ''), `${await stat('Höhenmodell')} · ${await stat('Flusslinie')} · ${await stat('Länge')} · ${await stat('Höhe')}`);
   const sjWw = (await page.textContent('#ww-list')).replace(/\s+/g, ' ');
-  check('Norwegen: Hinweis statt Stromschnellen (kein auswertbares Luftbild)', /Kein (öffentlich )?auswertbares Luftbild/.test(sjWw) && (await page.locator('.ww-marker').count()) === 0 && (await page.locator('#ww-sens').isHidden()), sjWw.slice(0, 120));
+  check('Norwegen: ohne Erkennung keine Schwallstellen-Suche, kein Abschnitt', /Ausgeschaltet/.test(sjWw) && !(await page.isVisible('#ww-section')) && (await page.locator('.ww-marker').count()) === 0, sjWw.slice(0, 120));
   await page.selectOption('#opt-dem', 'global'); await waitIdle();
   check('Norwegen: Umschalten auf global', /global/.test(await stat('Höhenmodell') || ''), `${await stat('Höhenmodell')} · ${await stat('Höhe')}`);
   await page.selectOption('#opt-dem', 'auto'); await waitIdle();
@@ -149,7 +150,14 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.click('#load-preset', { force: true }).catch(() => {});
   await waitIdle();
   check('Doppelt laden: ein Ergebnis', await resultsVisible(), await stat('Länge'));
-  // Referenz Koritnica
+  // Referenz Koritnica – mit eingeschalteter (experimenteller) Schwallstellen-Erkennung; OSM liefert eine Stromschnelle am Ausstieg
+  const osmPlaces = JSON.stringify({ elements: [
+    { type: 'node', id: 901, lat: 46.3243, lon: 13.5695, tags: { whitewater: 'rapid', 'whitewater:rapid_grade': '3', 'whitewater:rapid_name': 'Test-Schwall' } },
+    { type: 'node', id: 902, lat: 46.40, lon: 13.70, tags: { waterway: 'waterfall' } },
+  ] });
+  await page.route(/overpass/, (r) => /whitewater/.test(decodeURIComponent(r.request().postData() || '')) ? r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: osmPlaces }) : r.fallback());
+  await page.evaluate(() => { const c = document.querySelector('#opt-ww'); c.checked = true; c.dispatchEvent(new Event('change')); });
+  await waitIdle();
   await page.selectOption('#preset', 'koritnica');
   await page.click('#load-preset'); await waitIdle();
   await page.waitForFunction(() => !/Wird geladen/.test(document.querySelector('#flow-info').textContent), null, { timeout: 60000 }).catch(() => {});
@@ -170,7 +178,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   // eigene Markierung: Schnellauswahl Art + Grad, Klick daneben bearbeitet statt zu doppeln, Löschen
   {
     await page.locator('#ww-list li button').first().click(); await page.waitForTimeout(1500); // springt zur Stelle (Kartenmitte)
-    await page.click('#ww-label');
+    await page.click('#own-btn');
     const cb = await page.locator('#map canvas').boundingBox();
     const px = cb.x + cb.width / 2 + 45, py = cb.y + cb.height / 2;
     const info = async () => (await page.textContent('#ww-learn-info')).replace(/\s+/g, ' ');
@@ -187,10 +195,10 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
     const i3 = await info();
     const visIn = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
-    await page.click('#ww-label');
+    await page.click('#own-btn');
     const visOut = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
     // Lernen mit zu wenigen Markierungen → sichtbare Rückmeldung; Export mit Schlüssel → Upload (GitHub-API simuliert)
-    await page.evaluate(() => { const dd = document.querySelector('#ww-learn').closest('details'); if (dd) dd.open = true; });
+    await page.evaluate(() => { document.querySelectorAll('#ww-tune, #ww-tune details').forEach((dd) => (dd.open = true)); });
     await page.click('#ww-learn'); await page.waitForTimeout(300);
     const lr = (await page.textContent('#ww-learn-result')).replace(/\s+/g, ' ');
     const lrHtml = await page.innerHTML('#ww-learn-result');
@@ -203,9 +211,9 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     check('Lernen gibt Rückmeldung, Export lädt mit Schlüssel nach daten/markierungen/ hoch', /Verarbeitet: \d+ von \d+ Markierungen/.test(lr) && /alle Schwälle<\/b>: \d+ Schwall/.test(lrHtml) && /hochgeladen nach daten\/markierungen\/markierungen-/.test(up) && put && put.method() === 'PUT' && /contents\/daten\/markierungen\//.test(put.url()), `${lr.slice(0, 80)} | ${up.slice(0, 90)}`);
     check('Eigene Markierungen nur im Markier-Modus sichtbar', visIn === 'visible' && visOut === 'none', `${visIn} → ${visOut}`);
     // Nachbearbeiten erkannter Stellen: Fenster per Kartenklick schließen, löschen, verschieben
-    await page.click('#ww-label');
+    await page.click('#own-btn');
     await page.mouse.click(px, py + 60); await page.waitForSelector('.ww-popup');
-    await page.mouse.click(px - 120, py + 90); await page.waitForTimeout(400);
+    await page.mouse.click(px - 260, py - 160); await page.waitForTimeout(400);
     const closed = (await page.locator('.ww-popup').count()) === 0;
     const n0 = await page.locator('.ww-marker').count();
     const m1 = await page.locator('.ww-marker').first().boundingBox();
@@ -220,20 +228,58 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const movedHead = (await page.locator('.ww-popup b').count()) ? await page.textContent('.ww-popup b') : '';
     const ownInList = /✓|nur eigene Markierung/.test(await page.textContent('#ww-list'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(200);
-    const escOk = (await page.locator('.ww-popup').count()) === 0 && /ww-label|Stellen/.test(await page.textContent('#mode-help')) && (await page.locator('.ww-marker').count()) > 0;
+    const escOk = (await page.locator('.ww-popup').count()) === 0 && /ww-label|Stellen/.test(await page.textContent('#mode-help')) && (await page.locator('.ww-marker, .own-marker').count()) > 0;
     await page.keyboard.press('Escape'); await page.waitForTimeout(200);
-    const escOut = !(await page.locator('#ww-label.on').count());
+    const escOut = !(await page.locator('#own-btn.on').count());
     check('Erkannte Stellen: Fenster schließt per Kartenklick, Löschen, Verschieben; Esc behält Analyse', closed && escOk && escOut && n1 === n0 - 1 && /Markiert: Stromschnelle/.test(movedHead) && ownInList, `zu: ${closed} · Marker ${n0} → ${n1} · ${movedHead} · eigene in Liste: ${ownInList}`);
     check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^2 eigene Markierungen \(1 Schwall, 1 kein Schwall; 2 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^2 eigene Markierungen \(0 Schwall, 2 kein Schwall/.test(i2) && /^1 eigene Markierung \(/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
   }
-  check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
-  check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
+  // OSM-Stelle + Erkennung wieder aus: eigene Stellen bleiben, Schwallstellen-Abschnitt verschwindet
+  {
+    const osmTxt = (await page.textContent('#osm-list')).replace(/\s+/g, ' ');
+    check('OSM: Stromschnelle mit Grad an der Strecke, ferner Wasserfall nicht', /Stromschnelle · WW III · Test-Schwall/.test(osmTxt) && /aus OSM, nicht geprüft/.test(osmTxt) && !/Wasserfall/.test(osmTxt) && (await page.locator('.osm-marker').count()) === 1, osmTxt.slice(0, 140));
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exp-gpx')]);
+    const gpx = fs.readFileSync(await dl.path(), 'utf8');
+    check('GPX enthält eigene Stellen und OSM-Stellen', /<type>Eigene Stelle<\/type>/.test(gpx) && /Stromschnelle WW III km [\d.]+ \(OSM\)/.test(gpx), `${(gpx.match(/<wpt /g) || []).length} Wegpunkte`);
+  }
+  check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker, .own-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
+  check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle|Eigene Stelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle|Eigene Stelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
   // Nutzerregel: keine Gefahrenstelle nur aus dem Höhenmodell; Kluže-Ende ist im 0,25-m-Orthofoto sichtbar → keine
   check('Koritnica: keine Gefahrenstelle ohne Bildbefund, keine Steilstufen-Marker', (await page.locator('.hz-marker').count()) === 0 && (await page.locator('.st-marker').count()) === 0, (await page.textContent('#hz-list')).replace(/\s+/g, ' ').slice(0, 160));
   check('Wucht nur mit Pegel, sonst Hinweis', /kein Pegel/.test(fi) ? /braucht einen Abfluss/.test(await page.textContent('#rate-note')) : /Strömungsleistung/.test(await page.textContent('#rate-note')), await page.textContent('#rate-note'));
   await page.selectOption('#q-src', 'own'); await page.fill('#q-own', '150'); await page.dispatchEvent('#q-own', 'change'); await page.waitForTimeout(500);
   check('Eigener Abfluss → schwerere Einstufung', /150 m³\/s/.test(await page.textContent('#rate-note')), (await page.textContent('#classes')).replace(/\s+/g, ' ').slice(0, 120));
   await page.selectOption('#q-src', 'today');
+  {
+    await page.evaluate(() => { const c = document.querySelector('#opt-ww'); c.checked = false; c.dispatchEvent(new Event('change')); });
+    await waitIdle();
+    const ownTxt = (await page.textContent('#own-list')).replace(/\s+/g, ' ');
+    check('Erkennung aus: kein Schwallstellen-Abschnitt, eigene Stelle bleibt in Liste und Karte', !(await page.isVisible('#ww-section')) && (await page.locator('.ww-marker').count()) === 0 && /Stromschnelle/.test(ownTxt) && (await page.locator('.own-marker').count()) >= 1, ownTxt.slice(0, 120));
+    // weltweit ohne Analyse: Stelle setzen, verschieben, löschen
+    await page.click('#reset');
+    await view([69.5, 39.0], 12); // Zentralasien, kein Orthofoto
+    const n0 = await page.locator('.own-marker').count();
+    await page.click('#own-btn');
+    const cb = await page.locator('#map canvas').boundingBox();
+    const cx = cb.x + cb.width / 2, cy = cb.y + cb.height / 2;
+    await page.mouse.click(cx, cy); await page.waitForSelector('.ww-popup');
+    const noLearn = !(await page.locator('.ww-popup button[data-k="kiesbank"]').count());
+    await page.fill('.ww-popup .lbl-note', 'Sandbank links');
+    await page.click('.ww-popup button[data-k="lager"]'); await page.waitForTimeout(400);
+    const n1 = await page.locator('.own-marker').count();
+    const lab = () => page.evaluate(() => JSON.parse(localStorage.getItem('packraft.wwLabels')).find((l) => l.kind === 'lager'));
+    const l1 = await lab();
+    const mk = await page.locator('.own-marker').last().boundingBox();
+    await page.mouse.move(mk.x + mk.width / 2, mk.y + mk.height / 2); await page.mouse.down();
+    await page.mouse.move(mk.x + mk.width / 2 + 60, mk.y + mk.height / 2 + 30, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(600);
+    const l2 = await lab();
+    const head = (await page.locator('.ww-popup b').count()) ? await page.textContent('.ww-popup b') : '';
+    await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
+    const n2 = await page.locator('.own-marker').count();
+    await page.click('#own-btn');
+    check('Eigene Stellen weltweit ohne Analyse: setzen (Lagerplatz + Notiz), verschieben, löschen; ohne Lern-Arten', noLearn && n1 === n0 + 1 && l1 && l1.note === 'Sandbank links' && l1.show && !l1.feat && l2 && l2.p[0] !== l1.p[0] && /Markiert: Lagerplatz/.test(head) && n2 === n0, `${n0} → ${n1} → ${n2} · ${head}`);
+    await page.evaluate(() => { const c = document.querySelector('#opt-ww'); c.checked = true; c.dispatchEvent(new Event('change')); });
+  }
   await page.selectOption('#preset', 'soca-trenta-kobarid');
 
   // Reset während Berechnung → neue Messung möglich

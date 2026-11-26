@@ -52,12 +52,13 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/esriTiles.ts` | Protokoll `esri://`: fehlende feine Esri-Stufen aus gröberer Kachel vergrößern (Tilemap), statt grauer Platzhalter |
 | `src/profileChart.ts` | Höhenprofil (SVG): Klick → Karte springt zur Stelle; Leiste Bildabschnitte B1… (Datum, Tendenz) |
 | `src/export.ts` | GPX (Track mit Höhen, Ein-/Ausstieg, Stellen als Wegpunkte), CSV, GeoJSON, Teilen-Menü (Gaia GPS) |
-| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023, NÁTT Island), Streifenbild, Textur, Lernen; Abbruchkanten (`findBreaklines`) |
+| `src/osmPlaces.ts` | OSM-Stellen (whitewater=*, waterway=waterfall/weir/dam/lock_gate) entlang der Strecke, „aus OSM, nicht geprüft“ |
+| `src/whitewater.ts` | (experimentell, Standard aus) Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023, NÁTT Island), Streifenbild, Textur, Lernen; Abbruchkanten (`findBreaklines`) |
 | `src/whitewaterStore.ts` | eigene Markierungen + gelernte Schwelle (localStorage, JSON-Export/-Import), Browser-Dekoder |
 | `scripts/breakline-eval.mts` | Messung Gefahrenstellen gegen `tests/fixtures/abbruchkanten.json` |
 | `scripts/whitewater-eval.mts` | Messung gegen `tests/fixtures/schwallstellen.json`, Kontrollbilder (Fluss gerade gezogen) |
 | `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln, Archiv der Tagesmittel `tirol-archiv/` (≤ 400 Tage, Branch = 1 Commit) |
-| `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (41 Prüfungen), Screenshot-Skript |
+| `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (~68 Prüfungen), Screenshot-Skript |
 
 Netzwerk in der Cloud-Umgebung „Packraft-Planer“: erlaubte Hosts sind dort hinterlegt; neue
 Datenquellen brauchen ggf. einen weiteren Host. Node-`fetch` braucht dort
@@ -94,7 +95,17 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - **Charyn/Şarın (KZ)** [79.1009, 43.3599] → [79.1631, 43.4215] (Zoom 12.6): Esri 0,34 m, aber nur bis Stufe 17 → Testfall Vergrößerung/„Schärfer ↗“.
 - **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
-## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
+## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
+- Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter
+  „Analyse-Parameter“ als experimentell; Regler/Grad/Lernen eingeklappt (`#ww-tune`). Code nicht löschen.
+- „Eigene Stellen“ (Knopf `#own-btn`, Modus `ww-label`): Planungswerkzeug weltweit, auch ohne Analyse; Arten aus
+  `LABEL_KINDS` (Planungsarten `plan: true` zählen nie fürs Lernen), Standard „in der Karte anzeigen“, verschieben/löschen, im GPX.
+- Ohne Luftbild-Auswertung keine Gefahrenstellen „Abbruchkante“/„Stufe mit Weißwasser“ – nur „nicht einsehbare Klamm“
+  und eigene Gefahrenstelle/Holz; Steilstrecken zeigt die Gefälle-Farbe.
+- Nächste Schwerpunkte: weltweit Wirksames (OSM-Stellen ✓, Pegel weiterer Länder, Qualität Gefälle/Steilstufen/Schluchten).
+  Idee Nutzer: Wanderverbindungen zwischen Flüssen (Least-Cost-Pfad über Höhenmodell + OSM-Wege) – noch nicht umsetzen.
+
+## Schwallstellen (Weißwasser) – Vorgaben des Nutzers (Funktion experimentell)
 - Nur markieren, nicht einschätzen; Schwallstellen mit Wellensymbol ohne Nummer. Wehre ebenfalls markieren.
 - Gefahrenstelle = **rote Welle** (einziges Gefahrensymbol, `hazards()` in main.ts). **Nutzerregel 11/2026:** nur
   (1) deutlicher Höhenverlust **und** im Luftbild Abbruchkante (`findBreaklines`) oder deutliches Weißwasser

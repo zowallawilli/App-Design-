@@ -37,7 +37,10 @@ NODE_USE_ENV_PROXY=1 npx tsx scripts/soca.mts
 | **Fluss aus OSM** | Fluss anklicken → wird aus OpenStreetMap geladen und verkettet. Danach Ein- und Ausstieg anklicken. |
 | **Zeichnen** | Strecke flussabwärts selbst klicken |
 | **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte, **Klick springt dorthin** (liegt dort eine markierte Stelle, direkt in die Detailansicht). Die Leiste darunter zeigt die Luftbild-Abschnitte B1, B2 … mit Aufnahmedatum und Wasserstand-Tendenz; Klick zoomt zum Abschnitt und öffnet die Hinweise. |
-| **Schwall-/Gefahrenstellen** | Weißwasser und Abbruchkanten im offenen Orthofoto (siehe unten); Klick zoomt hin. Das Gefälle zeigen die Abschnittsfarben – eigene Hotspot-Marker gibt es nicht mehr. |
+| **Eigene Stellen** | Planungswerkzeug, weltweit und ohne Analyse nutzbar: Knopf „Eigene Stellen“, dann in die Karte klicken → Art (Stromschnelle, Walze, Wehr, Gefahrenstelle, Holz/Baum, Umtragen, Ein-/Ausstieg, Lagerplatz, Notiz), Grad I–VI, Notiz. Symbol anklicken = bearbeiten/löschen, im Modus ziehen = verschieben. Standardmäßig in der Karte; an der Strecke (≤ 500 m) in der Liste, im Profil, in der Stellen-Tour und als Wegpunkte im GPX/GeoJSON. Gefahrenstelle/Holz ≤ 100 m vom Fluss erscheinen als Gefahrenstelle (rote Welle). Gespeichert im Browser (localStorage `packraft.wwLabels`). |
+| **Aus OpenStreetMap** | Stromschnellen (`whitewater=rapid`, Grad aus `whitewater:rapid_grade`), Wasserfälle, Wehre, Dämme, Schleusen, Ein-/Ausstiege und Umtragestellen aus OSM (Overpass), weltweit – gekennzeichnet als **„aus OSM, nicht geprüft“**, eigenes eckiges Symbol, im GPX mit „(OSM)“. Fehlt ein Eintrag, kann trotzdem etwas da sein. |
+| **Gefahrenstellen** | Rote Welle: nicht einsehbare steile Klamm (Satellit/Höhenmodell) oder eigene Gefahrenstelle. Steile Abschnitte zeigt die Gefälle-Farbe. Nur mit eingeschalteter experimenteller Luftbild-Auswertung zusätzlich Abbruchkanten und Stufen mit Weißwasser. |
+| **Schwallstellen (experimentell)** | Weißwasser im offenen Orthofoto (siehe unten) – seit 26.11.2026 **standardmäßig aus** (Analyse-Parameter → „Schwallstellen-Erkennung experimentell“), weil offene Orthofotos nur in AT, SI, USA und Teilen Islands vorliegen und die Trefferquote bei ~70 % liegt. Regler, Grad-Auswahl und Lernen eingeklappt unter „Erkennung einstellen & lernen“; Code bleibt erhalten. |
 | **Export** | GPX (Track mit Höhen, Ein-/Ausstieg, Gefahren-, Schwallstellen und Schluchten als Wegpunkte mit Höhe und Beschreibung), CSV, GeoJSON. „GPX an Gaia / GPS-App senden“ öffnet am Handy das Teilen-Menü (siehe unten). |
 | **Hintergrund** | Esri-Satellitenbild, Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände. „Schärfer ↗“ öffnet dieselbe Stelle in Google Maps, Google Earth oder Apple Karten. |
 | **3D drehen** | In der 3D-Ansicht: ⟲ ⟳ dreht um 45°, „Rundflug“ kreist langsam um die Kartenmitte (Klick in die Karte stoppt), „N“ stellt Norden nach oben. Außerdem rechte Maustaste bzw. Strg + Ziehen, zwei Finger oder Umschalt + Pfeiltasten. |
@@ -304,7 +307,13 @@ Höhenmodell und wird nicht erkannt. Ein Slowenien-Laserscan (1 m) würde das ä
 Im Längsprofil zeigen farbige Bänder die Hinweise; der Mauszeiger zeigt die gemessene Flussbreite.
 GPX- und GeoJSON-Export enthalten die Hinweise als Wegpunkte bzw. Linien.
 
-## Schwallstellen: Weißwasser im offenen Orthofoto
+## Schwallstellen: Weißwasser im offenen Orthofoto (experimentell, standardmäßig aus)
+
+> **Stand 26.11.2026 eingefroren:** Die Erkennung bleibt im Code, ist aber nur noch unter „Analyse-Parameter“ als
+> experimentell einschaltbar. Gründe: offene Orthofotos fehlen in den meisten Expeditionsregionen (Norwegen, Kanada,
+> Zentralasien; Neuseeland/Finnland nur mit Schlüssel), gekaufte Satellitenbilder kosten ~8–26 $/km² und dürfen nicht
+> in einer öffentlichen App gezeigt werden, und Automatik wie gelerntes Modell treffen an den Nutzer-Markierungen nur
+> ~70 %. Weltweit wirken stattdessen eigene Stellen, OSM-Stellen sowie Gefälle, Steilstufen und Schluchten.
 
 Gefälle und Höhenmodell übersehen Stellen, die durch **Verblockung** entstehen (z. B. Schiefes Eck und
 Pianser Schwall an der Sanna). Die App sucht deshalb nach der Gefälleanalyse im hochaufgelösten
@@ -565,9 +574,10 @@ src/
   narrows.ts       Engstellen (Flussbreite), Schluchten (Talquerschnitt), verdeckte Klammen
   flow.ts          Höhenraster laden, Min-Heap, Pixel ↔ Koordinate
   osm.ts           Overpass-Abfragen (gestaffelt, Cache), Verkettung von Flusswegen, Ortssuche
+  osmPlaces.ts     Stromschnellen, Wehre, Wasserfälle, Zugänge, Umtragen aus OSM (nicht geprüft) entlang der Strecke
   profileChart.ts  Längsprofil (SVG)
   export.ts        GPX/CSV/GeoJSON
-  whitewater.ts    Weißwasser-Suche im offenen Orthofoto, Schwallstellen, Lernen aus Markierungen
+  whitewater.ts    Weißwasser-Suche im offenen Orthofoto (experimentell), Schwallstellen, Lernen; Arten eigener Stellen
   whitewaterStore.ts  eigene Markierungen/Schwelle (localStorage, Export/Import), Kachel-Dekodierung
   presets.ts       Referenzstrecken
   main.ts          Karte und Bedienoberfläche
