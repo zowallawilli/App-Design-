@@ -395,7 +395,15 @@ Das Modell ersetzt die festen Schwellen **nur, wenn es bei der Prüfung mindeste
 feste Schwelle auf denselben Markierungen** (sonst bleibt die Schwelle, die Rückmeldung nennt beide Werte). Erste echte
 Daten (Nutzer, Soča/Inn, 11/2026): 152 Markierungen, 130 mit Bildmerkmalen (69 Schwall, 61 kein Schwall) – Modell 60 %,
 feste Schwelle 70 %: Die drei gespeicherten Merkmale (Dichte, Anteil, Breite) trennen die oft knappen Fälle nicht;
-dafür braucht es reichere Bildmerkmale (Textur, Helligkeit, Form). Neue Markierungen sind standardmäßig **nur zum Lernen**;
+dafür braucht es reichere Bildmerkmale (Textur, Helligkeit, Form).
+Geprüft (`scripts/markierungen-features.mts`, `scripts/markierungen-cv.py`, alle 152 Markierungen auf neu gezogenen
+Linien Soča Soča-Dorf–Žaga–Kobarid und Inn Imster Schlucht): Körnigkeit, Kontrast und Farbe des Weißen, Uferlage, quer
+liegendes Band, Länge, Rauheit der Wasseroberfläche – bestes Modell 69 %, feste Schwelle 68 %, an die Markierungen
+angepasste Schwelle 69 % (je 5-fache Kreuzvalidierung, 20 Wiederholungen). Ursachen im Bild: (1) „kein Schwall“ steht
+auch an Stellen mit echtem Weißwasser zwischen Blöcken (für den Nutzer nicht relevant genug) – es geht um
+*Relevanz/Schwierigkeit*, nicht um Weißwasser; (2) Kalkkies und flaches, helles Bett an der Soča sieht wie Weißwasser
+aus; (3) Walzen und Wellenzüge am großvolumigen, milchigen Inn zeigen kaum Schaum. Nächster Schritt: Grad statt
+Ja/Nein lernen und kleine Schwälle als „Stromschnelle WW I“ statt „kein Schwall“ markieren. Neue Markierungen sind standardmäßig **nur zum Lernen**;
 mit dem Häkchen „auch später in der Karte anzeigen“ erscheinen sie als eigene Stelle bzw. blenden Erkennungen aus.
 Sonst gilt: der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
 1 = 88 %, 9 = 12 %). Die Trefferquote wird ehrlich an zurückgehaltenen Markierungen geprüft (5-fache
