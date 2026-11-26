@@ -129,7 +129,7 @@ const style: StyleSpecification = {
       },
     },
     {
-      id: "ww-labels", type: "circle", source: "ww-labels",
+      id: "ww-labels", type: "circle", source: "ww-labels", layout: { visibility: "none" }, // nur beim Markieren sichtbar
       paint: { "circle-radius": 7, "circle-color": ["case", ["get", "gefahr"], "#d62828", ["get", "schwall"], "#00b4d8", "#9e9e9e"], "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
     },
     { id: "cursor", type: "circle", source: "cursor", paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-stroke-color": "#000000", "circle-stroke-width": 2 } },
@@ -330,6 +330,8 @@ const MODE_HELP: Record<Mode, string> = {
 
 function setMode(m: Mode) {
   mode = m;
+  // eigene Markierungen nur im Markier-Modus zeigen – sonst stören sie bei der Planung (bleiben gespeichert, zählen fürs Lernen)
+  if (map.getLayer("ww-labels")) map.setLayoutProperty("ww-labels", "visibility", m === "ww-label" ? "visible" : "none");
   $("mode-help").textContent = MODE_HELP[m];
   const group = m.startsWith("osm") ? "osm" : m.startsWith("route") ? "route" : m === "draw" ? "draw" : "";
   document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === group));
@@ -867,7 +869,7 @@ function renderLabels() {
     (wwModel
       ? `Erkennung mit gelerntem Modell (${wwModel.pos + wwModel.neg} Markierungen, Trefferquote ${Math.round(wwModel.acc * 100)} %, ${fmtDate(wwModel.date)}), Empfindlichkeit ${wwSensitivity}. `
       : `Feste Schwelle ${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter (Empfindlichkeit ${wwSensitivity}, Flussbreite); Modell ab je 5 Markierungen „Schwall“/„kein Schwall“. `) +
-    `Markierungen bleiben bei neuen Analysen erhalten und überstimmen die Erkennung. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
+    `Markierungen bleiben bei neuen Analysen erhalten, überstimmen die Erkennung und sind nur im Modus „Stellen markieren“ als Punkte sichtbar. Gespeichert nur in diesem Browser – zur Sicherung exportieren.`;
 }
 
 let labelPopup: maplibregl.Popup | null = null;
@@ -984,6 +986,13 @@ $("ww-reset").addEventListener("click", () => {
   else renderLabels();
 });
 $("ww-export").addEventListener("click", () => download(`schwallstellen-markierungen-${new Date().toISOString().slice(0, 10)}.json`, exportJson(wwLabels, wwParams, wwModel), "application/json"));
+$("ww-clear").addEventListener("click", () => {
+  if (!wwLabels.length) return setStatus("Keine eigenen Markierungen gespeichert.");
+  if (!confirm(`Alle ${wwLabels.length} eigenen Markierungen in diesem Browser löschen? Das gelernte Modell bleibt erhalten. Tipp: vorher „Markierungen exportieren“.`)) return;
+  wwLabels = [];
+  afterLabelChange();
+  setStatus("Eigene Markierungen gelöscht.");
+});
 $("ww-import").addEventListener("click", () => $<HTMLInputElement>("ww-file").click());
 $("ww-file").addEventListener("change", async (e) => {
   const input = e.target as HTMLInputElement;

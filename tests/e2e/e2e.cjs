@@ -186,7 +186,10 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
     await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
     const i3 = await info();
+    const visIn = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
     await page.click('#ww-label');
+    const visOut = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
+    check('Eigene Markierungen nur im Markier-Modus sichtbar', visIn === 'visible' && visOut === 'none', `${visIn} → ${visOut}`);
     check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^2 eigene Markierungen \(1 Schwall, 1 kein Schwall; 2 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^2 eigene Markierungen \(0 Schwall, 2 kein Schwall/.test(i2) && /^1 eigene Markierung \(/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
   }
   check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
