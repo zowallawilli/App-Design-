@@ -106,6 +106,26 @@ export const ORTHO_SOURCES: OrthoSource[] = [
   },
 ];
 
+const ICELAND: LngLat[] = [[-24.7, 63.2], [-13.3, 63.2], [-13.3, 66.7], [-24.7, 66.7]];
+const tileBbox3857 = (x: number, y: number, z: number) => {
+  const size = (2 * Math.PI * 6378137) / 2 ** z, o = Math.PI * 6378137;
+  return [x * size - o, o - (y + 1) * size, (x + 1) * size - o, o - y * size].map((v) => v.toFixed(2)).join(",");
+};
+ORTHO_SOURCES.push({
+  // Náttúrufræðistofnun (NÁTT, ehem. LMÍ): landesweites Luftbild-Mosaik ≥ 25 cm, CC BY 4.0, WMS (mapcache) mit CORS
+  id: "natt-loftmynd",
+  name: "NÁTT Grunnkort Loftmynd (Island)",
+  attribution: "Náttúrufræðistofnun, Grunnkort – Loftmynd",
+  license: "CC BY 4.0",
+  year: "je nach Gebiet",
+  resolution: 0.4,
+  esriMatch: /^$/, // Esri zeigt in Island andere Bilder → Aufnahmetag unbekannt
+  covers: (p) => inPoly(p, ICELAND),
+  toPixel: lonLatTo3857Px(18),
+  tileUrl: (x, y) =>
+    `https://gis.natt.is/mapcache/web-mercator/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=grunnkort-loftmynd&STYLES=&SRS=EPSG:3857&BBOX=${tileBbox3857(x, y, 18)}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg`,
+});
+
 export function orthoSourceFor(line: LngLat[]): OrthoSource | null {
   const pts = [line[0], line[Math.floor(line.length / 2)], line[line.length - 1]];
   return ORTHO_SOURCES.find((s) => pts.filter((p) => s.covers(p)).length >= 2) ?? null;
@@ -126,7 +146,10 @@ export interface WhitewaterParams {
 }
 export const DEFAULT_PARAMS: WhitewaterParams = { spotDensity: 5, strongDensity: 8, minFrac: 0.18, minArea: 150 };
 
-export const HALF_WIDTH = 30; // m quer zur Linie
+/** Abtastbreite quer zur Linie (m). Ausgewertet wird zusätzlich der innere Streifen ±INNER_WIDTH
+ *  (schmale Flüsse), je 10 m zählt der stärkere Wert – breite Flüsse (Salzach 40–70 m) brauchen ±45 m. */
+export const HALF_WIDTH = 45;
+export const INNER_WIDTH = 30;
 export const ALONG = 1; // m
 export const ACROSS = 0.5; // m
 export const BIN = 10; // m
@@ -150,6 +173,11 @@ export const WHITE_MIN = 150;
 /** Mindest-Streuung (Standardabweichung des Minimum-Kanals) im Fenster 3 m × 3,5 m: Weißwasser ist
  *  körnig (Sanna: Median 12–14), glattes helles Wasser über Kalkgrund oder Gletschertrübe nicht (5–7). */
 export const WHITE_MIN_TEXTURE = 9;
+/** Relativ-Kriterium: Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers,
+ *  nur wenn das Wasser selbst nicht im Schatten liegt (Median ≥ 100). */
+export const REL_DSAT = 0.07;
+export const REL_DV = 20;
+export const REL_MIN_WATER = 100;
 
 // ---------------------------------------------------------------------------------------------
 // Streifenbild
@@ -266,7 +294,38 @@ const median = (a: number[]) => {
 };
 
 /** Wasserfläche je Querzeile + Weißwasser mit lokaler Helligkeitsschwelle. */
+/** Innerer Ausschnitt ±half m eines Streifens (gleiche Zeilen). */
+export function cropStrip(strip: Strip, half: number): Strip {
+  const c0 = Math.round(strip.cols / 2), band = Math.round(half / ACROSS);
+  const lo = Math.max(0, c0 - band), hi = Math.min(strip.cols - 1, c0 + band), cols = hi - lo + 1;
+  const rgb = new Uint8Array(strip.rows * cols * 3), valid = new Uint8Array(strip.rows * cols);
+  for (let i = 0; i < strip.rows; i++) {
+    rgb.set(strip.rgb.subarray((i * strip.cols + lo) * 3, (i * strip.cols + hi + 1) * 3), i * cols * 3);
+    valid.set(strip.valid.subarray(i * strip.cols + lo, i * strip.cols + hi + 1), i * cols);
+  }
+  return { ...strip, cols, rgb, valid };
+}
+
+/** Weißwasserprofil: voller Streifen (breite Flüsse) und innerer Streifen (schmale Flüsse); je 10 m
+ *  zählt das Ergebnis, das die Schwallstellen-Kriterien besser erfüllt. */
 export function whitewaterProfile(strip: Strip): Profile {
+  const outer = profileOf(strip);
+  if (strip.cols * ACROSS <= 2 * INNER_WIDTH + 1) return outer;
+  const inner = profileOf(cropStrip(strip, INNER_WIDTH));
+  const off = Math.round(strip.cols / 2) - Math.round(INNER_WIDTH / ACROSS);
+  const innerCols = Math.round((2 * INNER_WIDTH) / ACROSS) + 1;
+  // je 10 m das Ergebnis, das beide Kriterien (Dichte und Anteil) besser erfüllt
+  const score = (b: WhitewaterBin) => Math.min(b.density / DEFAULT_PARAMS.spotDensity, b.smooth / DEFAULT_PARAMS.minFrac);
+  const bins = outer.bins.map((b, i) => (inner.bins[i] && score(inner.bins[i]) > score(b) ? inner.bins[i] : b));
+  for (let i = 0; i < strip.rows; i++) for (let c = 0; c < innerCols; c++) {
+    const k = i * innerCols + c, K = i * strip.cols + c + off;
+    if (inner.white[k]) outer.white[K] = 1;
+    if (inner.wet[k]) outer.wet[K] = 1;
+  }
+  return { ...outer, bins };
+}
+
+function profileOf(strip: Strip): Profile {
   const { rows, cols, rgb, valid } = strip;
   const wet = new Uint8Array(rows * cols), white = new Uint8Array(rows * cols);
   const V = (k: number) => Math.min(rgb[k * 3], rgb[k * 3 + 1], rgb[k * 3 + 2]);
@@ -274,21 +333,33 @@ export function whitewaterProfile(strip: Strip): Profile {
   //    Linie; Weißwasser selbst ist nicht „wasserähnlich“, Schatten fallen ins untere Quartil)
   const nb = Math.ceil((strip.d[rows - 1] + 1e-6) / BIN) + 1;
   const vals: number[][] = Array.from({ length: nb }, () => []);
+  const sats: number[][] = Array.from({ length: nb }, () => []);
   const c0 = Math.round(cols / 2), near = Math.round(15 / ACROSS);
   for (let i = 0; i < rows; i += 2) {
     const bi = Math.floor(strip.d[i] / BIN);
     for (let c = c0 - near; c <= c0 + near; c += 2) {
       const k = i * cols + c;
-      if (valid[k] && isWaterLike(rgb[k * 3], rgb[k * 3 + 1], rgb[k * 3 + 2])) vals[bi].push(V(k));
+      const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2];
+      if (valid[k] && isWaterLike(r, g, b)) { vals[bi].push(V(k)); const mx = Math.max(r, g, b); sats[bi].push(mx ? (mx - Math.min(r, g, b)) / mx : 0); }
     }
   }
   // über ±25 m zusammenfassen (stabiler)
-  const medV = new Float64Array(nb);
+  const medV = new Float64Array(nb), midV = new Float64Array(nb), satW = new Float64Array(nb);
   for (let b = 0; b < nb; b++) {
-    const pool: number[] = [];
-    for (let j = Math.max(0, b - 2); j <= Math.min(nb - 1, b + 2); j++) pool.push(...vals[j]);
+    const pool: number[] = [], sp: number[] = [];
+    for (let j = Math.max(0, b - 2); j <= Math.min(nb - 1, b + 2); j++) { pool.push(...vals[j]); sp.push(...sats[j]); }
     medV[b] = pool.length >= 20 ? quantile(pool, 0.75) : NaN;
+    midV[b] = pool.length >= 20 ? quantile(pool, 0.5) : NaN;
+    satW[b] = sp.length >= 20 ? quantile(sp, 0.5) : NaN;
   }
+  // Relativ-Kriterium für helle/trübe Flüsse (Salzach): Schaum ist neutraler (weniger gesättigt) und heller als
+  // das Wasser daneben – nur bei nicht beschattetem Wasser (sonst wirkt jedes helle Ufer wie Schaum)
+
+  const relFoam = (bi: number, r: number, g: number, b: number) => {
+    if (!Number.isFinite(satW[bi]) || !(midV[bi] >= REL_MIN_WATER)) return false;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
+    return sat <= Math.min(0.14, satW[bi] - REL_DSAT) && mn >= midV[bi] + REL_DV && b >= r - 4;
+  };
   const localStd = (i: number, c: number) => {
     let sum = 0, sq = 0, n = 0;
     for (let di = -1; di <= 1; di++) {
@@ -318,7 +389,7 @@ export function whitewaterProfile(strip: Strip): Profile {
       if (!valid[k]) continue;
       any++;
       const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2];
-      if (isWhite(r, g, b, thr) && localStd(i, c) >= WHITE_MIN_TEXTURE) w[c] = 2;
+      if ((isWhite(r, g, b, thr) || relFoam(bi, r, g, b)) && localStd(i, c) >= WHITE_MIN_TEXTURE) w[c] = 2;
       else if (isWaterLike(r, g, b)) w[c] = 1;
     }
     if (any < cols / 2) continue;
@@ -398,7 +469,7 @@ export interface WhitewaterSpot {
   bend?: number;
   narrowing?: number;
   gradient?: number;
-  /** fällt mit einer Steilstufe zusammen → Gefahrenstelle */
+  /** liegt an einer Abbruchkante (siehe findBreaklines) */
   hazard?: boolean;
   notes: string[];
 }
@@ -473,7 +544,7 @@ export function describeSpots(
     if (bend >= 60) notes.push(`in scharfer Kurve (${Math.round(bend)}°)`);
     if (narrowing !== undefined && narrowing <= 0.7) notes.push(`Flussbett verengt (~${Math.round(narrowing * 100)} % der üblichen Breite)`);
     if (gradient !== undefined && gradient >= 30) notes.push(`steil (${Math.round(gradient)} m/km)`);
-    if (hazard) notes.push("fällt mit einer Steilstufe zusammen – mögliche Stufe/Wasserfall");
+    if (hazard) notes.push("an einer möglichen Abbruchkante (Wasserfall/Stufe/Wehr)");
     return { ...s, center, bend, narrowing, gradient, hazard, notes };
   });
 }
@@ -516,3 +587,163 @@ export function fitParams(samples: { f: number; schwall: boolean }[], base: Whit
   return { ...base, spotDensity: clamp(best) };
 }
 const clamp = (t: number) => Math.min(20, Math.max(0.5, t));
+
+// ---------------------------------------------------------------------------------------------
+// Abbruchkanten (Wasserfall, Stufe, Wehr): scharf einsetzendes Weißwasser/Gischt + Höhenverlust
+//
+// Trainiert an Selfoss, Dettifoss, Hafragilsfoss (Jökulsá á Fjöllum, NÁTT-Luftbild) und
+// Gegenbeispielen ohne Kante (Pianser Schwall, Sanna-Oberlauf, Soča-Blockstrecke, Stromschnellen
+// zwischen Selfoss und Dettifoss mit Höhenmodell-Artefakt). Gischt ist glatt – deshalb hier ohne
+// Textur- und ohne Wasserfarben-Kriterium (Gletscherwasser ist grau), nur in der Flussmitte.
+
+export interface BreakParams {
+  /** Mindestsprung des Weißanteils (Flussmitte) von oberhalb nach unterhalb der Kante */
+  minJump: number;
+  /** Weißanteil unmittelbar unterhalb der Kante */
+  minBelow: number;
+  /** Mindest-Höhenverlust (m) zwischen `up` m oberhalb und `down` m unterhalb der Kante */
+  minDrop: number;
+  up: number;
+  down: number;
+}
+export const DEFAULT_BREAK: BreakParams = { minJump: 0.4, minBelow: 0.5, minDrop: 8, up: 80, down: 100 };
+/** Weiß für Gischt/Schaum: Minimum-Kanal ≥ 165, Sättigung ≤ 0,14 */
+export const SPRAY_MIN = 165;
+
+export interface Breakline {
+  d: number;
+  center: LngLat;
+  /** Weißanteil 15 m oberhalb / unterhalb */
+  above: number;
+  below: number;
+  /** Höhenverlust (m) laut Höhenmodell, und davon über dem örtlichen Gefälle */
+  drop: number;
+  excess: number;
+  /** deutlich: scharfe Kante und ≥ 10 m Höhenverlust */
+  confidence: "deutlich" | "möglich";
+}
+
+/** Weißanteil je Meter in einem Band von ±`half` m um den Querversatz `offset` (m) zur Linie.
+ *  NaN = keine Bilddaten. */
+export function centerWhite(strip: Strip, half = 8, offset = 0): Float64Array {
+  const out = new Float64Array(strip.rows).fill(NaN);
+  const c0 = Math.round(strip.cols / 2 + offset / ACROSS), band = Math.round(half / ACROSS);
+  const lo = Math.max(0, c0 - band), hi = Math.min(strip.cols - 1, c0 + band);
+  for (let i = 0; i < strip.rows; i++) {
+    let w = 0, n = 0;
+    for (let c = lo; c <= hi; c++) {
+      const k = i * strip.cols + c;
+      if (!strip.valid[k]) continue;
+      const r = strip.rgb[k * 3], g = strip.rgb[k * 3 + 1], b = strip.rgb[k * 3 + 2];
+      const mn = Math.min(r, g, b), mx = Math.max(r, g, b);
+      n++;
+      if (mn >= SPRAY_MIN && (mx - mn) / Math.max(mx, 1) <= 0.14) w++;
+    }
+    if (n >= (hi - lo) / 2) out[i] = w / n;
+  }
+  return out;
+}
+
+const meanRange = (a: Float64Array, i0: number, i1: number) => {
+  let s = 0, n = 0;
+  for (let i = Math.max(0, i0); i < Math.min(a.length, i1); i++) if (Number.isFinite(a[i])) { s += a[i]; n++; }
+  return n >= (i1 - i0) / 2 ? s / n : NaN;
+};
+
+export interface EdgeCandidate {
+  i: number;
+  d: number;
+  jump: number;
+  above: number;
+  below: number;
+}
+
+/** Stellen, an denen Weißwasser/Gischt in der Flussmitte schlagartig einsetzt (nur Bild). */
+export function edgeCandidates(strip: Strip, params: BreakParams = DEFAULT_BREAK): EdgeCandidate[] {
+  // nur die Flussmitte: Seitenbänder (±17 m) fanden Selfoss bei versetzter Linie auch nicht, markierten
+  // aber Kiesbänke und Blöcke an der Soča → bewusst weggelassen
+  const bands = [centerWhite(strip)];
+  const L = 15;
+  const cand: EdgeCandidate[] = [];
+  for (let i = L; i < strip.rows - L; i++) {
+    let best: EdgeCandidate | null = null;
+    for (const wf of bands) {
+      const above = meanRange(wf, i - L, i), below = meanRange(wf, i, i + L);
+      if (!Number.isFinite(above) || !Number.isFinite(below)) continue;
+      const jump = below - above;
+      if (jump >= params.minJump && below >= params.minBelow && (!best || jump > best.jump)) best = { i, d: strip.d[i], jump, above, below };
+    }
+    if (best) cand.push(best);
+  }
+  // je Häufung nur das stärkste Maximum
+  const peaks: EdgeCandidate[] = [];
+  for (const c of cand) {
+    const last = peaks[peaks.length - 1];
+    if (last && c.i - last.i < 60) { if (c.jump > last.jump) peaks[peaks.length - 1] = c; }
+    else peaks.push(c);
+  }
+  return peaks;
+}
+
+/**
+ * Abbruchkanten: Weißwasser/Gischt setzt schlagartig ein (Bild) UND das Höhenmodell zeigt dort
+ * Höhenverlust ≥ minDrop zwischen `up` m oberhalb und `down` m unterhalb, davon ≥ 60 % mehr als
+ * das örtliche Gefälle (±500 m) erwarten lässt. `zAt(d)` = monoton fallendes Profil; `zFine`
+ * (optional) = feineres Profil nur um die Kandidaten (siehe localProfile).
+ */
+export function findBreaklines(
+  strip: Strip, zAt: (d: number) => number, params: BreakParams = DEFAULT_BREAK,
+  cands: EdgeCandidate[] = edgeCandidates(strip, params), zFine?: (c: EdgeCandidate, d: number) => number,
+): Breakline[] {
+  const total = strip.d[strip.rows - 1];
+  const out: Breakline[] = [];
+  for (const pk of cands) {
+    const d = pk.d;
+    const z = zFine ? (x: number) => zFine(pk, x) : zAt;
+    const a = Math.max(0, d - params.up), b = Math.min(total, d + params.down);
+    const drop = z(a) - z(b);
+    const r0 = Math.max(0, d - 500), r1 = Math.min(total, d + 500);
+    const regional = (zAt(r0) - zAt(r1)) / Math.max(1, r1 - r0);
+    const excess = drop - regional * (b - a);
+    if (drop < params.minDrop || excess < params.minDrop * 0.6) continue;
+    out.push({
+      d, center: strip.p[pk.i], above: pk.above, below: pk.below, drop, excess,
+      confidence: pk.jump >= 0.6 && drop >= 10 ? "deutlich" : "möglich",
+    });
+  }
+  return out;
+}
+
+/**
+ * Feines Höhenprofil um eine Kante: alle 5 m von d−(up+50) bis d+(down+50), je Punkt das Minimum
+ * aus Linie und ±10 m quer (Talboden), monoton fallend gemacht. Gibt z(d) für diesen Kandidaten.
+ */
+export async function localProfile(
+  strip: Strip, c: EdgeCandidate, elevations: (pts: LngLat[]) => Promise<number[]>, params: BreakParams = DEFAULT_BREAK,
+): Promise<(d: number) => number> {
+  const total = strip.d[strip.rows - 1];
+  const ds: number[] = [];
+  for (let d = Math.max(0, c.d - params.up - 50); d <= Math.min(total, c.d + params.down + 50); d += 5) ds.push(d);
+  const pts: LngLat[] = [];
+  for (const d of ds) {
+    const i = Math.min(strip.rows - 1, Math.round(d / ALONG));
+    const a = strip.p[Math.max(0, i - 5)], b = strip.p[Math.min(strip.rows - 1, i + 5)], m = strip.p[i];
+    const k = Math.cos((m[1] * Math.PI) / 180) * 111320;
+    let ex = (b[0] - a[0]) * k, ey = (b[1] - a[1]) * 110574;
+    const L = Math.hypot(ex, ey) || 1; ex /= L; ey /= L;
+    for (const o of [-10, 0, 10]) pts.push([m[0] + (-ey * o) / k, m[1] + (ex * o) / 110574]);
+  }
+  const z = await elevations(pts);
+  const floor = ds.map((_, j) => Math.min(z[3 * j], z[3 * j + 1], z[3 * j + 2]));
+  // monoton fallend (Pool-Adjacent-Violators)
+  const blocks: { s: number; n: number }[] = [];
+  for (const v of floor) {
+    blocks.push({ s: v, n: 1 });
+    while (blocks.length > 1 && blocks[blocks.length - 2].s / blocks[blocks.length - 2].n < blocks[blocks.length - 1].s / blocks[blocks.length - 1].n) {
+      const t = blocks.pop()!; blocks[blocks.length - 1].s += t.s; blocks[blocks.length - 1].n += t.n;
+    }
+  }
+  const mono: number[] = [];
+  for (const bl of blocks) for (let q = 0; q < bl.n; q++) mono.push(bl.s / bl.n);
+  return (d: number) => mono[Math.max(0, Math.min(mono.length - 1, Math.round((d - ds[0]) / 5)))];
+}

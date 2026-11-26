@@ -49,8 +49,9 @@ Im Dev-Modus ist die Karte als `window.__map` erreichbar (für e2e-Klicks).
 | `src/dem.ts` | Höhen: AWS Terrarium global, Kartverket 1 m für Norwegen (WCS, ohne INTERPOLATION-Parameter!) |
 | `src/vectorWater.ts` | OSM-Gewässer aus OpenFreeMap-Vektorkacheln (Overpass nur Fallback) |
 | `src/imagery.ts` | Esri-World-Imagery-Metadaten: Aufnahmedatum/Auflösung je Abschnitt |
-| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023), Streifenbild, Textur, Lernen |
+| `src/whitewater.ts` | Schwallstellen: Weißwasser im offenen Orthofoto (basemap.at, GURS DOF 2023, NÁTT Island), Streifenbild, Textur, Lernen; Abbruchkanten (`findBreaklines`) |
 | `src/whitewaterStore.ts` | eigene Markierungen + gelernte Schwelle (localStorage, JSON-Export/-Import), Browser-Dekoder |
+| `scripts/breakline-eval.mts` | Messung Gefahrenstellen gegen `tests/fixtures/abbruchkanten.json` |
 | `scripts/whitewater-eval.mts` | Messung gegen `tests/fixtures/schwallstellen.json`, Kontrollbilder (Fluss gerade gezogen) |
 | `scripts/tirol-mirror.mjs` + `.github/workflows/pegel-tirol.yml` | Tirol-Pegel (kein CORS) alle 30 min in Branch `pegeldaten` spiegeln, Archiv der Tagesmittel `tirol-archiv/` (≤ 400 Tage, Branch = 1 Commit) |
 | `tests/*.test.ts`, `tests/e2e/` | Unit-Tests, Browser-Test (41 Prüfungen), Screenshot-Skript |
@@ -76,10 +77,17 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - **Inn, Imster Schlucht (AT)** [10.7450, 47.2164] → [10.8976, 47.2642] (Screenshot-Zoom 12.2):
   Pegel Imst/Magerbach veröffentlichen öffentlich nur die Wasserstandsklasse; RiverApp zeigt Magerbach 25.11. ~74 m³/s,
   190 cm (eigener Datenzugang). App-Schätzung Magerbach 64–75 m³/s (Schwall).
+- **Salzach Taxenbach – Lend (AT)** [12.9640, 47.2925] → [13.0480, 47.2990]: breiter, milchiger Fluss; Nutzer meldete
+  fehlende Schwallstellen → relatives Weißwasser-Kriterium + ±45-m-Streifen (3/6 sichtbare Schwälle, vorher 0/6).
 - **Ötztaler Ache (AT)** Tumpen [10.9111, 47.1610] → Ötz [10.8930, 47.2050] (Zoom 12.7): Gletscherfluss (9,3 %).
 
 ## Schwallstellen (Weißwasser) – Vorgaben des Nutzers
-- Nur markieren, nicht einschätzen. Gefahrenstelle nur bei Weißwasser + Steilstufe. Wehre ebenfalls markieren.
+- Nur markieren, nicht einschätzen; Schwallstellen mit Wellensymbol ohne Nummer. Wehre ebenfalls markieren.
+- Gefahrenstelle = **rote Welle** (einziges Gefahrensymbol, `hazards()` in main.ts): Abbruchkante im Bild **und**
+  Höhenverlust (`findBreaklines`), Stufe nur im Höhenmodell, oder nicht einsehbare steile Klamm. Keine ▼- und K-Marker
+  mehr (Klammen erscheinen als Schlucht S). Abbruchkanten
+  trainiert an Selfoss/Dettifoss/Hafragilsfoss (NÁTT); Messung `scripts/breakline-eval.mts` (3/5, 1 Fehlalarm: Koritnica-Kiesbank am Schattenrand;
+  Krimml im Schatten nicht erkannt). Hotspot-Marker entfernt (Gefälle zeigen die Abschnittsfarben).
 - Sanna-Referenz (vom Nutzer bestätigt): Schiefes Eck (WW III, 90°-Rechtskurve bzw. kurz davor),
   Pianser Schwall (stärkster Weißwasseranteil), Wehr Landeck; Oberlauf an der Straßengalerie WW II–III = neutral.
 - Nur offene Orthofotos auswerten (Esri/Google/Apple nur Anzeige). Sentinel-2 ist dafür zu grob.
@@ -88,7 +96,7 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 
 ## Offene Punkte / Ideen
 - Weißwasser: Kalkblöcke am Ufer vs. Schaum, Weißwasser im Schatten; weitere offene Orthofotos;
-  Gefahrenstellen künftig aus Abbruchkante im Bild + Höhenverlust (Training an Wasserfällen, z. B. Island).
+  Abbruchkanten im Schatten/als Kaskade (Krimml); Markarfljót, sobald das NÁTT-Mosaik dort Bilder hat.
 - Tirol: Archiv der Tagesmittel erst ab 24.11.2026 → Eichung ab ~10 Tagen, Aufnahmetage älterer Luftbilder
   bleiben ohne Messwert (eHYD-Jahrbuch nur bis Vorjahr−1, kein dokumentierter Endpunkt).
 - Inn bei Imst/Magerbach: geschätzt aus Innsbruck (unterhalb), weil Landeck Perjen in der Restwasserstrecke liegt

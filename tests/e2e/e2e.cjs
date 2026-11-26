@@ -136,8 +136,8 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   // 11 Reset + Parameter ändern darf nichts anzeigen
   await page.click('#load-preset'); await waitIdle();
   await page.click('#reset');
-  await page.selectOption('#opt-hot', '45'); await page.waitForTimeout(2500);
-  await page.selectOption('#opt-hot', '30');
+  await page.selectOption('#opt-seg', '250'); await page.waitForTimeout(2500);
+  await page.selectOption('#opt-seg', '500');
   check('Reset: Parameter ändern zeigt nichts', !(await resultsVisible()));
 
   // 12 Doppelt laden (Race)
@@ -156,13 +156,13 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   check('Referenz Koritnica', await resultsVisible(), `${await stat('Länge')} · ${await stat('Ø Gefälle')} · ${await stat('Literatur')}`);
   const korNr = (await page.textContent('#narrows-list')).replace(/\s+/g, ' ');
   check('Koritnica: Klamm unterhalb Kluže markiert', /Klamm/.test(korNr), korNr.slice(0, 160));
-  check('Koritnica: Marker K auf Karte', (await page.locator('.nr-marker').count()) > 0);
+  check('Koritnica: Schlucht-Marker S, kein K', (await page.locator('.nr-marker').count()) > 0 && !(await page.locator('.nr-marker').allTextContents()).some((t) => t.includes('K')));
   check('Koritnica: Band im Profil', (await page.locator('#profile .narrow-band').count()) > 0);
   const wwTxt = (await page.textContent('#ww-list')).replace(/\s+/g, ' ');
   check('Koritnica: Schwallstellen im Orthofoto (GURS) gesucht', /Schwallstelle|Gefahrenstelle/.test(wwTxt) && /21\.08\.2023/.test(await page.textContent('#ww-meta')), wwTxt.slice(0, 160));
   check('Koritnica: Marker W auf Karte + Band im Profil', (await page.locator('.ww-marker').count()) > 0 && (await page.locator('#profile .ww-mark').count()) > 0);
   check('Schwallstellen in der Stellen-Tour', /Schwallstelle|Gefahrenstelle/.test(await page.evaluate(() => { const b = document.querySelector('#tour-next'); for (let i = 0; i < 30; i++) { b.click(); if (/Schwallstelle|Gefahrenstelle/.test(document.querySelector('#tour-label').textContent)) return document.querySelector('#tour-label').textContent; } return ''; })));
-  check('Koritnica: Steilstufe am Schluchtausgang', /Höhenverlust/.test(await page.textContent('#steps-list')), (await page.textContent('#steps-list')).replace(/\s+/g, ' ').slice(0, 100));
+  check('Koritnica: Gefahrenstelle (rote Welle) statt Steilstufen-Marker', (await page.locator('.hz-marker').count()) > 0 && (await page.locator('.st-marker').count()) === 0, (await page.textContent('#hz-list')).replace(/\s+/g, ' ').slice(0, 160));
   check('Wucht nur mit Pegel, sonst Hinweis', /kein Pegel/.test(fi) ? /braucht einen Abfluss/.test(await page.textContent('#rate-note')) : /Strömungsleistung/.test(await page.textContent('#rate-note')), await page.textContent('#rate-note'));
   await page.selectOption('#q-src', 'own'); await page.fill('#q-own', '150'); await page.dispatchEvent('#q-own', 'change'); await page.waitForTimeout(500);
   check('Eigener Abfluss → schwerere Einstufung', /150 m³\/s/.test(await page.textContent('#rate-note')), (await page.textContent('#classes')).replace(/\s+/g, ' ').slice(0, 120));
@@ -212,13 +212,23 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   const cur = await page.evaluate(() => window.__map.getSource('cursor')._data?.geometry?.type);
   check('Profil-Hover zeigt Punkt auf Karte', cur === 'Point');
 
-  // 16 Hotspot-Klick
-  const nHs = await page.locator('#hotspots button').count();
-  if (nHs) { await page.click('#hotspots button >> nth=0'); await page.waitForTimeout(1200); }
-  check('Hotspot-Klick zoomt', nHs === 0 || (await page.evaluate(() => window.__map.getZoom())) >= 14.9, `${nHs} Hotspots`);
+  // Gefahrenstellen: Wasserfälle der Jökulsá á Fjöllum (NÁTT-Luftbild)
+  await page.selectOption('#preset', 'jokulsa-dettifoss'); await page.click('#load-preset'); await waitIdle(400000);
+  const nBreak = (await page.locator('#hz-list li').allTextContents()).filter((t) => /Abbruchkante/.test(t)).length;
+  check('Island: Wasserfälle als Gefahrenstellen (Abbruchkante + Höhenverlust)', nBreak >= 2, `${nBreak} Gefahrenstellen · ${(await page.textContent('#ww-list')).replace(/\s+/g, ' ').slice(0, 200)}`);
+  check('Keine Hotspot-Marker mehr', (await page.locator('.hs-marker').count()) === 0);
 
   // 17 Kartenwechsel + 3D
   await page.click('[data-base="s2"]'); await page.click('[data-base="topo"]'); await page.check('#terrain'); await page.waitForTimeout(1500); await page.uncheck('#terrain');
+  await page.check('#terrain'); await page.waitForTimeout(800);
+  await page.click('#rot-right'); await page.waitForTimeout(1200);
+  const br = await page.evaluate(() => window.__map.getBearing());
+  await page.click('#rot-orbit'); await page.waitForTimeout(1500);
+  const br2 = await page.evaluate(() => window.__map.getBearing());
+  await page.click('#rot-orbit'); await page.click('#rot-north'); await page.waitForTimeout(1200);
+  const br3 = await page.evaluate(() => window.__map.getBearing());
+  await page.uncheck('#terrain');
+  check('3D: Karte drehen (45°, Rundflug, Norden)', Math.abs(br - 45) < 2 && br2 > br + 3 && Math.abs(br3) < 1, `${br.toFixed(1)}° → ${br2.toFixed(1)}° → ${br3.toFixed(1)}°`);
   check('Karten/3D ohne Fehler', true);
 
   // 18 Mobil

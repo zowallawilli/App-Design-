@@ -141,4 +141,14 @@ export const PRESETS: Preset[] = [
     takeOut: [13.5694, 46.3242],
     zoom: 14,
   },
+  {
+    id: "jokulsa-dettifoss",
+    name: "Jökulsá á Fjöllum · Selfoss – Dettifoss – Hafragilsfoss",
+    description: "Drei große Wasserfälle des Gletscherflusses (Island) – Prüfstrecke für Gefahrenstellen/Abbruchkanten im offenen NÁTT-Luftbild. Nicht befahrbar.",
+    literature: "Selfoss ~11 m, Dettifoss ~44 m, Hafragilsfoss ~27 m",
+    seed: [-16.392, 65.82],
+    putIn: [-16.379, 65.7965],
+    takeOut: [-16.4005, 65.8372],
+    zoom: 13,
+  },
 ];

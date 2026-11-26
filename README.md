@@ -3,7 +3,7 @@
 Webanwendung zur **Gefälleanalyse von Flussabschnitten** für die Packrafting-Tourenplanung.
 Ein- und Ausstieg werden auf der Karte gesetzt, der Flusslauf dazwischen wird automatisch aus
 Sentinel-2-Satellitendaten, OpenStreetMap und dem Höhenmodell nachgezogen. Die App berechnet das
-Längsprofil, das Gefälle je Abschnitt, die steilsten Stellen (Hotspots) und Talengen – in Norwegen
+Längsprofil, das Gefälle je Abschnitt, Schwall- und Gefahrenstellen im Luftbild und Talengen – in Norwegen
 mit dem 1-m-Laserscanning-Höhenmodell von Kartverket, sonst mit einem weltweiten Höhenmodell.
 
 > ⚠️ Das Gefälle ist ein **Indikator**, keine Wildwasser-Bewertung. Siphons, Holz, Verblockung,
@@ -37,9 +37,10 @@ NODE_USE_ENV_PROXY=1 npx tsx scripts/soca.mts
 | **Fluss aus OSM** | Fluss anklicken → wird aus OpenStreetMap geladen und verkettet. Danach Ein- und Ausstieg anklicken. |
 | **Zeichnen** | Strecke flussabwärts selbst klicken |
 | **Profil** | Längsprofil mit Gefälleklassen; Hover zeigt die Position auf der Karte |
-| **Hotspots** | Steilste Stellen, sortiert; Klick zoomt hin |
-| **Export** | GPX (Track + Hotspots als Wegpunkte, z. B. für GPS/Offline-Karten), CSV, GeoJSON |
-| **Hintergrund** | Esri-Satellitenbild, Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände |
+| **Schwall-/Gefahrenstellen** | Weißwasser und Abbruchkanten im offenen Orthofoto (siehe unten); Klick zoomt hin. Das Gefälle zeigen die Abschnittsfarben – eigene Hotspot-Marker gibt es nicht mehr. |
+| **Export** | GPX (Track + Gefahren-, Schwallstellen, Stufen und Schluchten als Wegpunkte, z. B. für GPS/Offline-Karten), CSV, GeoJSON |
+| **Hintergrund** | Esri-Satellitenbild, Orthofoto AT (basemap.at), Sentinel-2 cloudless (EOX), OpenTopoMap, 3D-Gelände |
+| **3D drehen** | In der 3D-Ansicht: ⟲ ⟳ dreht um 45°, „Rundflug“ kreist langsam um die Kartenmitte (Klick in die Karte stoppt), „N“ stellt Norden nach oben. Außerdem rechte Maustaste bzw. Strg + Ziehen, zwei Finger oder Umschalt + Pfeiltasten. |
 
 ## Flusslauf automatisch nachziehen (Modus „Ein-/Ausstieg“)
 
@@ -127,7 +128,7 @@ anderen Fluss oder Hang, Kraftwerksausleitungen und Speicher fehlen. Eine solche
 führen als helfen. GloFAS wird nur noch intern genutzt, um bei mehreren Pegeln den am richtigen Fluss zu wählen.
 
 **Stellen im Luftbild ansehen:** Mit ◀ ▶ springt die Karte nacheinander zu allen markierten Stellen
-(Hotspots, Schluchten) und zoomt so weit ins Luftbild, dass Blöcke und Stufen erkennbar sind.
+(Gefahren- und Schwallstellen, Stufen, Schluchten) und zoomt so weit ins Luftbild, dass Blöcke und Stufen erkennbar sind.
 
 Grenzen: GloFAS ist ein Modell; für kleine Flüsse (< ~500 km² Einzugsgebiet) und nahe Mündungen
 kann der gewählte Rasterpunkt am falschen Fluss liegen (er wird auf der Karte blau angezeigt).
@@ -151,7 +152,7 @@ bis ein eigener Abfluss eingetragen ist.
 
 Die 300-m-Glättung des Profils verteilt einen Wasserfall auf mehrere hundert Meter. Steilstufen werden
 deshalb im monoton angepassten, aber ungeglätteten Profil gesucht: **≥ 8 m Höhenverlust auf 100 m**
-(Marker ▼). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
+(als **Gefahrenstelle** „Stufe im Höhenmodell“, rote Welle). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
 erkannt; in tiefen Schluchten liefert das Höhenmodell teils Werte vom Rand, daher „im Luftbild prüfen“.
 
 ## Wellen messen
@@ -240,7 +241,7 @@ Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen ges
 |---|---|---|
 | **E** (orange) | **Engstelle** (optional, standardmäßig aus) | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
 | **S** (violett) | **Schlucht** | Talquerschnitt alle 50 m aus dem Höhenmodell: Talbreite 5 m und 20 m über dem Wasserspiegel und Tiefe (Anstieg innerhalb 250 m, schwächere Seite). Schlucht, wenn das Tal 20 m über Wasser ≤ 90 m breit und ≥ 30 m tief ist (Kartverket 1 m), bzw. ≤ 140 m / ≥ 60 m mit dem groben globalen Modell. |
-| **K** (schwarz) | **Mögliche Klamm** | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
+| **S** (violett) | **Fluss verdeckt** (früher eigenes „K“) – wird als Schlucht gezeigt; ist der Abschnitt zusätzlich steil (≥ 30 m/km oder Stufe), erscheint er als **Gefahrenstelle „nicht einsehbar“** (rote Welle) | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
 
 Schlucht- und Klamm-Hinweise, die weniger als 1 km auseinanderliegen, werden zu einer
 **Schluchtstrecke** zusammengefasst – helle Felswände sehen im Satellitenbild wie Flussbett aus,
@@ -265,13 +266,51 @@ Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher un
 
 | Schritt | Verfahren |
 |---|---|
-| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
-| Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±30 m in 0,5-m-Schritten. |
+| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
+| Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±45 m in 0,5-m-Schritten. Ausgewertet werden der volle Streifen (breite Flüsse wie die Salzach, 40–70 m) und der innere Streifen ±30 m (schmale Flüsse); je 10 m zählt das Ergebnis, das die Kriterien besser erfüllt. |
 | Wasserfläche | je Querzeile der zusammenhängende Lauf aus wasserähnlichen (bläulich/türkis) und Weißwasser-Pixeln nahe der Linie – auch wenn die Linie etwas neben dem Wasser liegt. |
-| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). |
+| Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). **Zusätzlich relativ** (trübe, helle Flüsse wie die Salzach, deren Schaum kaum heller als das Wasser ist): Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers daneben – nur bei nicht beschattetem Wasser (Median ≥ 100), sonst wirkt helles Ufer wie Schaum. |
 | Schwallstelle | Weißwasserfläche je Flussmeter (über 30 m geglättet) ≥ **5 m²/m** und ≥ 18 % der Wasserfläche, zusammen ≥ 150 m²; Lücken bis 50 m werden verbunden. „Viel Weißwasser“ ab 8 m²/m. |
-| Merkmale | scharfe Kurve (≥ 60° auf ±50 m), Verengung (≤ 70 % der üblichen Breite ±500 m), lokales Gefälle ≥ 30 m/km. Fällt eine Stelle mit einer **Steilstufe** zusammen → rote **Gefahrenstelle** („mögliche Stufe/Wasserfall“). |
+| Merkmale | scharfe Kurve (≥ 60° auf ±50 m), Verengung (≤ 70 % der üblichen Breite ±500 m), lokales Gefälle ≥ 30 m/km. |
 | Wasserstand | Esri meldet für denselben Bildflug das Aufnahmedatum (Tirol: Land Tirol 07.09.2023, Slowenien: GURS 21.08.2023). Damit zeigt die App den Abfluss am Aufnahmetag (Pegel, geeichtes Modell) und ob das Bild bei Niedrig-, Mittel- oder Hochwasser entstand. |
+
+### Gefahrenstellen: mögliche Abbruchkanten (Wasserfall, Stufe, Wehr)
+
+Steilstufen allein aus dem Höhenmodell sind unscharf (Schluchtränder, 30-m-Raster). Eine **Gefahrenstelle**
+(rote Welle) vom Typ „mögliche Abbruchkante“ wird deshalb nur markiert, wenn **beides** zutrifft:
+
+1. **Kante im Luftbild:** In der Flussmitte (±8 m) setzt Weißwasser/Gischt entlang des Flusses
+   schlagartig ein – Anteil heller, ungesättigter Pixel (Minimum-Kanal ≥ 165) auf den 15 m unterhalb
+   ≥ 50 % und mindestens 40 Prozentpunkte höher als auf den 15 m oberhalb. Gischt ist glatt, deshalb hier ohne
+   Textur- und Wasserfarben-Kriterium (Gletscherwasser ist grau).
+2. **Höhenverlust:** Nur an diesen Kandidaten wird das feinere Höhenmodell (Zoomstufe 15, Talboden aus
+   Linie ±10 m, monoton fallend) nachgeladen. Gefordert: ≥ 8 m zwischen 80 m oberhalb und 100 m
+   unterhalb der Kante, davon ≥ 4,8 m mehr als das örtliche Gefälle (±500 m) erwarten lässt.
+
+„Deutlich“ bei einem Sprung ≥ 60 Prozentpunkte und ≥ 10 m Höhenverlust, sonst „möglich“. Steilstufen,
+die das Bild nicht bestätigt, erscheinen als Gefahrenstelle „Stufe im Höhenmodell“ (ebenfalls rote Welle, Text nennt den Grund); verdeckte, steile Klammen als „nicht einsehbar“. Wehre und Stufen unter ~8 m erscheinen
+als Schwallstelle: Mit 5 m ließen sich auch kleine Stufen fassen, dann markierten aber helle Kalkkiesbänke
+an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter 8 m ist das Höhenmodell zu ungenau.
+
+**Training und Messung** (`scripts/breakline-eval.mts`, `tests/fixtures/abbruchkanten.json`), Stand 11/2026:
+
+| Stelle | Bild | erwartet | Ergebnis |
+|---|---|---|---|
+| Selfoss (Jökulsá á Fjöllum) | NÁTT | Kante | ✅ erkannt (13 m, „möglich“) |
+| Dettifoss | NÁTT | Kante | ✅ erkannt (50 m, „deutlich“) |
+| Hafragilsfoss | NÁTT | Kante | ✅ erkannt (96 m inkl. Schlucht darunter, „deutlich“) |
+| Stromschnellen zwischen Selfoss und Dettifoss (Höhenmodell meldet 35 m) | NÁTT | keine | ✅ keine Kante |
+| Krimmler Wasserfälle, obere und untere Stufe | basemap.at | Kante | ❌ nicht erkannt – Kaskaden im tiefen Morgenschatten, keine einzelne Kante (bleibt als Gefahrenstelle „Stufe im Höhenmodell“) |
+| Sanna: Schiefes Eck, Pianser Schwall, Oberlauf | basemap.at | keine | ✅ keine Kante |
+| Soča: Blockwerk vor Trnovo, Kalkkiesbänke | GURS | keine | ✅ keine Kante |
+| Koritnica: Kiesbank am Schattenrand (km 1,2) | GURS | keine | ❌ **Fehlalarm** – Übergang Schatten → sonnige helle Kiesbank wirkt wie einsetzende Gischt, Höhenmodell 14 m |
+
+**3/5 Abbruchkanten erkannt, 1/6 Gegenbeispielen fälschlich markiert** (Koritnica-Kiesbank am Schattenrand), sonst keine weiteren Kanten (Messskript mit OSM-Linie).
+In der App (Linie zusätzlich aus Sentinel-2) wird Selfoss nicht markiert: Die Linie liegt dort 36 m neben der
+Fallkante im über 100 m breiten Fluss. Breitere Suchbänder fanden Selfoss trotzdem nicht, markierten aber
+Kiesbänke an der Soča – deshalb nur die Flussmitte. Markarfljót,
+Gullfoss und Goðafoss liegen (noch) außerhalb des NÁTT-Mosaiks; Sjoa/Norwegen hat keine offene Bildquelle.
+Der Datensatz ist klein – Schwellen mit weiteren Fällen (eigene Markierungen, neue Mosaik-Gebiete) nachprüfen.
 
 **Lernen aus eigenen Markierungen:** „Stellen markieren“ → im Luftbild klicken → „Schwall“ / „kein
 Schwall“. „Aus Markierungen lernen“ passt die Schwelle (m²/m) so an, dass die eigenen Markierungen der
@@ -292,6 +331,7 @@ schärfer als das Esri-Luftbild, gut für die Wellenmessung.
 | Soča, Srpenica – Trnovo | GURS 21.08.2023 | keine verorteten Einzelstellen in offenen Quellen | – | 7 (Stichprobe: Weißwasser im Blockwerk vor Trnovo bestätigt) |
 | Koritnica, Kluže – Mündung | GURS 21.08.2023 | dto. | – | 3 (unterer Abschnitt, Blockstrecken) |
 | Inn, Imster Schlucht | basemap.at 07.09.2023 | Rohrbrückenschwall, Memminger Walze (Lage nicht belegt) | – | 6 |
+| Salzach, Taxenbach – Lend | basemap.at 2025 | 6 im Luftbild sichtbare Schwälle | **3/6** (Querband km 4,2–4,4, km 6,8, km 7,6; vorher 0/6). In der App (Linie mit Sentinel-2, am Querband ~7 m versetzt) 2/6 – das Querband bleibt knapp unter Anteil/Fläche | 1 (km 0,1) – nicht erkannt: km 3,2 (Brückenschatten), 3,6 (Blockstrecke mit wenig Schaum), 5,6–6,0 (schwächer) |
 | Sjoa | – | – | – | keine offene Bildquelle |
 
 Erkenntnisse: Mit reiner Helligkeit wäre helles ruhiges Wasser (Soča über Kalkgrund, milchiger Inn)
@@ -303,7 +343,7 @@ sind farblich ähnlich und können noch Fehlalarme erzeugen; Weißwasser im tief
 | Region | Quelle | Auswertung erlaubt? |
 |---|---|---|
 | Österreich, Slowenien | basemap.at, GURS | ✅ eingebaut |
-| Island | NÁTT (ehem. LMÍ), Sommer-Mosaik 2025, CC BY 4.0 | ✅ wahrscheinlich – Dienst/CORS noch prüfen |
+| Island | NÁTT (ehem. LMÍ) „Grunnkort – Loftmynd“, CC BY 4.0, WMS mit CORS | ✅ eingebaut (Abdeckung 11/2026 v. a. Nordosten) |
 | Finnland | Maanmittauslaitos Ortokuva, CC BY 4.0 | ✅ mit kostenlosem persönlichen Schlüssel |
 | Neuseeland | LINZ Basemaps 7,5–30 cm, CC BY 4.0 | ✅ mit kostenlosem Schlüssel |
 | USA | NAIP 0,6–1 m (USGS), gemeinfrei | ✅ (1 m nur für größere Schwälle) |
@@ -321,8 +361,8 @@ sind farblich ähnlich und können noch Fehlalarme erzeugen; Weißwasser im tief
    (Flüsse fließen nicht bergauf). Das entfernt Ausreißer wie Brücken oder Vegetation. Danach
    verteilt ein gleitendes Mittel über 300 m die Treppenstufen des Höhenmodells.
 4. **Abschnitte** (250 m / 500 m / 1 km) bekommen ihr Gefälle in m/km und eine Gefälleklasse.
-5. **Hotspots:** Ein 250-m-Fenster gleitet über die Strecke. Stellen mit Gefälle ≥ Schwelle
-   (Standard 30 m/km) und ≥ 10 m Höhenverlust werden markiert.
+5. **Hotspots** (intern, nicht mehr angezeigt): Ein 250-m-Fenster gleitet über die Strecke; Stellen mit
+   ≥ 30 m/km und ≥ 10 m Höhenverlust. Für die Anzeige genügen die Gefälle-Farben der Abschnitte.
 6. **Talenge:** Steigen die Hänge 100 m quer zum Fluss auf beiden Seiten um ≥ 20 m, wird der
    Abschnitt als Talenge markiert. Das deutet auf eine Schlucht hin, in der Umtragen schwierig sein kann.
 7. Die **Fließrichtung** wird anhand der Höhen geprüft und bei Bedarf umgedreht.
@@ -356,6 +396,7 @@ Die Schwellen stehen in `src/analysis.ts` (`GRADIENT_CLASSES`) und sollen mit ei
 | Ortssuche | Nominatim | Nutzungsbedingungen beachten (sparsame Nutzung) |
 | Satellitenbild | Esri World Imagery | nur Anzeige, keine automatisierte Auswertung (Metadaten liefern das Aufnahmedatum) |
 | Orthofoto Österreich | [basemap.at](https://basemap.at) | CC BY 4.0; Anzeige („Orthofoto AT“) und Weißwasser-Suche |
+| Orthofoto Island | NÁTT „Grunnkort – Loftmynd“ (gis.natt.is, WMS) | CC BY 4.0 („Náttúrufræðistofnun, Grunnkort – Loftmynd“); Weißwasser- und Abbruchkanten-Suche |
 | Orthofoto Slowenien | GURS DOF 2023 (Kachelcache auf gisportal.furs.gov.si) | CC BY 4.0 („Javne informacije Slovenije, Geodetska uprava RS“); Weißwasser-Suche |
 | Satellitenbild | Sentinel-2 cloudless 2023 (EOX) | CC BY-NC-SA 4.0 |
 | Topo | OpenTopoMap | CC-BY-SA |

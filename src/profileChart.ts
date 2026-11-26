@@ -62,10 +62,6 @@ export function renderProfile(
     el("rect", { x: x(f.d0), y: m.t, width: Math.max(3, x(f.d1) - x(f.d0)), height: ih, fill: BAND[f.kind], class: "narrow-band" }, svg);
   }
 
-  // Steilstufen als dunkle Linien
-  for (const st of a.steps ?? []) {
-    el("rect", { x: x(st.d0), y: m.t, width: Math.max(2, x(st.d1) - x(st.d0)), height: ih, fill: "#1d3557", opacity: 0.25 }, svg);
-  }
 
   // Schwallstellen (Weißwasser im Luftbild) als Marken am oberen Rand
   for (const w of whitewater) {
@@ -73,10 +69,6 @@ export function renderProfile(
     el("rect", { x: x(w.d0), y: m.t, width: Math.max(3, x(w.d1) - x(w.d0)), height: 8, fill: w.hazard ? "#d62828" : "#0077b6", class: "ww-mark" }, svg);
   }
 
-  // Hotspots
-  for (const h of a.hotspots) {
-    el("rect", { x: x(h.d0), y: m.t, width: Math.max(2, x(h.d1) - x(h.d0)), height: ih, class: "hotspot-band" }, svg);
-  }
 
   // Abschnittsflächen nach Gefälleklasse
   for (const s of a.segments) {

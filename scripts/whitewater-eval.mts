@@ -11,13 +11,16 @@ import { locateOnLine, type LngLat } from "../src/geo";
 import { waterInBbox } from "../src/vectorWater";
 import { ACROSS, DEFAULT_PARAMS, describeSpots, findSpots, ORTHO_SOURCES, orthoSourceFor, sampleStrip, whitewaterProfile, type TileDecoder } from "../src/whitewater";
 import { nodeTileLoader } from "./nodeTileLoader";
+import { sentinelWater } from "../src/sentinel";
 
 const OUT = process.argv[2] ?? "ww-out";
 const only = process.argv.slice(3);
 mkdirSync(OUT, { recursive: true });
-const fx = JSON.parse(readFileSync(new URL("../tests/fixtures/schwallstellen.json", import.meta.url), "utf8"));
-const decode: TileDecoder = async (buf) => {
-  const d = jpeg.decode(new Uint8Array(buf), { useTArray: true, formatAsRGBA: true });
+const fx = JSON.parse(readFileSync(new URL(`../tests/fixtures/${process.env.FIXTURE ?? "schwallstellen"}.json`, import.meta.url), "utf8"));
+export const decode: TileDecoder = async (buf) => {
+  const u = new Uint8Array(buf);
+  if (u[0] === 0x89 && u[1] === 0x50) { const p = PNG.sync.read(Buffer.from(u)); return { data: p.data, width: p.width, height: p.height }; }
+  const d = jpeg.decode(u, { useTArray: true, formatAsRGBA: true });
   return { data: d.data, width: d.width, height: d.height };
 };
 const gm = (p: LngLat) => `https://www.google.com/maps/search/?api=1&query=${p[1].toFixed(5)},${p[0].toFixed(5)}`;
@@ -25,11 +28,11 @@ const gm = (p: LngLat) => `https://www.google.com/maps/search/?api=1&query=${p[1
 let totalRef = 0, totalHit = 0, totalFalse = 0;
 for (const r of fx.rivers) {
   if (only.length && !only.includes(r.id)) continue;
-  const lf = `${OUT}/line-${r.id}.json`;
+  const lf = `${OUT}/line-${r.id}${process.env.S2 ? "-s2" : ""}.json`; // S2=1: Linie wie in der App (mit Sentinel-2)
   let line: LngLat[];
   if (existsSync(lf)) line = JSON.parse(readFileSync(lf, "utf8"));
   else {
-    line = (await traceRiver(r.putIn, r.takeOut, { loader: compositeTileLoader("global", nodeTileLoader), waterways: waterInBbox })).line;
+    line = (await traceRiver(r.putIn, r.takeOut, { loader: compositeTileLoader("global", nodeTileLoader), waterways: waterInBbox, ...(process.env.S2 ? { water: sentinelWater } : {}) })).line;
     writeFileSync(lf, JSON.stringify(line));
   }
   const src = orthoSourceFor(line);
