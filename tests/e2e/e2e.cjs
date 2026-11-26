@@ -193,13 +193,14 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.evaluate(() => { document.querySelector('#ww-learn').closest('details').open = true; });
     await page.click('#ww-learn'); await page.waitForTimeout(300);
     const lr = (await page.textContent('#ww-learn-result')).replace(/\s+/g, ' ');
+    const lrHtml = await page.innerHTML('#ww-learn-result');
     let put = null;
     await page.route(/api\.github\.com/, (r) => { put = r.request(); return r.fulfill({ status: 201, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ content: { html_url: 'https://github.com/zowallawilli/App-Design-/blob/main/daten/markierungen/x.json' } }) }); });
     await page.evaluate(() => { const el = document.getElementById('gh-token'); el.value = 'test-token'; el.dispatchEvent(new Event('change')); });
     await page.click('#ww-export'); await page.waitForTimeout(800);
     const up = (await page.textContent('#ww-learn-result')).replace(/\s+/g, ' ');
     await page.evaluate(() => { const el = document.getElementById('gh-token'); el.value = ''; el.dispatchEvent(new Event('change')); });
-    check('Lernen gibt Rückmeldung, Export lädt mit Schlüssel nach daten/markierungen/ hoch', /Noch kein Modell: \d+ Schwall/.test(lr) && /hochgeladen nach daten\/markierungen\/markierungen-/.test(up) && put && put.method() === 'PUT' && /contents\/daten\/markierungen\//.test(put.url()), `${lr.slice(0, 80)} | ${up.slice(0, 90)}`);
+    check('Lernen gibt Rückmeldung, Export lädt mit Schlüssel nach daten/markierungen/ hoch', /Verarbeitet: \d+ von \d+ Markierungen/.test(lr) && /alle Schwälle<\/b>: \d+ Schwall/.test(lrHtml) && /hochgeladen nach daten\/markierungen\/markierungen-/.test(up) && put && put.method() === 'PUT' && /contents\/daten\/markierungen\//.test(put.url()), `${lr.slice(0, 80)} | ${up.slice(0, 90)}`);
     check('Eigene Markierungen nur im Markier-Modus sichtbar', visIn === 'visible' && visOut === 'none', `${visIn} → ${visOut}`);
     check('Eigene Markierung: Art + Grad, Ändern ohne Doppelung, Löschen', /^2 eigene Markierungen \(1 Schwall, 1 kein Schwall; 2 mit Luftbild/.test(i1) && /Walze \/ Loch · WW III/.test(head) && /^2 eigene Markierungen \(0 Schwall, 2 kein Schwall/.test(i2) && /^1 eigene Markierung \(/.test(i3), `${i1.slice(0, 70)} | ${head} | ${i2.slice(0, 50)} | ${i3.slice(0, 30)}`);
   }
