@@ -30,7 +30,7 @@ const RATED_LABELS = ["Zahmwasser", "WW I", "WW II", "WW II–III", "WW III–IV
 export const RATED_CLASSES: GradientClass[] = GRADIENT_CLASSES.map((c, i) => ({
   ...c,
   label: RATED_LABELS[i],
-  hint: i === 0 ? "kein Wildwasser" : i >= 4 ? "Stellen besichtigen, Umtragen einplanen" : "Einschätzung aus Gefälle und Wasservolumen",
+  hint: i === 0 ? "kein Wildwasser" : i >= 4 ? "Stellen besichtigen, Umtragen einplanen" : "",
 }));
 
 /**

@@ -24,7 +24,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.waitForFunction(() => window.__map && window.__map.loaded());
 
   const status = () => page.textContent('#status');
-  const stat = async (k) => page.evaluate((k) => { const dts = [...document.querySelectorAll('#stats dt')]; const dt = dts.find(d => d.textContent === k); return dt ? dt.nextElementSibling.textContent : null; }, k);
+  const stat = async (k) => page.evaluate((k) => { const dts = [...document.querySelectorAll('#results dt')]; const dt = dts.find(d => d.textContent === k); return dt ? dt.nextElementSibling.textContent : null; }, k);
   const waitIdle = async (ms = 240000) => { await page.waitForTimeout(300); await page.waitForFunction(() => !document.body.classList.contains('busy'), null, { timeout: ms }); await page.waitForTimeout(200); };
   const view = (c, z) => page.evaluate(([c, z]) => new Promise(res => { window.__map.jumpTo({ center: c, zoom: z }); window.__map.once('idle', res); setTimeout(res, 3000); }), [c, z]);
   const clickLL = async (ll) => {
@@ -233,6 +233,12 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     if (ext !== 'csv' && (await page.locator('#ww-list .ww-id').count()) > 0) check(`Export ${ext} enthält Schwallstellen`, /Schwall|schwall/.test(txt));
   }
 
+  check('Teilen-Knopf sichtbar, Quellen eingeklappt', await page.isVisible('#exp-share') && !(await page.isVisible('#ww-meta')) && !(await page.isVisible('#stats-more')));
+  {
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exp-gpx')]);
+    const txt = fs.readFileSync(await dl.path(), 'utf8');
+    check('GPX: steile Abschnitte als Track + Wegpunkt', /<name>Steil km/.test(txt) && (txt.match(/<trk>/g) || []).length >= 2, `${(txt.match(/<trk>/g) || []).length} Tracks`);
+  }
   // 15 Profil-Hover
   await page.hover('#profile svg', { position: { x: 600, y: 100 } });
   const cur = await page.evaluate(() => window.__map.getSource('cursor')._data?.geometry?.type);

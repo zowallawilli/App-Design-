@@ -154,18 +154,29 @@ available“ – auch die Stellen-Tour (Zoom 17,5) landete dort im Grau. Auch al
 
 Die Auswertung (Weißwasser) bleibt bei offenen Orthofotos: Google, Apple, Bing und Esri dürfen nur angezeigt werden.
 
-## GPX für Gaia GPS und andere GPS-Apps
+## GPX für Gaia GPS, Garmin Explore und andere GPS-Apps
 
 Der GPX-Export (GPX 1.1) enthält die Strecke als **Track mit Höhen je Punkt** (alle 25 m, geglättetes Profil),
-Einstieg/Ausstieg und alle markierten Stellen als **Wegpunkte mit Höhe, Name, Beschreibung und Typ**; die
-Track-Beschreibung nennt Länge, Höhenverlust und die steilen Abschnitte (≥ 15 m/km). Gaia GPS liest GPX (Tracks und
-Wegpunkte mit Namen/Notizen) und zeigt zum Track ein eigenes Höhenprofil. Nicht übertragbar: die Farben der
-Gefälleabschnitte (GPX kennt keine Linienfarben je Abschnitt) – deshalb steht das Gefälle im Text.
+Einstieg/Ausstieg und alle markierten Stellen als **Wegpunkte mit Höhe, Name, Beschreibung und Typ**.
 
-**Direkt zu Gaia:** Gaia GPS hat keine öffentliche Schnittstelle zum Hochladen. Der Weg ohne Umweg: Knopf
-„GPX an Gaia / GPS-App senden“ (iPhone/iPad/Android, Browser mit Teilen-Funktion) → im Teilen-Menü **Gaia GPS**
-wählen. Sonst die GPX-Datei herunterladen und in Gaia über *Import* (App: Dateien → Teilen → Gaia GPS; Web:
-gaiagps.com → Import) öffnen. Ebenso für OsmAnd, Locus, Garmin Explore, Komoot (nur Track).
+**Stellen aus dem Höhenprofil in der GPS-App (Optionen unter „Export & Teilen“, werden gemerkt):**
+
+| Option | Ergebnis in der App | Standard |
+|---|---|---|
+| Steile Abschnitte (ab 15 m/km) als eigene Tracks + Wegpunkt am Beginn | durchgehende Strecke bleibt (ein Höhenprofil); darüber je Steilstrecke ein Track „Steil km 2,0–2,8 · 35 m/km“ und ein Wegpunkt am Beginn mit Gefälle-Indikator (z. B. WW II–III) | an |
+| Ganze Strecke nach Gefälle teilen | statt eines Tracks ein Track je Gefälleklasse-Abschnitt („Fluss · km 1,0–2,5 · 12 m/km“) – vollständig, aber viele Einträge, Höhenprofil nur je Stück | aus |
+| Kilometer-Wegpunkte | Wegpunkt „km 1“, „km 2“ … zur Orientierung auf dem Wasser | aus |
+
+**Farben:** Jeder Track trägt seine Gefälle-Farbe dreifach (Garmin `gpxx:DisplayColor` als benannte Farbe,
+`gpx_style`, OsmAnd). OsmAnd/Locus zeigen sie; Garmin liest benannte Farben teilweise. **Gaia GPS übernimmt beim Import
+keine Linienfarben** (laut Gaia-Hilfe) – dort erkennt man die Steilstrecken an Namen und Wegpunkten und kann sie in Gaia
+selbst einfärben. Deshalb ist „Steilstrecken als eigene Tracks + Wegpunkte“ der Standard und nicht die Farbteilung.
+
+**Teilen:** Knopf „Teilen …“ öffnet das Teilen-Menü des Geräts (GPS-Apps, Messenger, Mail); ohne Teilen-Funktion wird
+die Datei heruntergeladen. Gaia GPS erschien beim Test des Nutzers (iPhone) nicht im Teilen-Menü – vermutlich, weil
+das Menü für Dateien aus dem Browser nur Apps anbietet, die den Dateityp passend anmelden. Weg: „In Dateien sichern“
+→ in Gaia importieren (oder gaiagps.com → Import). Garmin Explore: Datei in „Dateien“ antippen → Teilen → Explore, oder
+explore.garmin.com → Import. Gaia und Garmin Explore haben keine öffentliche Schnittstelle zum direkten Hochladen.
 
 ## Wucht: Gefälle × Abfluss
 
