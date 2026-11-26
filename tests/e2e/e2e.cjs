@@ -190,7 +190,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.click('#ww-label');
     const visOut = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
     // Lernen mit zu wenigen Markierungen → sichtbare Rückmeldung; Export mit Schlüssel → Upload (GitHub-API simuliert)
-    await page.evaluate(() => { document.querySelector('#ww-learn').closest('details').open = true; });
+    await page.evaluate(() => { const dd = document.querySelector('#ww-learn').closest('details'); if (dd) dd.open = true; });
     await page.click('#ww-learn'); await page.waitForTimeout(300);
     const lr = (await page.textContent('#ww-learn-result')).replace(/\s+/g, ' ');
     const lrHtml = await page.innerHTML('#ww-learn-result');
