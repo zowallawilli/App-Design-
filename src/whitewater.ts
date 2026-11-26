@@ -178,6 +178,12 @@ export const WHITE_MIN_TEXTURE = 9;
 export const REL_DSAT = 0.07;
 export const REL_DV = 20;
 export const REL_MIN_WATER = 100;
+/** Dichter, glatter Schaum (Querband/Walze unter Wehr oder Stufe): sehr hell (Minimum-Kanal ≥ 215), kaum
+ *  gesättigt (≤ 0,10) – ohne Textur-Kriterium, aber nur, wenn flussauf- und -abwärts innerhalb von
+ *  FOAM_ALONG m Wasser liegt (Kalkkiesbänke sind viel länger und grenzen an Land). */
+export const FOAM_MIN = 215;
+export const FOAM_MAX_SAT = 0.1;
+export const FOAM_ALONG = 15;
 
 // ---------------------------------------------------------------------------------------------
 // Streifenbild
@@ -374,6 +380,30 @@ function profileOf(strip: Strip): Profile {
     }
     return n > 4 ? Math.sqrt(Math.max(0, sq / n - (sum / n) ** 2)) : 0;
   };
+  // dichter Schaum: hell, neutral, entlang des Flusses (gleiche Spalte ±0,5 m) beidseits von Wasser eingeschlossen
+  const foam = new Uint8Array(rows * cols);
+  {
+    const isFoamPx = (k: number) => {
+      const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      return valid[k] && mn >= FOAM_MIN && (mx - mn) / Math.max(mx, 1) <= FOAM_MAX_SAT && b >= r - 4;
+    };
+    const plainWater = (k: number) => { const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2]; return valid[k] && isWaterLike(r, g, b) && Math.min(r, g, b) < FOAM_MIN - 30; };
+    const L = Math.round(FOAM_ALONG / ALONG);
+    const up = new Int32Array(cols).fill(-1e9);
+    const lastUp = new Int32Array(rows * cols);
+    for (let i = 0; i < rows; i++) for (let c = 0; c < cols; c++) { const k = i * cols + c; if (plainWater(k)) up[c] = i; lastUp[k] = i - up[c]; }
+    const dn = new Int32Array(cols).fill(1e9);
+    for (let i = rows - 1; i >= 0; i--) for (let c = 0; c < cols; c++) {
+      const k = i * cols + c;
+      if (plainWater(k)) dn[c] = i;
+      if (!isFoamPx(k)) continue;
+      const near = (cc: number) => cc >= 0 && cc < cols;
+      let okUp = false, okDn = false;
+      for (const cc of [c - 1, c, c + 1]) if (near(cc)) { if (lastUp[i * cols + cc] <= L) okUp = true; }
+      if (dn[c] - i <= L || (c > 0 && dn[c - 1] - i <= L) || (c < cols - 1 && dn[c + 1] - i <= L)) okDn = true;
+      if (okUp && okDn) foam[k] = 1;
+    }
+  }
   const thrOf = (b: number) => Math.min(235, Math.max(WHITE_MIN, (Number.isFinite(medV[b]) ? medV[b] : 120) + WHITE_MARGIN));
   // 2) je Zeile: Lauf aus Wasser-/Weißwasserpixeln, der der Linie am nächsten liegt (Lücken ≤ 2 m)
   const widths: number[][] = Array.from({ length: nb }, () => []);
@@ -390,6 +420,7 @@ function profileOf(strip: Strip): Profile {
       any++;
       const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2];
       if ((isWhite(r, g, b, thr) || relFoam(bi, r, g, b)) && localStd(i, c) >= WHITE_MIN_TEXTURE) w[c] = 2;
+      else if (foam[k]) w[c] = 2;
       else if (isWaterLike(r, g, b)) w[c] = 1;
     }
     if (any < cols / 2) continue;
@@ -609,6 +640,27 @@ export interface BreakParams {
 export const DEFAULT_BREAK: BreakParams = { minJump: 0.4, minBelow: 0.5, minDrop: 8, up: 80, down: 100 };
 /** Weiß für Gischt/Schaum: Minimum-Kanal ≥ 165, Sättigung ≤ 0,14 */
 export const SPRAY_MIN = 165;
+/** Gischt unter einer Fallkante ist im Bild eine glatte Fläche (Streuung des Minimum-Kanals im 1,5 × 3,5-m-Fenster:
+ *  Island 2–5), helle Kiesbänke sind körnig (Koritnica 9–11) → Kandidaten mit gröberer Textur verwerfen. */
+export const SPRAY_MAX_TEXTURE = 8;
+
+/** Median der Streuung (Minimum-Kanal, Fenster 3 × 7 Zellen) über die hellen, neutralen Zellen eines Bereichs. */
+export function sprayTexture(strip: Strip, i0: number, i1: number, half = 8): number {
+  const { cols, rgb, valid } = strip;
+  const c0 = Math.round(cols / 2), band = Math.round(half / ACROSS);
+  const V = (k: number) => Math.min(rgb[k * 3], rgb[k * 3 + 1], rgb[k * 3 + 2]);
+  const out: number[] = [];
+  for (let i = Math.max(1, i0); i < Math.min(strip.rows - 1, i1); i++) for (let c = Math.max(3, c0 - band); c <= Math.min(cols - 4, c0 + band); c++) {
+    const k = i * cols + c;
+    if (!valid[k]) continue;
+    const mx = Math.max(rgb[k * 3], rgb[k * 3 + 1], rgb[k * 3 + 2]), mn = V(k);
+    if (mn < SPRAY_MIN || (mx - mn) / Math.max(mx, 1) > 0.14) continue;
+    let sum = 0, sq = 0, n = 0;
+    for (let di = -1; di <= 1; di++) for (let dc = -3; dc <= 3; dc++) { const kk = (i + di) * cols + c + dc; if (!valid[kk]) continue; const v = V(kk); sum += v; sq += v * v; n++; }
+    if (n > 4) out.push(Math.sqrt(Math.max(0, sq / n - (sum / n) ** 2)));
+  }
+  return out.length >= 20 ? median(out) : NaN;
+}
 
 export interface Breakline {
   d: number;
@@ -682,7 +734,8 @@ export function edgeCandidates(strip: Strip, params: BreakParams = DEFAULT_BREAK
     if (last && c.i - last.i < 60) { if (c.jump > last.jump) peaks[peaks.length - 1] = c; }
     else peaks.push(c);
   }
-  return peaks;
+  // Gischt ist glatt – körnige helle Flächen (Kiesbank am Schattenrand) sind keine Fallkante
+  return peaks.filter((c) => !(sprayTexture(strip, c.i, c.i + 30) >= SPRAY_MAX_TEXTURE));
 }
 
 /**

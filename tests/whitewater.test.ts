@@ -3,7 +3,7 @@ import {
   ACROSS, ALONG, bendAt, DEFAULT_PARAMS, describeSpots, findSpots, fitParams, HALF_WIDTH, isWaterLike, isWhite, labelFeature,
   ORTHO_SOURCES, orthoSourceFor, whitewaterProfile, type Strip,
 } from "../src/whitewater";
-import { centerWhite, DEFAULT_BREAK, findBreaklines } from "../src/whitewater";
+import { centerWhite, DEFAULT_BREAK, findBreaklines, SPRAY_MAX_TEXTURE, sprayTexture } from "../src/whitewater";
 import { exportJson, mergeLabels, parseImport } from "../src/whitewaterStore";
 import type { LngLat } from "../src/geo";
 
@@ -51,6 +51,23 @@ describe("Weißwasserprofil und Schwallstellen", () => {
     const w = prof.bins.find((b) => b.d === 300)!.width!;
     expect(w).toBeGreaterThan(17);
     expect(w).toBeLessThan(23);
+  });
+
+  it("glatter, dichter Schaum quer über den Fluss (Querband/Walze) wird erkannt, lange helle Kiesbank nicht", () => {
+    const paint = (strip: Strip, d0: number, d1: number, o0: number, o1: number) => {
+      for (let i = 0; i < strip.rows; i++) for (let c = 0; c < strip.cols; c++) {
+        const o = -HALF_WIDTH + c * ACROSS;
+        if (strip.d[i] >= d0 && strip.d[i] <= d1 && o >= o0 && o <= o1) strip.rgb.set([226, 230, 233], (i * strip.cols + c) * 3);
+      }
+      return strip;
+    };
+    const band = paint(synthStrip(400), 190, 210, -10, 10);
+    const spots = findSpots(whitewaterProfile(band).bins, DEFAULT_PARAMS);
+    expect(spots).toHaveLength(1);
+    expect(spots[0].d0).toBeLessThanOrEqual(210);
+    expect(spots[0].d1).toBeGreaterThanOrEqual(190);
+    // Kiesbank: 300 m lang am Rand, gleiche Farbe, aber flussauf/-ab kein Wasser in denselben Spalten
+    expect(findSpots(whitewaterProfile(paint(synthStrip(400), 50, 350, 3, 10)).bins)).toHaveLength(0);
   });
 
   it("ruhiges Wasser – auch hell und glatt (Kalkgrund, Gletschertrübe) – ergibt keine Stelle", () => {
@@ -150,6 +167,16 @@ describe("Abbruchkanten (Gefahrenstellen)", () => {
   });
   it("Höhenverlust ohne Kante im Bild (Höhenmodell-Artefakt) → keine Gefahrenstelle", () => {
     expect(findBreaklines(synthStrip(600), fall(295, 30))).toHaveLength(0);
+  });
+  it("körnige helle Fläche (Kiesbank am Schattenrand) ist keine Kante, auch mit Höhenverlust", () => {
+    const s = synthStrip(600);
+    for (let i = 0; i < s.rows; i++) for (let c = 0; c < s.cols; c++) {
+      const o = -HALF_WIDTH + c * ACROSS;
+      if (Math.abs(o) <= 10 && s.d[i] >= 300) { const v = (i * 7 + c * 13) % 5 === 0 ? 120 : 200 + ((i * 3 + c * 5) % 4) * 12; s.rgb.set([v + 3, v + 2, v], (i * s.cols + c) * 3); }
+    }
+    expect(sprayTexture(s, 300, 330)).toBeGreaterThan(SPRAY_MAX_TEXTURE);
+    expect(findBreaklines(s, fall(295, 15))).toHaveLength(0);
+    expect(sprayTexture(sprayStrip(600, 300), 300, 330)).toBeLessThan(SPRAY_MAX_TEXTURE);
   });
   it("allmählich zunehmendes Weißwasser ist keine Kante", () => {
     expect(findBreaklines(sprayStrip(600, 200, 250), fall(295, 15))).toHaveLength(0);

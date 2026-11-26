@@ -18,7 +18,7 @@ import { officialGauges, riverCell, seriesFor } from "./discharge";
 import { assess, captureNote, isGlacial, weatherBefore, type Basin, type Conditions, type Glacier } from "./weather";
 import { catchmentFromRivers, type Catchment } from "./catchment";
 import { hasHistory, matchGauge, nveKey, resetGaugeCache, setNveKey, TIROL_ARCHIVE_START, type Gauge, type GaugeMatch, type Reading } from "./gauges";
-import { rateAnalysis, streamPower, waveVelocity, type RatingMode } from "./power";
+import { rateAnalysis, streamPower, waveVelocityRange, WAVE_DEPTHS, type RatingMode } from "./power";
 import {
   DEFAULT_PARAMS, describeSpots, edgeCandidates, findBreaklines, findSpots, localProfile, type Breakline, fitParams, labelFeature, orthoSourceFor, sampleStrip, whitewaterProfile,
   type OrthoSource, type WhitewaterBin, type WhitewaterLabel, type WhitewaterParams, type WhitewaterSpot,
@@ -301,7 +301,7 @@ const MODE_HELP: Record<Mode, string> = {
   "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
   draw: "Klicke flussabwärts Punkte entlang des Flusses. Doppelklick oder „Zeichnen beenden“ schließt ab, Esc bricht ab.",
   "ww-label": "Bekannte Stellen im Luftbild anklicken und als „Schwall“ oder „kein Schwall“ bewerten. Klick auf eine vorhandene Markierung löscht sie. Esc oder erneut „Stellen markieren“ beendet.",
-  wave: "Weit ins Luftbild zoomen und nacheinander die Kämme einer Wellenfolge anklicken (mind. 3). Doppelklick oder „Messung beenden“ wertet aus, Esc bricht ab.",
+  wave: "Weit ins Luftbild zoomen und nacheinander die Kämme einer Wellenfolge anklicken (mind. 3) – quer zu den Kämmen, also in Fließrichtung. Doppelklick oder „Messung beenden“ wertet aus, Esc bricht ab.",
 };
 
 function setMode(m: Mode) {
@@ -1241,7 +1241,9 @@ function finishWave() {
   const gaps = pts.slice(1).map((p, i) => haversine(pts[i], p));
   const lambda = gaps.reduce((a, b) => a + b, 0) / gaps.length;
   const spread = Math.max(...gaps) - Math.min(...gaps);
-  const v = waveVelocity(lambda);
+  const vr = waveVelocityRange(lambda);
+  const f1 = (x: number) => x.toFixed(1).replace(".", ",");
+  const vTxt = vr.max - vr.min < 0.15 ? f1(vr.max) : `${f1(vr.min)}–${f1(vr.max)}`;
   const img = $("img-date").textContent?.replace("Bild: ", "") ?? "";
   // Abfluss am Aufnahmetag des Bildes an genau dieser Stelle (Bildstände wechseln entlang der Strecke)
   let imgFlow = "";
@@ -1262,11 +1264,12 @@ function finishWave() {
   }
   const html =
     `<strong>Wellenabstand Ø ${lambda.toFixed(1).replace(".", ",")} m</strong> (${pts.length} Kämme, Streuung ${spread.toFixed(1).replace(".", ",")} m)<br>` +
-    `→ Strömung ≈ <b>${v.toFixed(1).replace(".", ",")} m/s</b> (${(v * 3.6).toFixed(0)} km/h)<br>` +
+    `→ Strömung ≈ <b>${vTxt} m/s</b> (${(vr.min * 3.6).toFixed(0)}${vr.max - vr.min < 0.15 ? "" : `–${(vr.max * 3.6).toFixed(0)}`} km/h, je nach Wassertiefe ${f1(WAVE_DEPTHS[0])}–${f1(WAVE_DEPTHS[1])} m)<br>` +
+    (vr.shallowMatters ? `<span style="color:var(--muted)">Lange Wellen: bei flachem Wasser eher langsamer (unterer Wert).</span><br>` : "") +
     `Wellenhöhe höchstens ≈ ${(lambda / 7).toFixed(1).replace(".", ",")} m (steilere Wellen brechen)<br>` +
-    `<span style="color:var(--muted)">Gilt für stehende Wellen. ${img ? `Bild ${img}` : ""}${imgFlow ? ` · ${imgFlow}` : ""}</span>`;
+    `<span style="color:var(--muted)">Gilt für stehende Wellen, quer zu den Kämmen gemessen. ${img ? `Bild ${img}` : ""}${imgFlow ? ` · ${imgFlow}` : ""}</span>`;
   new maplibregl.Popup({ maxWidth: "320px" }).setLngLat(pts[pts.length - 1]).setHTML(html).addTo(map);
-  setStatus(`Wellen: Ø ${lambda.toFixed(1)} m Abstand → ca. ${v.toFixed(1)} m/s Strömung.`);
+  setStatus(`Wellen: Ø ${f1(lambda)} m Abstand → ca. ${vTxt} m/s Strömung (je nach Tiefe).`);
   drawPts = [];
   src("draft").setData(empty);
   setMode("idle");

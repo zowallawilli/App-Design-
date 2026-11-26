@@ -54,10 +54,23 @@ export function rateAnalysis(a: Analysis, mode: RatingMode, q: number | null): A
 }
 
 /**
- * Stehende Wellen (Rollwellen, Wellenzüge unter Stufen) haben eine Wellenlänge, die zur
- * Fließgeschwindigkeit passt: λ = 2π·v²/g  →  v = √(g·λ / 2π). Aus dem Kammabstand im Luftbild
- * lässt sich so die Strömung am Aufnahmetag abschätzen.
+ * Stehende Wellen (Rollwellen, Wellenzüge unter Stufen) laufen genau so schnell gegen die Strömung,
+ * wie das Wasser fließt. Dispersionsrelation mit Wassertiefe h:
+ *   v = √(g·λ/2π · tanh(2πh/λ))
+ * Tiefes Wasser (h ≳ λ/2): tanh → 1, v = √(g·λ/2π). Bei flachem Wasser sind die Wellen kürzer, d. h. der
+ * gleiche Kammabstand bedeutet dort eine langsamere Strömung. Ohne Tiefe: Tiefwasser-Näherung.
  */
-export function waveVelocity(lambda: number): number {
-  return Math.sqrt((9.81 * lambda) / (2 * Math.PI));
+export function waveVelocity(lambda: number, depth = Infinity): number {
+  const t = Number.isFinite(depth) ? Math.tanh((2 * Math.PI * depth) / lambda) : 1;
+  return Math.sqrt(((9.81 * lambda) / (2 * Math.PI)) * t);
+}
+
+/** Übliche Wassertiefe in Wellenzügen von Packraft-Flüssen (m) */
+export const WAVE_DEPTHS: [number, number] = [0.5, 2];
+
+/** Spanne der Fließgeschwindigkeit für die übliche Tiefe (flach … tief); `shallowMatters`, wenn die Tiefe
+ *  das Ergebnis spürbar (> 10 %) beeinflusst – ab etwa λ > 4 m. */
+export function waveVelocityRange(lambda: number, depths: [number, number] = WAVE_DEPTHS) {
+  const min = waveVelocity(lambda, depths[0]), max = waveVelocity(lambda, depths[1]), deep = waveVelocity(lambda);
+  return { min, max, deep, shallowMatters: lambda > 4 };
 }

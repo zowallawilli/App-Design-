@@ -165,6 +165,21 @@
           "source": "im basemap.at-Orthofoto (2025) deutlich sichtbares Weißwasser; Nutzer: Schwallstellen auf der Live-Seite nicht erkannt"
         },
         {
+          "name": "Wehr/Sohlstufe mit Schaum (km 3,75)",
+          "ww": "–",
+          "from": [
+            13.00347,
+            47.30321
+          ],
+          "to": [
+            13.00441,
+            47.30376
+          ],
+          "tol": 30,
+          "expect": "neutral",
+          "source": "im Luftbild sichtbar: gerade Querkante, darunter dichter Schaum (11/2026, Claude) – Bestätigung durch Nutzer offen"
+        },
+        {
           "name": "Querband / Walze (km 4,1–4,4)",
           "from": [
             13.0075,
