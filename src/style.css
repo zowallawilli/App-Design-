@@ -180,3 +180,4 @@ button.danger { background: #c0392b; color: #fff; }
 .ww-sens { align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; }
 .ww-sens input[type="range"] { flex: 1 1 120px; min-width: 100px; max-width: 220px; }
 .ww-noimg { border-left: 3px solid #e09f3e; padding-left: 8px; }
+.ww-sens[hidden] { display: none; }
