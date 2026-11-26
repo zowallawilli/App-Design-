@@ -391,7 +391,13 @@ Schwälle erscheinen auch ohne Erkennung (grün), erkannte Stellen mit eigener M
 erscheint immer als rote Welle. Beim Markieren speichert die App die Bildmerkmale der Stelle (Weißwasserdichte,
 -anteil, Flussbreite, Bildquelle) – so lernt „Aus Markierungen lernen“ ein Modell (logistische Regression) über
 **alle** markierten Flüsse, sobald je mindestens 5 Markierungen „Schwall“ und „kein Schwall“ mit Luftbild vorliegen.
-Das Modell ersetzt dann die festen Schwellen; der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
+Das Modell ersetzt die festen Schwellen **nur, wenn es bei der Prüfung mindestens 3 Prozentpunkte besser trifft als die
+feste Schwelle auf denselben Markierungen** (sonst bleibt die Schwelle, die Rückmeldung nennt beide Werte). Erste echte
+Daten (Nutzer, Soča/Inn, 11/2026): 152 Markierungen, 130 mit Bildmerkmalen (69 Schwall, 61 kein Schwall) – Modell 60 %,
+feste Schwelle 70 %: Die drei gespeicherten Merkmale (Dichte, Anteil, Breite) trennen die oft knappen Fälle nicht;
+dafür braucht es reichere Bildmerkmale (Textur, Helligkeit, Form). Neue Markierungen sind standardmäßig **nur zum Lernen**;
+mit dem Häkchen „auch später in der Karte anzeigen“ erscheinen sie als eigene Stelle bzw. blenden Erkennungen aus.
+Sonst gilt: der Regler verschiebt die Wahrscheinlichkeitsschwelle (Stufe 5 = 50 %,
 1 = 88 %, 9 = 12 %). Die Trefferquote wird ehrlich an zurückgehaltenen Markierungen geprüft (5-fache
 Kreuzvalidierung). Alles bleibt im Browser (localStorage); Export/Import als JSON enthält Markierungen und Modell. Eigene
 Markierungen sind nur im Modus „Stellen markieren“ als Punkte sichtbar; ältere Markierungen ohne Bildmerkmale bekommen
