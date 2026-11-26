@@ -119,6 +119,15 @@ describe("Bildquellen", () => {
     expect(orthoSourceFor([[13.50, 46.29], [13.53, 46.288], [13.55, 46.28]])?.id).toBe("gurs-dof2023");
     expect(orthoSourceFor([[9.17, 61.70], [9.24, 61.73], [9.30, 61.75]])).toBeNull(); // Sjoa: keine offene Quelle
   });
+  it("NAIP für die USA (Colorado), nicht für Kanada oder Mexiko", () => {
+    const naip = (p: LngLat) => orthoSourceFor([p, p, p])?.id;
+    expect(naip([-106.06, 38.75])).toBe("naip");
+    expect(naip([-123.1, 49.3])).toBeUndefined(); // Vancouver
+    expect(naip([-99.1, 19.4])).toBeUndefined(); // Mexiko-Stadt
+    const src = ORTHO_SOURCES.find((s) => s.id === "naip")!;
+    expect(src.tileUrl(1, 2)).toMatch(/^https:\/\/imagery\.nationalmap\.gov\/.*exportImage\?bbox=.*size=256,256/);
+  });
+
   it("rechnet GURS-Kacheln (EPSG:3794) richtig", () => {
     const s = ORTHO_SOURCES.find((x) => x.id === "gurs-dof2023")!;
     const [x, y] = s.toPixel([13.53, 46.287]);

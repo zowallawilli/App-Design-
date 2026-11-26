@@ -186,7 +186,7 @@ bis ein eigener Abfluss eingetragen ist.
 
 Die 300-m-Glättung des Profils verteilt einen Wasserfall auf mehrere hundert Meter. Steilstufen werden
 deshalb im monoton angepassten, aber ungeglätteten Profil gesucht: **≥ 8 m Höhenverlust auf 100 m**
-(als **Gefahrenstelle** „Stufe im Höhenmodell“, rote Welle). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
+(im Höhenprofil; **Gefahrenstelle** nur, wenn das Luftbild an der Stufe deutliches Weißwasser oder eine Abbruchkante zeigt – siehe unten). Am Markarfljót wird der Abbruch am Schluchtbeginn (Wasserfall, ~20 m) als 44-m-Stufe
 erkannt; in tiefen Schluchten liefert das Höhenmodell teils Werte vom Rand, daher „im Luftbild prüfen“.
 
 ## Wellen messen
@@ -278,7 +278,7 @@ Nach der Gefälleanalyse werden entlang der Strecke drei Arten von Hinweisen ges
 |---|---|---|
 | **E** (orange) | **Engstelle** (optional, standardmäßig aus) | Querprofil alle 25 m (±150 m, 5-m-Schritte) im Sentinel-2-Bild: Breite des zusammenhängenden Wasser-/Kiesbett-Streifens. Engstelle, wenn ≤ 50 % der typischen Breite (±1 km) und mindestens 15 m schmaler. Nur wo das Flussbett typischerweise 30–100 m breit ist: schmalere Flüsse löst der Satellit (10 m) nicht auf, breite Kiesebenen verengen sich natürlich. |
 | **S** (violett) | **Schlucht** | Talquerschnitt alle 50 m aus dem Höhenmodell: Talbreite 5 m und 20 m über dem Wasserspiegel und Tiefe (Anstieg innerhalb 250 m, schwächere Seite). Schlucht, wenn das Tal 20 m über Wasser ≤ 90 m breit und ≥ 30 m tief ist (Kartverket 1 m), bzw. ≤ 140 m / ≥ 60 m mit dem groben globalen Modell. |
-| **S** (violett) | **Fluss verdeckt** (früher eigenes „K“) – wird als Schlucht gezeigt; ist der Abschnitt zusätzlich steil (≥ 30 m/km oder Stufe), erscheint er als **Gefahrenstelle „nicht einsehbar“** (rote Welle) | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
+| **S** (violett) | **Fluss verdeckt** (früher eigenes „K“) – wird als Schlucht gezeigt; ist der Abschnitt zusätzlich steil (≥ 30 m/km oder Stufe), erscheint er als **Gefahrenstelle „nicht einsehbar“** (rote Welle). Gibt es ein offenes Orthofoto, zählt nur der Teil, in dem auch das hochaufgelöste Bild kein Wasser zeigt (Sentinel-2 übersieht schmale Flüsse) | Der Fluss verschwindet im Satellitenbild über ≥ 75 m (Schatten, Bäume, zu schmal), ist davor und danach sichtbar, und die Hänge steigen beidseitig ≥ 25 m an. |
 
 Schlucht- und Klamm-Hinweise, die weniger als 1 km auseinanderliegen, werden zu einer
 **Schluchtstrecke** zusammengefasst – helle Felswände sehen im Satellitenbild wie Flussbett aus,
@@ -303,7 +303,7 @@ Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher un
 
 | Schritt | Verfahren |
 |---|---|
-| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
+| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **USA** NAIP (gemeinfrei, 0,3–1 m, USGS-ImageServer), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
 | Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±45 m in 0,5-m-Schritten. Ausgewertet werden der volle Streifen (breite Flüsse wie die Salzach, 40–70 m) und der innere Streifen ±30 m (schmale Flüsse); je 10 m zählt das Ergebnis, das die Kriterien besser erfüllt. |
 | Wasserfläche | je Querzeile der zusammenhängende Lauf aus wasserähnlichen (bläulich/türkis) und Weißwasser-Pixeln nahe der Linie – auch wenn die Linie etwas neben dem Wasser liegt. |
 | Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). **Dichter Schaum** (Querband/Walze unter Wehr oder Stufe) ist dagegen glatt und sehr hell: Minimum-Kanal ≥ 215, Sättigung ≤ 0,10, ohne Textur-Kriterium – aber nur, wenn in derselben Spalte flussauf- **und** flussabwärts innerhalb von 15 m Wasser liegt (lange helle Kalkkiesbänke grenzen an Land und fallen so heraus). **Zusätzlich relativ** (trübe, helle Flüsse wie die Salzach, deren Schaum kaum heller als das Wasser ist): Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers daneben – nur bei nicht beschattetem Wasser (Median ≥ 100), sonst wirkt helles Ufer wie Schaum. |
@@ -326,8 +326,14 @@ Steilstufen allein aus dem Höhenmodell sind unscharf (Schluchtränder, 30-m-Ras
    Linie ±10 m, monoton fallend) nachgeladen. Gefordert: ≥ 8 m zwischen 80 m oberhalb und 100 m
    unterhalb der Kante, davon ≥ 4,8 m mehr als das örtliche Gefälle (±500 m) erwarten lässt.
 
-„Deutlich“ bei einem Sprung ≥ 60 Prozentpunkte und ≥ 10 m Höhenverlust, sonst „möglich“. Steilstufen,
-die das Bild nicht bestätigt, erscheinen als Gefahrenstelle „Stufe im Höhenmodell“ (ebenfalls rote Welle, Text nennt den Grund); verdeckte, steile Klammen als „nicht einsehbar“. Wehre und Stufen unter ~8 m erscheinen
+„Deutlich“ bei einem Sprung ≥ 60 Prozentpunkte und ≥ 10 m Höhenverlust, sonst „möglich“.
+
+**Regel des Nutzers (11/2026):** Gefahrenstelle nur bei (1) deutlichem Höhenverlust **in Kombination** mit deutlicher
+Abbruchkante oder deutlichem Weißwasser im Luftbild – Steilstufe ≥ 8 m/100 m im Höhenmodell plus „viel Weißwasser“
+(≥ 8 m²/m) heißt „Stufe mit Weißwasser“ – oder (2) wenn der Fluss wegen starker Verengung im Bild nicht mehr sichtbar
+ist (mögliche Klamm, steil). Stufen **nur** im Höhenmodell (Brückenfahrbahnen, Talränder, Kiesbänke) sind keine
+Gefahrenstelle mehr. Folge: Ohne offenes Orthofoto (Norwegen, Island außerhalb des NÁTT-Mosaiks, Zentralasien) gibt
+es nur noch Gefahrenstellen vom Typ „nicht einsehbar“. Wehre und Stufen unter ~8 m erscheinen
 als Schwallstelle: Mit 5 m ließen sich auch kleine Stufen fassen, dann markierten aber helle Kalkkiesbänke
 an der Soča (5,5 und 7 m im Höhenmodell) fälschlich Gefahrenstellen – unter 8 m ist das Höhenmodell zu ungenau.
 
@@ -386,9 +392,9 @@ Uferbereiche (Schatten wirkt wasserähnlich) – Sanna 1/3 statt 2/3, Inn +3 bis
 |---|---|---|
 | Österreich, Slowenien | basemap.at, GURS | ✅ eingebaut |
 | Island | NÁTT (ehem. LMÍ) „Grunnkort – Loftmynd“, CC BY 4.0, WMS mit CORS | ✅ eingebaut (Abdeckung 11/2026 v. a. Nordosten) |
-| Finnland | Maanmittauslaitos Ortokuva, CC BY 4.0 | ✅ mit kostenlosem persönlichen Schlüssel |
-| Neuseeland | LINZ Basemaps 7,5–30 cm, CC BY 4.0 | ✅ mit kostenlosem Schlüssel |
-| USA | NAIP 0,6–1 m (USGS), gemeinfrei | ✅ (1 m nur für größere Schwälle) |
+| Finnland | Maanmittauslaitos Ortokuva, CC BY 4.0 | ✅ mit kostenlosem persönlichen Schlüssel (Server antwortet ohne Schlüssel 401, CORS für die App-Adresse freigegeben) – Schlüssel muss der Nutzer selbst beantragen |
+| Neuseeland | LINZ Basemaps 7,5–30 cm, CC BY 4.0 | ✅ mit kostenlosem Schlüssel (ohne Schlüssel 400, CORS offen) – Schlüssel muss der Nutzer selbst beantragen |
+| USA | NAIP 0,3–1 m (USDA/USGS), gemeinfrei, ImageServer `imagery.nationalmap.gov` mit CORS | ✅ eingebaut 11/2026 (ohne Alaska/Hawaii). Probe Lower New River (WV): 21 Stellen, gehäuft in der Schlucht km 12–21 (große Schwälle), ruhige Strecke ohne Marker. Aufnahmetag nur, wenn Esri denselben NAIP-Flug meldet |
 | Schweden | Lantmäteriet: historische Bilder CC0, aktuelle unklar | ⚠️ |
 | Alaska, Kanada | NAIP nur teilweise, „Alaska Vivid“ (lizenziert), Kanada stückweise (OGL) | ⚠️ |
 | Norwegen | Norge i bilder (Norge-digitalt-Lizenz) | ❌ nur Anzeige |

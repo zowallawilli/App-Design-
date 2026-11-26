@@ -583,30 +583,56 @@ function showResults() {
 }
 
 // ---------- Gefahrenstellen (rote Welle) ----------
-/** Allgemeine Gefahrenstelle: Abbruchkante (Bild + Höhenmodell), Stufe nur im Höhenmodell oder nicht einsehbarer,
- *  steiler Abschnitt (Fluss im Luftbild verdeckt, enge Klamm). */
-interface Hazard { d: number; center: LngLat; kind: "kante" | "uneinsehbar" | "stufe"; title: string; text: string }
+/** Gefahrenstelle (Vorgabe des Nutzers 11/2026) nur bei
+ *  1. deutlichem Höhenverlust UND im Luftbild deutlicher Abbruchkante bzw. deutlichem Weißwasser (Kombination –
+ *     schaltet Fehler im Höhenmodell wie Brücken, Talränder, Kiesbänke aus), oder
+ *  2. Fluss wegen starker Verengung im Bild nicht mehr sichtbar (mögliche Klamm) und steil.
+ *  Stufen nur im Höhenmodell sind keine Gefahrenstelle mehr. */
+interface Hazard { d: number; center: LngLat; kind: "kante" | "stufe-weiss" | "uneinsehbar"; title: string; text: string }
 function hazards(): Hazard[] {
   if (!current) return [];
   const a = current.analysis;
+  const ww = current.ww?.status === "done" ? current.ww : undefined;
   const out: Hazard[] = [];
-  for (const b of current.ww?.breaks ?? [])
+  for (const b of ww?.breaks ?? [])
     out.push({ d: b.d, center: b.center, kind: "kante", title: "mögliche Abbruchkante (Wasserfall, Stufe, Wehr)", text: `${breakText(b)} · Erkennung ${b.confidence} – unbedingt vorher besichtigen` });
-  for (const f of current.narrows?.features ?? []) {
-    if (f.kind !== "klamm") continue;
-    if (out.some((h) => h.kind === "kante" && h.d >= f.d0 - 50 && h.d <= f.d1 + 50)) continue;
-    const g = Math.max(0, ...a.segments.filter((sg) => sg.d1 >= f.d0 && sg.d0 <= f.d1).map((sg) => sg.gradient));
-    const step = a.steps.find((st) => st.d1 >= f.d0 - 50 && st.d0 <= f.d1 + 50);
-    if (g < 30 && !step) continue;
+  // 1b) Steilstufe im Höhenmodell, an der das Luftbild deutliches Weißwasser zeigt
+  for (const st of a.steps) {
+    if (out.some((h) => h.d >= st.d0 - 150 && h.d <= st.d1 + 150)) continue;
+    const s = (ww?.spots ?? []).find((w) => w.strong && w.d1 >= st.d0 - 50 && w.d0 <= st.d1 + 50);
+    if (!s) continue;
     out.push({
-      d: (f.d0 + f.d1) / 2, center: f.center, kind: "uneinsehbar", title: "nicht einsehbar – enge Klamm mit viel Gefälle",
-      text: `km ${(f.d0 / 1000).toFixed(2)}–${(f.d1 / 1000).toFixed(2)}: Fluss im Luftbild verdeckt, beidseitig steil, Gefälle bis ${g.toFixed(0)} m/km${step ? `, Stufe ${step.drop.toFixed(0)} m im Höhenmodell` : ""} – Befahrbarkeit, Ausstiege und Umtragen vor Ort klären`,
+      d: s.dPeak, center: s.center, kind: "stufe-weiss", title: "Stufe mit Weißwasser",
+      text: `${st.drop.toFixed(0)} m Höhenverlust auf ${Math.round(st.d1 - st.d0)} m im Höhenmodell und im Luftbild deutliches Weißwasser (${Math.round(s.peakFrac * 100)} % der Wasserfläche) – möglicher Katarakt, Wasserfall oder Wehr; vorher besichtigen`,
     });
   }
-  for (const st of a.steps) {
-    const d = (st.d0 + st.d1) / 2;
-    if (out.some((h) => Math.abs(h.d - d) < 150 || (h.kind === "uneinsehbar" && st.d1 >= h.d - 300 && st.d0 <= h.d + 300))) continue;
-    out.push({ d, center: st.center, kind: "stufe", title: "Stufe im Höhenmodell", text: `${st.drop.toFixed(0)} m Höhenverlust auf ${Math.round(st.d1 - st.d0)} m – möglicher Wasserfall, Katarakt oder Wehr; im Luftbild nicht bestätigt, prüfen` });
+  // 2) nicht einsehbar: mit offenem Orthofoto nur dort, wo auch das hochaufgelöste Bild kein Wasser zeigt
+  const hiddenRuns = (d0: number, d1: number): [number, number][] => {
+    const runs: [number, number][] = [];
+    let r0 = -1;
+    const bins = ww!.bins!.filter((b) => b.d >= d0 - 10 && b.d <= d1);
+    bins.forEach((b, i) => {
+      const hidden = b.coverage > 0.5 && b.width === null;
+      if (hidden && r0 < 0) r0 = b.d;
+      if ((!hidden || i === bins.length - 1) && r0 >= 0) { const e = hidden ? b.d + 10 : b.d; if (e - r0 >= 75) runs.push([r0, e]); r0 = -1; }
+    });
+    return runs;
+  };
+  for (const f of current.narrows?.features ?? []) {
+    if (f.kind !== "klamm") continue;
+    const parts = ww?.bins ? hiddenRuns(f.d0, f.d1) : [[f.d0, f.d1] as [number, number]];
+    for (const [d0, d1] of parts) {
+      if (out.some((h) => h.d >= d0 - 50 && h.d <= d1 + 50)) continue;
+      const g = Math.max(0, ...a.segments.filter((sg) => sg.d1 >= d0 && sg.d0 <= d1).map((sg) => sg.gradient));
+      const step = a.steps.find((st) => st.d1 >= d0 - 50 && st.d0 <= d1 + 50);
+      if (g < 30 && !step) continue;
+      const mid = (d0 + d1) / 2;
+      const center = a.profile.reduce((b, q) => (Math.abs(q.d - mid) < Math.abs(b.d - mid) ? q : b)).p;
+      out.push({
+        d: mid, center, kind: "uneinsehbar", title: "nicht einsehbar – mögliche Klamm",
+        text: `km ${(d0 / 1000).toFixed(2)}–${(d1 / 1000).toFixed(2)}: Fluss ${ww?.bins ? "auch im hochaufgelösten Luftbild" : "im Satellitenbild"} nicht sichtbar, Tal eng und beidseitig steil, Gefälle bis ${g.toFixed(0)} m/km${step ? `, Stufe ${step.drop.toFixed(0)} m im Höhenmodell` : ""} – Verlauf, Befahrbarkeit, Ausstiege und Umtragen vor Ort klären`,
+      });
+    }
   }
   return out.sort((x, y) => x.d - y.d);
 }
@@ -614,7 +640,7 @@ function hazards(): Hazard[] {
 function renderHazards() {
   const list = $("hz-list");
   const hz = hazards();
-  list.innerHTML = hz.length ? "" : `<li class="hint">Keine Gefahrenstellen gefunden (Abbruchkanten, Stufen ≥ 8 m auf 100 m, nicht einsehbare steile Klammen).</li>`;
+  list.innerHTML = hz.length ? "" : `<li class="hint">Keine Gefahrenstellen gefunden (Höhenverlust + Abbruchkante bzw. deutliches Weißwasser im Luftbild, oder nicht einsehbare steile Klamm).</li>`;
   hz.forEach((h, i) => {
     const li = document.createElement("li");
     const b = document.createElement("button");
