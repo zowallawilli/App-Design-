@@ -106,6 +106,7 @@
         <section id="results" hidden>
           <h2 id="res-title"></h2>
           <dl class="stats" id="stats"></dl>
+          <details class="more"><summary>Berechnungsgrundlage</summary><dl class="stats" id="stats-more"></dl></details>
           <h3>Schwierigkeit: Gefälle &amp; Wucht</h3>
           <div class="grid2 rating">
             <label>Bewertung
@@ -136,12 +137,12 @@
           <div id="flow-info" class="flow-info"><p class="hint">Wird geladen …</p></div>
           <h3>Gefahrenstellen <span class="hint">(Indikator – vor Ort prüfen)</span></h3>
           <ul class="legend">
-            <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Gefahrenstelle: mögliche Abbruchkante (Weißwasser setzt im Luftbild schlagartig ein + Höhenverlust), Stufe im Höhenmodell oder nicht einsehbare, steile Klamm</li>
+            <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Abbruchkante (Bild + Höhenverlust), Stufe im Höhenmodell oder nicht einsehbare steile Klamm</li>
           </ul>
           <ol id="hz-list" class="hotspots"></ol>
           <h3>Schwallstellen <span class="hint">(Weißwasser im Luftbild – Indikator)</span></h3>
           <ul class="legend">
-            <li><span class="dia" style="background:#0077b6;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> Schwallstelle – auffällig viel Weißwasser im Luftbild (Schwall, Walze, Blockstrecke oder Wehr). Nur Markierung, keine Schwierigkeitsangabe.</li>
+            <li><span class="dia" style="background:#0077b6;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> viel Weißwasser im Luftbild (Schwall, Walze, Wehr) – nur Markierung</li>
           </ul>
           <div class="row ww-sens">
             <label for="ww-sens" title="Wie empfindlich Weißwasser als Schwallstelle markiert wird. Die Schwelle passt sich zusätzlich der Flussbreite an (breite Flüsse strenger).">Empfindlichkeit</label>
@@ -149,9 +150,12 @@
             <span id="ww-sens-out" class="hint"></span>
           </div>
           <ol id="ww-list" class="hotspots"></ol>
-          <p id="ww-meta" class="hint"></p>
+          <details class="more"><summary>Bildquelle &amp; Hinweise</summary><p id="ww-meta" class="hint"></p></details>
           <div class="row ww-tools">
             <button id="ww-label" class="ghost" title="Bekannte Schwallstellen (oder ruhige Stellen) im Luftbild anklicken und bewerten">Stellen markieren</button>
+          </div>
+          <details class="more"><summary>Markierungen verwalten &amp; lernen</summary>
+          <div class="row ww-tools">
             <button id="ww-learn" class="ghost" title="Schwelle der Erkennung an die eigenen Markierungen dieser Strecke anpassen">Aus Markierungen lernen</button>
             <button id="ww-export" class="ghost">Markierungen exportieren</button>
             <button id="ww-import" class="ghost">Importieren</button>
@@ -161,23 +165,37 @@
           </div>
           <p id="ww-learn-result" class="learn-result" hidden></p>
           <p id="ww-learn-info" class="hint"></p>
+          </details>
           <h3>Engstellen &amp; Schluchten</h3>
           <ul class="legend">
-            <li><span class="dia" style="background:#ff9f1c">E</span> Engstelle – Flussbett deutlich schmaler als sonst (Sentinel-2, optional)</li>
-            <li><span class="dia" style="background:#8e44ad">S</span> Schlucht – Tal 20 m über Wasser schmal und tief (Höhenmodell) oder Fluss im Luftbild verdeckt zwischen steilen Hängen</li>
+            <li><span class="dia" style="background:#8e44ad">S</span> Schlucht (enges, tiefes Tal oder Fluss verdeckt) · <span class="dia" style="background:#ff9f1c">E</span> Engstelle</li>
           </ul>
           <ol id="narrows-list" class="hotspots"></ol>
-          <p id="narrows-meta" class="hint"></p>
-          <div class="row exports">
-            <button id="exp-gpx">GPX</button>
-            <button id="exp-csv">CSV</button>
-            <button id="exp-geojson">GeoJSON</button>
+          <details class="more"><summary>Wie erkannt?</summary>
+            <p class="hint">Schlucht: Tal 20 m über dem Wasser schmal und tief (Höhenmodell) oder Fluss im Luftbild verdeckt zwischen steilen Hängen. Engstelle: Flussbett deutlich schmaler als sonst (Sentinel-2, optional).</p>
+            <p id="narrows-meta" class="hint"></p>
+          </details>
+          <h3>Export &amp; Teilen</h3>
+          <div class="export-opts">
+            <label class="check"><input type="checkbox" id="gpx-steep" checked /> Steile Abschnitte (ab 15 m/km) als eigene Tracks + Wegpunkt am Beginn</label>
+            <label class="check"><input type="checkbox" id="gpx-split" /> Ganze Strecke nach Gefälle in Abschnitte teilen</label>
+            <label class="check"><input type="checkbox" id="gpx-km" /> Kilometer-Wegpunkte</label>
           </div>
           <div class="row exports">
-            <button id="exp-share" hidden title="GPX über das Teilen-Menü des Geräts direkt an eine GPS-App geben (z. B. Gaia GPS, OsmAnd)">GPX an Gaia / GPS-App senden</button>
+            <button id="exp-share" hidden title="GPX über das Teilen-Menü des Geräts senden – an eine GPS-App (Gaia GPS, Garmin Explore …) oder an andere Personen">Teilen …</button>
+            <button id="exp-gpx" class="ghost">GPX</button>
+            <button id="exp-csv" class="ghost">CSV</button>
+            <button id="exp-geojson" class="ghost">GeoJSON</button>
           </div>
-          <p class="hint">GPX enthält die Strecke mit Höhen (Höhenprofil in der GPS-App), Ein-/Ausstieg sowie Gefahren-, Schwallstellen und Schluchten als Wegpunkte.
-            Gaia GPS: Datei am Handy über „Teilen → Gaia GPS“ öffnen oder am Rechner auf gaiagps.com unter „Import“ hochladen.</p>
+          <details class="more">
+            <summary>So kommt die Strecke in Gaia GPS oder Garmin Explore</summary>
+            <ul class="small">
+              <li><b>Gaia GPS:</b> „Teilen …“ → Gaia GPS (ggf. unter „Mehr“). Erscheint Gaia nicht: „In Dateien sichern“, dann in Gaia über Importieren die Datei wählen – oder am Rechner auf gaiagps.com importieren. Gaia übernimmt keine Linienfarben; die steilen Abschnitte erkennt man an Namen und Wegpunkten („Steil km 2,0–2,8 · 35 m/km“) und kann sie in Gaia selbst einfärben.</li>
+              <li><b>Garmin Explore:</b> Datei sichern, in „Dateien“ antippen → Teilen → Explore, oder auf explore.garmin.com importieren. Garmin liest die Farben teilweise (benannte Farben).</li>
+              <li><b>OsmAnd, Locus:</b> zeigen die Farben der Abschnitte.</li>
+              <li>Inhalt: Strecke mit Höhen (Höhenprofil in der App), Ein-/Ausstieg, Gefahren-, Schwallstellen und Schluchten als Wegpunkte. „Teilen …“ geht genauso an Messenger oder Mail.</li>
+            </ul>
+          </details>
         </section>
 
         <footer class="disclaimer">

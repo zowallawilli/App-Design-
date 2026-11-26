@@ -62,6 +62,15 @@ type BaseKey = keyof typeof BASEMAPS;
 
 const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
 
+/** Einzugsgebiet (Fluss + Zubringer oberhalb, Wetter-Bezugspunkte) auf der Karte zeigen? Standard: aus. */
+function showCatch(): boolean {
+  try { return localStorage.getItem("packraft.showCatch") === "1"; } catch { return false; }
+}
+function setShowCatch(on: boolean) {
+  try { localStorage.setItem("packraft.showCatch", on ? "1" : "0"); } catch { /* nur für diese Sitzung */ }
+  for (const id of ["catch-line", "catch-pts"]) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+}
+
 const style: StyleSpecification = {
   version: 8,
   sources: {
@@ -97,11 +106,11 @@ const style: StyleSpecification = {
       layout: { visibility: (k === "esri" ? "visible" : "none") as "visible" | "none" },
     })),
     {
-      id: "catch-line", type: "line", source: "catch", filter: ["==", ["geometry-type"], "LineString"],
+      id: "catch-line", type: "line", source: "catch", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: showCatch() ? "visible" : "none" },
       paint: { "line-color": "#4a90d9", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.85 },
     },
     {
-      id: "catch-pts", type: "circle", source: "catch", filter: ["==", ["geometry-type"], "Point"],
+      id: "catch-pts", type: "circle", source: "catch", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: showCatch() ? "visible" : "none" },
       paint: { "circle-radius": 5, "circle-color": "rgba(255,255,255,0.15)", "circle-stroke-color": "#4a90d9", "circle-stroke-width": 2 },
     },
     { id: "river", type: "line", source: "river", paint: { "line-color": "#7fd3ff", "line-width": 3, "line-opacity": 0.85 } },
@@ -252,6 +261,8 @@ interface FlowInfo {
   today: string;
   gaugeErrors: string[];
   error?: string;
+  /** „Pegel & Quellen“ aufgeklappt (bleibt beim Neuzeichnen offen) */
+  catchOpen?: boolean;
 }
 /** Weißwasser-Suche im offenen Orthofoto */
 interface WwState {
@@ -545,7 +556,9 @@ function showResults() {
     const st = NARROW_STYLE[f.kind];
     const li = document.createElement("li");
     const b = document.createElement("button");
-    b.innerHTML = `<span class="id" style="color:${st.color === "#111111" ? "var(--fg)" : st.color}">${st.letter}</span><span>${f.title}</span><span class="meta">${f.detail}</span>`;
+    const short = f.detail.replace(/ · \d+ Hinweise: [^·]+?(?= ·|$)/, "").replace(" · Umtragen/Ausstieg prüfen, unbedingt erkunden", " · erkunden");
+    b.innerHTML = `<span class="id" style="color:${st.color === "#111111" ? "var(--fg)" : st.color}">${st.letter}</span><span>${f.title}</span><span class="meta">${short}</span>`;
+    b.title = f.detail;
     b.addEventListener("click", () => focusNarrow(i));
     li.appendChild(b);
     nrList.appendChild(li);
@@ -557,20 +570,26 @@ function showResults() {
     : "";
 
   $("res-title").textContent = name;
+  // Auf einen Blick nur das Wichtigste; Herkunft der Linie und Höhenmodell eingeklappt
+  const steepest = a.segments.reduce((b, x) => (x.gradient > b.gradient ? x : b), a.segments[0]);
   const stats: [string, string][] = [
     ...(current.literature ? ([["Literatur", current.literature]] as [string, string][]) : []),
-    ["Flusslinie", source],
-    ["Höhenmodell", current.dem],
     ["Länge", fmtKm(a.length)],
     ["Höhe", `${a.zStart.toFixed(0)} → ${a.zEnd.toFixed(0)} m`],
     ["Höhenverlust", `${a.drop.toFixed(0)} m`],
     ["Ø Gefälle", `${a.meanGradient.toFixed(1)} m/km`],
-    ["Steilster Abschnitt", `${a.maxSegmentGradient.toFixed(1)} m/km`],
-    ["Gefahrenstellen", `${hazards().length || "–"}`],
-    ["Talenge", a.confinedLength > 0 ? fmtKm(a.confinedLength) : "–"],
-    ...(nr ? ([["Engstellen/Schluchten", nr.features.length ? `${nr.features.filter((f) => f.kind === "engstelle").length} E · ${nr.features.filter((f) => f.kind !== "engstelle").length} S` : "–"]] as [string, string][]) : []),
+    ["Steilster Abschnitt", steepest
+      ? `<button class="linkish" id="go-steepest" title="Auf der Karte zeigen">${a.maxSegmentGradient.toFixed(1)} m/km · km ${(steepest.d0 / 1000).toFixed(1)}–${(steepest.d1 / 1000).toFixed(1)}</button>`
+      : `${a.maxSegmentGradient.toFixed(1)} m/km`],
   ];
   $("stats").innerHTML = stats.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  if (steepest) $("go-steepest").addEventListener("click", () => jumpTo((steepest.d0 + steepest.d1) / 2));
+  const more: [string, string][] = [
+    ["Flusslinie", source],
+    ["Höhenmodell", current.dem],
+    ["Talenge", a.confinedLength > 0 ? fmtKm(a.confinedLength) : "–"],
+  ];
+  $("stats-more").innerHTML = more.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 
   $("classes").innerHTML = a.classShare
     .map(({ cls, length }) => {
@@ -657,7 +676,7 @@ function hazards(): Hazard[] {
 function renderHazards() {
   const list = $("hz-list");
   const hz = hazards();
-  list.innerHTML = hz.length ? "" : `<li class="hint">Keine Gefahrenstellen gefunden (Höhenverlust + Abbruchkante bzw. deutliches Weißwasser im Luftbild, oder nicht einsehbare steile Klamm).</li>`;
+  list.innerHTML = hz.length ? "" : `<li class="hint">Keine Gefahrenstellen gefunden.</li>`;
   hz.forEach((h, i) => {
     const li = document.createElement("li");
     const b = document.createElement("button");
@@ -805,24 +824,22 @@ function renderWhitewater(a: Analysis) {
     list.innerHTML = `<li class="hint">Ausgeschaltet (Analyse-Parameter).</li>`;
     meta.textContent = "";
   } else if (ww.status === "none") {
-    list.innerHTML = `<li class="hint ww-noimg"><b>Kein öffentlich auswertbares Luftbild für diese Region – Stromschnellen werden hier bewusst nicht markiert.</b> Die Karte zeigt zwar ein Luftbild, das darf aber nur angezeigt, nicht ausgewertet werden. Bitte Schwälle selbst im Luftbild prüfen (Stellen-Tour ◀ ▶); Gefälle und Schluchten bleiben als Indikatoren.</li>`;
-    meta.textContent = OPEN_SOURCES_TEXT;
+    list.innerHTML = `<li class="hint ww-noimg"><b>Kein auswertbares Luftbild für diese Region</b> – Schwälle bitte selbst im Luftbild prüfen (◀ ▶, „Schärfer ↗“).</li>`;
+    meta.textContent = `Das angezeigte Luftbild darf nur angezeigt, nicht ausgewertet werden; Gefälle und Schluchten bleiben als Indikatoren. ${OPEN_SOURCES_TEXT}`;
   } else if (ww.status === "error") {
     list.innerHTML = `<li class="hint">Weißwasser-Suche fehlgeschlagen: ${ww.message}</li>`;
     meta.textContent = "";
   } else if (ww.bins && !imageUsable(ww.bins)) {
-    list.innerHTML = `<li class="hint ww-noimg"><b>Das offene Luftbild deckt diese Strecke nicht ab (keine Wasserfläche erkennbar) – kein auswertbares Luftbild für diese Strecke – Stromschnellen werden hier bewusst nicht markiert.</b> Die Karte zeigt zwar ein Luftbild, das darf aber nur angezeigt, nicht ausgewertet werden. Bitte Schwälle selbst im Luftbild prüfen (Stellen-Tour ◀ ▶); Gefälle und Schluchten bleiben als Indikatoren.</li>`;
+    list.innerHTML = `<li class="hint ww-noimg"><b>Offenes Luftbild deckt diese Strecke nicht ab</b> – Schwälle bitte selbst im Luftbild prüfen (◀ ▶, „Schärfer ↗“).</li>`;
     meta.textContent = `${ww.source?.name ?? "Bildquelle"}: ohne Bilddaten an dieser Strecke (z. B. außerhalb des Mosaiks). ${OPEN_SOURCES_TEXT}`;
   } else {
     if (!ww.spots.length) list.innerHTML = `<li class="hint">Keine Stellen über der Schwelle (${effParams().spotDensity.toFixed(1).replace(".", ",")} m² Weißwasser je Flussmeter, Empfindlichkeit ${wwSensitivity}).</li>`;
     ww.spots.forEach((s, i) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
-      const img = wwImageAt((s.d0 + s.d1) / 2);
       b.innerHTML =
         `<span class="id ww-id" style="background:${WW_STYLE(s)}">${WAVE_SVG("#fff", 14)}</span><span>${s.hazard || s.own?.kind === "gefahr" ? "Gefahrenstelle" : "Schwallstelle"} · ${kmRange(s)}${s.own ? " ✓" : ""}</span>` +
-        `<span class="meta">${s.area ? `Weißwasser ${Math.round(s.area)} m² auf ${Math.round(s.d1 - s.d0)} m · ${Math.round(s.peakFrac * 100)} % der Wasserfläche` : "nur eigene Markierung"}${s.notes.length ? ` · ${s.notes.join(" · ")}` : ""}` +
-        `${img ? ` · Bild ${fmtDate(img.date)}${img.measured !== undefined ? ` (Pegel ${fmtQ1(img.measured)} m³/s)` : img.tendency ? ` (Wasserstand ${img.tendency})` : ""}` : ""}</span>`;
+        `<span class="meta">${s.area ? `${Math.round(s.area)} m² Weißwasser · ${Math.round(s.peakFrac * 100)} % der Wasserfläche` : "nur eigene Markierung"}${s.notes.length ? ` · ${s.notes.map((n) => n.replace(/ \(~?\d+ % der üblichen Breite\)/, "")).join(" · ")}` : ""}</span>`;
       b.addEventListener("click", () => focusWw(i));
       li.appendChild(b);
       list.appendChild(li);
@@ -1136,6 +1153,9 @@ async function loadFlowInfo(a: Analysis, id: number) {
   if (id !== runId && current?.analysis !== a) return;
   if (current?.analysis !== a) return;
   current.flow = info;
+  // Eigene Strecke: Flussname aus OpenStreetMap übernehmen (Titel, Dateiname beim Export)
+  const river = info.catchment && !info.catchment.fallback ? info.catchment.river : undefined;
+  if (river && /^(Eigene|Gezeichnete) Strecke$/.test(current.name)) current.name = river;
   updateQOptions();
   showResults(); // neu einfärben (Wucht-Bewertung braucht den Abfluss)
   void updateImageDate(); // Kartenkopf: Tendenz zum Bilddatum
@@ -1295,11 +1315,21 @@ function renderFlowInfo() {
       ? `<div class="days">${rows}${today}</div>`
       : `<p class="hint">Keine Bilddaten verfügbar${f.error ? ` (${esc(f.error)})` : ""}.</p>`) +
     ratio +
+    // kurz sichtbar: welcher Pegel (bzw. keiner) und Warnungen; alles Weitere eingeklappt
+    `<p class="hint">${gm
+      ? `Pegel: <a href="${gm.gauge.url}" target="_blank" rel="noopener">${esc(gm.gauge.name)}</a>${gm.others.length ? ` + ${gm.others.length} weitere` : ""}` +
+        (gm.unverified ? ` · <span class="stale">Flusszuordnung ungeprüft</span>` : "") +
+        (!gm.latest ? " · veröffentlicht keinen Abfluss" : "")
+      : `Kein offizieller Pegel an der Strecke – Hinweise aus Wetter und Jahreszeit${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " (Norwegen: NVE-Schlüssel unter „Analyse-Parameter“ eintragen)" : ""}`}.</p>` +
+    `<details class="more"${f.catchOpen ? " open" : ""}><summary>Pegel &amp; Quellen</summary>` +
+    `<label class="check"><input type="checkbox" id="show-catch"${showCatch() ? " checked" : ""} /> Einzugsgebiet zeigen <span class="hint">(Fluss und Zubringer oberhalb, Wetter-Bezugspunkte ○)</span></label>` +
     cal +
     `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen („≈“ = aus Nachbarpegeln geschätzt). ` +
     `Hinweise: ${catchText(f)} – Regen, Schnee und Temperatur der Tage davor (Open-Meteo, Wetter-Reanalyse ERA5) und übliche Jahreszeit; eine Tendenz, keine Abflussmessung. ` +
     `${f.glacier && isGlacial(f.glacier) ? `Gletscherfluss: ${f.glacier.pct !== undefined ? `${fmtQ(f.glacier.pct)} % des Einzugsgebiets vergletschert (Pegel-Stammdaten)` : `~${Math.round(f.glacier.areaKm2 ?? 0)} km² Gletscher im Umkreis von 20 km`}.` : ""}` +
-    `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p>`;
+    `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p></details>`;
+  el.querySelector<HTMLInputElement>("#show-catch")?.addEventListener("change", (e) => setShowCatch((e.target as HTMLInputElement).checked));
+  el.querySelector("details.more")?.addEventListener("toggle", (e) => (f.catchOpen = (e.target as HTMLDetailsElement).open));
   // Abschnittskarten anklicken → Abschnitt auf der Karte zeigen
   el.querySelectorAll<HTMLElement>(".day[data-sec]").forEach((d) => d.addEventListener("click", () => focusImageStretch(Number(d.dataset.sec))));
   drawImageStretches();
@@ -1324,7 +1354,7 @@ function catchText(f: FlowInfo): string {
   const c = f.catchment;
   if (!c || c.fallback) return "Wetter im Umkreis von ~15 km um den Einstieg (Fluss nicht weiter verfolgbar)";
   const parts = [c.river, ...c.tributaries].filter(Boolean).join(", ");
-  return `Wetter im Einzugsgebiet oberhalb des Einstiegs (${parts}; ${c.points.length} Bezugspunkte, auf der Karte ○, Gebiet gestrichelt)`;
+  return `Wetter im Einzugsgebiet oberhalb des Einstiegs (${parts}; ${c.points.length} Bezugspunkte; auf der Karte mit „Einzugsgebiet zeigen“)`;
 }
 
 let imgMarkers: maplibregl.Marker[] = [];
@@ -1702,21 +1732,32 @@ const fileBase = () =>
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strecke";
-const gpxText = () => (current ? toGpx(current.analysis, current.name, current.narrows, current.ww?.spots, hazards()) : "");
-$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml"));
-// Teilen-Menü (iPhone/iPad/Android, teils Desktop): GPX direkt an Gaia GPS o. a. übergeben
-{
-  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-  const probe = typeof File !== "undefined" ? new File(["<gpx/>"], "test.gpx", { type: "application/gpx+xml" }) : null;
-  $("exp-share").hidden = !(probe && typeof nav.share === "function" && (!nav.canShare || nav.canShare({ files: [probe] })));
+const gpxOpts = () => ({
+  steep: $<HTMLInputElement>("gpx-steep").checked,
+  split: $<HTMLInputElement>("gpx-split").checked,
+  kmMarks: $<HTMLInputElement>("gpx-km").checked,
+});
+// Export-Optionen merken (nur in diesem Browser)
+for (const id of ["gpx-steep", "gpx-split", "gpx-km"]) {
+  const box = $<HTMLInputElement>(id);
+  try {
+    const v = localStorage.getItem(`packraft.${id}`);
+    if (v !== null) box.checked = v === "1";
+  } catch { /* ohne Speicher: Standard */ }
+  box.addEventListener("change", () => { try { localStorage.setItem(`packraft.${id}`, box.checked ? "1" : "0"); } catch { /* egal */ } });
 }
+const gpxText = () => (current ? toGpx(current.analysis, current.name, current.narrows, current.ww?.spots, hazards(), gpxOpts()) : "");
+$("exp-gpx").addEventListener("click", () => current && download(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml"));
+// Teilen-Menü (Handy, teils Desktop): an GPS-Apps (Gaia GPS, Garmin Explore …), Messenger oder Mail;
+// ohne Teilen-Funktion wird die Datei heruntergeladen.
+$("exp-share").hidden = false;
 $("exp-share").addEventListener("click", async () => {
   if (!current) return;
   try {
     const ok = await shareFile(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml", current.name);
     if (!ok) {
       download(`${fileBase()}.gpx`, gpxText(), "application/gpx+xml");
-      setStatus("Teilen wird hier nicht unterstützt – GPX wurde heruntergeladen (in Gaia über „Import“ öffnen).");
+      setStatus("Teilen wird in diesem Browser nicht unterstützt – GPX wurde heruntergeladen (in der GPS-App über „Importieren“ öffnen).");
     }
   } catch (e) {
     setStatus(`Teilen fehlgeschlagen: ${(e as Error).message}`, true);

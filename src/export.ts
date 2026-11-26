@@ -18,10 +18,70 @@ export function spotText(s: WhitewaterSpot): string {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const km = (m: number) => (m / 1000).toFixed(2);
 
-/** GPX 1.1 für GPS-Apps (Gaia GPS, OsmAnd, Garmin …): Strecke mit Höhen als Track, Ein-/Ausstieg,
- *  Gefahren-, Schwallstellen und Schluchten als Wegpunkte (mit Höhe, km und Beschreibung). */
-export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = []): string {
+/** Optionen für den GPX-Export */
+export interface GpxOptions {
+  /** steile Abschnitte (≥ steepFrom m/km) zusätzlich als eigene Tracks + Wegpunkt am Beginn */
+  steep?: boolean;
+  steepFrom?: number;
+  /** ganze Strecke nach Gefälleklassen in einzelne Tracks teilen (statt eines durchgehenden Tracks) */
+  split?: boolean;
+  /** Kilometer-Wegpunkte */
+  kmMarks?: boolean;
+}
+
+/** zusammenhängender Abschnitt gleicher Art (für Tracks/Wegpunkte) */
+export interface Stretch { d0: number; d1: number; gradient: number; maxGradient: number; label: string; hint: string; color: string; coords: LngLat[] }
+
+/** Benachbarte Gefälle-Abschnitte zusammenfassen: nach gleicher Klasse (`byClass`) bzw. alle ≥ minGradient. */
+export function stretches(a: Analysis, opt: { byClass?: boolean; minGradient?: number } = {}): Stretch[] {
+  const out: Stretch[] = [];
+  const min = opt.minGradient ?? -Infinity;
+  for (const s of a.segments) {
+    if (s.gradient < min) continue;
+    const last = out[out.length - 1];
+    const joins = last && Math.abs(last.d1 - s.d0) < 1 && (opt.byClass ? last.label === s.cls.label : true);
+    if (joins) {
+      const len0 = last.d1 - last.d0, len1 = s.d1 - s.d0;
+      last.gradient = (last.gradient * len0 + s.gradient * len1) / (len0 + len1);
+      if (s.gradient > last.maxGradient) Object.assign(last, { maxGradient: s.gradient, label: s.cls.label, hint: s.cls.hint, color: s.cls.color });
+      last.d1 = s.d1;
+      last.coords.push(...s.coords.slice(1));
+    } else out.push({ d0: s.d0, d1: s.d1, gradient: s.gradient, maxGradient: s.gradient, label: s.cls.label, hint: s.cls.hint, color: s.cls.color, coords: [...s.coords] });
+  }
+  return out;
+}
+
+/** Garmin kennt nur benannte Farben (gpxx:DisplayColor) – nächste zur Hex-Farbe */
+const GARMIN_COLORS: [string, number[]][] = [
+  ["Red", [255, 0, 0]], ["DarkRed", [139, 0, 0]], ["Green", [0, 255, 0]], ["DarkGreen", [0, 100, 0]], ["Blue", [0, 0, 255]],
+  ["DarkBlue", [0, 0, 139]], ["Yellow", [255, 255, 0]], ["DarkYellow", [180, 160, 0]], ["Magenta", [255, 0, 255]], ["Cyan", [0, 255, 255]], ["DarkCyan", [0, 139, 139]],
+];
+export function garminColor(hex: string): string {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  let best = GARMIN_COLORS[0][0], bd = Infinity;
+  for (const [n, rgb] of GARMIN_COLORS) {
+    const d = rgb.reduce((acc, v, i) => acc + (v - c[i]) ** 2, 0);
+    if (d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+/** Linienfarbe für Apps, die sie lesen: Garmin (benannt), gpx_style und OsmAnd (Hex). Gaia GPS ignoriert sie beim Import. */
+const colorExt = (hex: string) =>
+  `    <extensions>\n      <gpxx:TrackExtension><gpxx:DisplayColor>${garminColor(hex)}</gpxx:DisplayColor></gpxx:TrackExtension>\n` +
+  `      <gpx_style:line><gpx_style:color>${hex.slice(1).toUpperCase()}</gpx_style:color><gpx_style:width>5</gpx_style:width></gpx_style:line>\n` +
+  `      <osmand:color>${hex}</osmand:color>\n    </extensions>\n`;
+
+const kmDe = (m: number) => (m / 1000).toFixed(1).replace(".", ",");
+/** kurze WW-Angabe aus dem Hinweis der Gefälleklasse („WW II–III, …“ → „WW II–III“) */
+const wwShort = (hint: string) => /WW [IV+–]+/.exec(hint)?.[0] ?? hint.split(",")[0];
+
+/** GPX 1.1 für GPS-Apps (Gaia GPS, Garmin Explore, OsmAnd …): Strecke mit Höhen als Track, Ein-/Ausstieg,
+ *  Gefahren-, Schwallstellen und Schluchten als Wegpunkte (mit Höhe, km und Beschreibung). Steile Abschnitte
+ *  zusätzlich als eigene, benannte Tracks + Wegpunkt am Beginn – Farben lesen nicht alle Apps (Gaia nicht). */
+export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitewater: WhitewaterSpot[] = [], hazards: HazardOut[] = [], opt: GpxOptions = {}): string {
+  const o = { steep: true, steepFrom: 15, split: false, kmMarks: false, ...opt };
   const zAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).z;
+  const pAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
   const wpt = (p: LngLat, d: number, title: string, desc: string, sym: string, type: string) =>
     `  <wpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}">\n    <ele>${zAt(d).toFixed(1)}</ele>\n    <name>${esc(title)}</name>\n` +
     `    <desc>${esc(desc)}</desc>\n    <sym>${sym}</sym>\n    <type>${esc(type)}</type>\n  </wpt>`;
@@ -34,30 +94,39 @@ export function toGpx(a: Analysis, name: string, narrows?: NarrowsResult, whitew
   const nrWpts = (narrows?.features ?? []).map((f) =>
     wpt(f.center, (f.d0 + f.d1) / 2, f.title, `km ${km(f.d0)}–${km(f.d1)}: ${f.detail}`, f.kind === "engstelle" ? "Caution" : "Danger Area", f.kind === "engstelle" ? "Engstelle" : "Schlucht"));
   const wwWpts = whitewater.map((s) => wpt(s.center, s.dPeak, `Schwall km ${km(s.dPeak)}`, spotText(s), "Caution", "Schwallstelle"));
-  const trkpts = a.profile
-    .map((p) => `      <trkpt lat="${p.p[1].toFixed(6)}" lon="${p.p[0].toFixed(6)}"><ele>${p.z.toFixed(1)}</ele></trkpt>`)
-    .join("\n");
-  // Gefälle je Abschnitt als Text (GPX kennt keine Linienfarben je Abschnitt)
-  const steep = a.segments
-    .filter((s) => s.gradient >= 15)
-    .map((s) => `km ${km(s.d0)}–${km(s.d1)} ${s.gradient.toFixed(0)} m/km (${s.cls.label})`)
-    .slice(0, 30);
+  const steep = o.steep ? stretches(a, { minGradient: o.steepFrom }) : [];
+  const steepName = (s: Stretch) => `Steil km ${kmDe(s.d0)}–${kmDe(s.d1)} · ${Math.round(s.maxGradient)} m/km`;
+  const steepDesc = (s: Stretch) =>
+    `Steiler Abschnitt km ${km(s.d0)}–${km(s.d1)} (${Math.round(s.d1 - s.d0)} m): Ø ${s.gradient.toFixed(0)} m/km, steilste 250 m–1 km ${s.maxGradient.toFixed(0)} m/km – ` +
+    `Gefälle-Indikator ${wwShort(s.hint)}. Aus dem Höhenprofil – vor Ort besichtigen.`;
+  const steepWpts = steep.map((s) => wpt(pAt(s.d0), s.d0, `${steepName(s)}`, steepDesc(s), "Caution", "Steilstrecke"));
+  const kmWpts = o.kmMarks
+    ? Array.from({ length: Math.floor(a.length / 1000) }, (_, i) => (i + 1) * 1000).map((d) => wpt(pAt(d), d, `km ${d / 1000}`, `Flusskilometer ${d / 1000} ab Einstieg · ${Math.round(zAt(d))} m ü. M.`, "Mile Marker", "Kilometer"))
+    : [];
+  const trkpts = (pts: { p: LngLat; z: number }[]) =>
+    pts.map((p) => `      <trkpt lat="${p.p[1].toFixed(6)}" lon="${p.p[0].toFixed(6)}"><ele>${p.z.toFixed(1)}</ele></trkpt>`).join("\n");
+  const ptsIn = (d0: number, d1: number) => a.profile.filter((p) => p.d >= d0 - 1e-6 && p.d <= d1 + 1e-6);
+  const trk = (title: string, desc: string, type: string, color: string, pts: { p: LngLat; z: number }[]) =>
+    `  <trk>\n    <name>${esc(title)}</name>\n    <desc>${esc(desc)}</desc>\n    <type>${esc(type)}</type>\n${colorExt(color)}    <trkseg>\n${trkpts(pts)}\n    </trkseg>\n  </trk>`;
+  // Gefälle je Abschnitt als Text (Gaia liest keine Linienfarben)
+  const steepTxt = steep.slice(0, 30).map((s) => `km ${kmDe(s.d0)}–${kmDe(s.d1)} ${Math.round(s.maxGradient)} m/km (${wwShort(s.hint)})`);
   const desc =
     `${km(a.length)} km, ${a.drop.toFixed(0)} m Höhenverlust, Ø ${a.meanGradient.toFixed(1)} m/km. ` +
-    (steep.length ? `Steile Abschnitte: ${steep.join("; ")}. ` : "") +
+    (steepTxt.length ? `Steile Abschnitte: ${steepTxt.join("; ")}. ` : "") +
     "Gefälle ist ein Indikator, keine Schwierigkeitsbewertung – vor Ort besichtigen. Erstellt mit Packraft-Planer.";
+  const main = o.split
+    ? stretches(a, { byClass: true }).map((s) =>
+        trk(`${name} · km ${kmDe(s.d0)}–${kmDe(s.d1)} · ${Math.round(s.gradient)} m/km`, `${s.label}: ${s.hint}. Indikator aus dem Höhenprofil.`, "Packrafting", s.color, ptsIn(s.d0, s.d1)))
+    : [trk(name, desc, "Packrafting", "#1f78b4", a.profile)];
+  const steepTrks = o.steep && !o.split ? steep.map((s) => trk(steepName(s), steepDesc(s), "Steilstrecke", s.color, ptsIn(s.d0, s.d1))) : [];
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+  xmlns:gpx_style="http://www.topografix.com/GPX/gpx_style/0/2"
+  xmlns:osmand="https://osmand.net">
   <metadata><name>${esc(name)}</name><desc>${esc(desc)}</desc></metadata>
-${[...ends, ...nrWpts, ...bkWpts, ...wwWpts].join("\n")}
-  <trk>
-    <name>${esc(name)}</name>
-    <desc>${esc(desc)}</desc>
-    <type>Packrafting</type>
-    <trkseg>
-${trkpts}
-    </trkseg>
-  </trk>
+${[...ends, ...steepWpts, ...nrWpts, ...bkWpts, ...wwWpts, ...kmWpts].join("\n")}
+${[...main, ...steepTrks].join("\n")}
 </gpx>
 `;
 }

@@ -72,6 +72,10 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Kein Hintergrund „Orthofoto AT“ (nur Österreich; App dient v. a. Expeditionen) – basemap.at bleibt nur für die Auswertung.
 - Kein farbiges Band neben der Strecke für Bildabschnitte; Zuordnung über Profil-Leiste + kleines Schild.
 - Höhere Auflösung nur als Anzeige/Link (Google Maps/Earth, Apple); keine kostenpflichtigen Kachel-APIs.
+- Ergebnisseite knapp: oben nur Länge, Höhe, Höhenverlust, Ø Gefälle, steilster Abschnitt (Titel = Flussname);
+  Herleitung, Pegel-Details, Bildquellen, Erkennungsregeln eingeklappt (`details.more`).
+- GPX: Steilstrecken (≥ 15 m/km) als eigene Tracks + Wegpunkt (Standard), Teilung nach Gefälle und km-Punkte optional;
+  Gaia liest keine Farben. Teilen-Knopf = allgemeines Teilen-Menü (Gaia erschien dort beim Nutzer nicht → Hinweistext).
 
 ## Referenzflüsse und bekannte Ergebnisse
 - **Soča (SI)** Srpenica–Trnovo, Soča-Dorf: Hauptreferenz, Literatur WW II–III+.
