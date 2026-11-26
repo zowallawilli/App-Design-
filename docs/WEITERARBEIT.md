@@ -27,9 +27,10 @@ Offene Aufgaben (bitte in dieser Reihenfolge, vorher kurz Machbarkeit/Aufwand ne
    eigene Schwelle je Flusstyp oder gelernte Schwelle aus Nutzer-Markierungen; Wehr km 3,75 vom Nutzer bestätigen.
 2. Abbruchkanten: Krimmler Wasserfälle (Kaskade im Schatten), Selfoss bei versetzter App-Linie – braucht mehr
    Beispiele (weitere Wasserfälle im NÁTT-Mosaik/basemap.at als Fixture).
-3. Weitere offene Orthofotos: Finnland (MML, kostenloser Schlüssel), Neuseeland (LINZ, Schlüssel),
-   USA (NAIP, ohne Schlüssel – Hosts imagery.nationalmap.gov in der Cloud-Umgebung noch gesperrt) –
-   Schlüssel nur nach meiner Freigabe, nie ins Repo.
+3. Weitere offene Orthofotos: USA (NAIP) seit 11/2026 eingebaut – US-Referenzflüsse mit verorteten Stellen
+   ergänzen. Finnland (MML) und Neuseeland (LINZ): Freigabe erteilt, Schlüssel beantragt der Nutzer selbst;
+   danach Eingabefeld wie beim NVE-Schlüssel (nur localStorage, nie ins Repo/die Umgebung), Hosts sind in der
+   Cloud-Umgebung freigegeben.
 4. Markarfljót, sobald das NÁTT-Mosaik dort Bilder hat.
 
 Nach jeder Änderung: npm test, npx tsc --noEmit, npm run e2e (Dev-Server vorher starten, während des

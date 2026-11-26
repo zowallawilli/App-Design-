@@ -269,7 +269,7 @@ Schwierigkeitsbewertung: auch Wehre werden markiert (im Luftbild nicht sicher un
 
 | Schritt | Verfahren |
 |---|---|
-| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
+| Bild | Offen lizenzierte Orthofotos mit Pixelzugriff im Browser (CORS): **Österreich** basemap.at (CC BY 4.0, Stufe 18 ≈ 0,4 m), **USA** NAIP (gemeinfrei, 0,3–1 m, USGS-ImageServer), **Slowenien** GURS DOF 2023 (CC BY 4.0, 0,26 m, Kachelcache EPSG:3794 auf dem ArcGIS-Portal der Finanzverwaltung FURS), **Island** NÁTT „Grunnkort – Loftmynd“ (CC BY 4.0, ≥ 25 cm, WMS gis.natt.is; deckt 11/2026 erst Teile ab, v. a. den Nordosten). Esri, Google, Apple u. a. sind nur zur Anzeige lizenziert und werden **nie** ausgewertet. |
 | Streifenbild | Entlang der Flusslinie alle 1 m ein Querschnitt ±45 m in 0,5-m-Schritten. Ausgewertet werden der volle Streifen (breite Flüsse wie die Salzach, 40–70 m) und der innere Streifen ±30 m (schmale Flüsse); je 10 m zählt das Ergebnis, das die Kriterien besser erfüllt. |
 | Wasserfläche | je Querzeile der zusammenhängende Lauf aus wasserähnlichen (bläulich/türkis) und Weißwasser-Pixeln nahe der Linie – auch wenn die Linie etwas neben dem Wasser liegt. |
 | Weißwasser | in allen Farbkanälen hell (Minimum ≥ helles ruhiges Wasser + 22, mind. 150), kaum gesättigt (≤ 0,14) und **körnig** (Streuung im 3 × 3,5-m-Fenster ≥ 9). Die Textur trennt Weißwasser (Streuung 12–14) von glattem hellem Wasser über Kalkgrund (Soča) oder milchigem Gletscherwasser (Inn) (5–7). **Dichter Schaum** (Querband/Walze unter Wehr oder Stufe) ist dagegen glatt und sehr hell: Minimum-Kanal ≥ 215, Sättigung ≤ 0,10, ohne Textur-Kriterium – aber nur, wenn in derselben Spalte flussauf- **und** flussabwärts innerhalb von 15 m Wasser liegt (lange helle Kalkkiesbänke grenzen an Land und fallen so heraus). **Zusätzlich relativ** (trübe, helle Flüsse wie die Salzach, deren Schaum kaum heller als das Wasser ist): Sättigung ≥ 0,07 unter und Minimum-Kanal ≥ 20 über dem Median des Wassers daneben – nur bei nicht beschattetem Wasser (Median ≥ 100), sonst wirkt helles Ufer wie Schaum. |
@@ -354,9 +354,9 @@ Uferbereiche (Schatten wirkt wasserähnlich) – Sanna 1/3 statt 2/3, Inn +3 bis
 |---|---|---|
 | Österreich, Slowenien | basemap.at, GURS | ✅ eingebaut |
 | Island | NÁTT (ehem. LMÍ) „Grunnkort – Loftmynd“, CC BY 4.0, WMS mit CORS | ✅ eingebaut (Abdeckung 11/2026 v. a. Nordosten) |
-| Finnland | Maanmittauslaitos Ortokuva, CC BY 4.0 | ✅ mit kostenlosem persönlichen Schlüssel |
-| Neuseeland | LINZ Basemaps 7,5–30 cm, CC BY 4.0 | ✅ mit kostenlosem Schlüssel |
-| USA | NAIP 0,6–1 m (USGS), gemeinfrei | ✅ (1 m nur für größere Schwälle) |
+| Finnland | Maanmittauslaitos Ortokuva, CC BY 4.0 | ✅ mit kostenlosem persönlichen Schlüssel (Server antwortet ohne Schlüssel 401, CORS für die App-Adresse freigegeben) – Schlüssel muss der Nutzer selbst beantragen |
+| Neuseeland | LINZ Basemaps 7,5–30 cm, CC BY 4.0 | ✅ mit kostenlosem Schlüssel (ohne Schlüssel 400, CORS offen) – Schlüssel muss der Nutzer selbst beantragen |
+| USA | NAIP 0,3–1 m (USDA/USGS), gemeinfrei, ImageServer `imagery.nationalmap.gov` mit CORS | ✅ eingebaut 11/2026 (ohne Alaska/Hawaii). Probe Lower New River (WV): 21 Stellen, gehäuft in der Schlucht km 12–21 (große Schwälle), ruhige Strecke ohne Marker. Aufnahmetag nur, wenn Esri denselben NAIP-Flug meldet |
 | Schweden | Lantmäteriet: historische Bilder CC0, aktuelle unklar | ⚠️ |
 | Alaska, Kanada | NAIP nur teilweise, „Alaska Vivid“ (lizenziert), Kanada stückweise (OGL) | ⚠️ |
 | Norwegen | Norge i bilder (Norge-digitalt-Lizenz) | ❌ nur Anzeige |

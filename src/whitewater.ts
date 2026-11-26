@@ -126,6 +126,28 @@ ORTHO_SOURCES.push({
     `https://gis.natt.is/mapcache/web-mercator/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=grunnkort-loftmynd&STYLES=&SRS=EPSG:3857&BBOX=${tileBbox3857(x, y, 18)}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg`,
 });
 
+// USA (ohne Alaska/Hawaii): NAIP – Luftbild des US-Landwirtschaftsministeriums, gemeinfrei, 0,3–0,6 m,
+// über den Bildserver der USGS (The National Map) mit CORS; landesweit alle 2–3 Jahre neu beflogen.
+const USA: LngLat[] = [
+  [-124.8, 48.4], [-123, 49.05], [-95, 49.05], [-89, 48.1], [-83, 46.5], [-82.4, 42], [-79, 43.6], [-75, 45.05],
+  [-71, 45.1], [-67, 47.5], [-66.8, 44.7], [-70.5, 41.3], [-74, 40.4], [-75.5, 35.2], [-81, 31], [-80, 25],
+  [-82, 24.5], [-83, 29.5], [-89, 30], [-94, 29.5], [-97.2, 25.8], [-99.5, 27.6], [-103, 28.9], [-106.5, 31.75],
+  [-111, 31.3], [-114.8, 32.45], [-117.2, 32.5], [-120.6, 34.4], [-124.6, 40.3],
+];
+ORTHO_SOURCES.push({
+  id: "naip",
+  name: "NAIP (USA)",
+  attribution: "USDA Farm Service Agency, NAIP; USGS The National Map",
+  license: "gemeinfrei (Public Domain)",
+  year: "je nach Bundesstaat",
+  resolution: 0.6,
+  esriMatch: /NAIP|USDA|FSA/i,
+  covers: (p) => inPoly(p, USA),
+  toPixel: lonLatTo3857Px(18),
+  tileUrl: (x, y) =>
+    `https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage?bbox=${tileBbox3857(x, y, 18)}&bboxSR=3857&imageSR=3857&size=256,256&format=jpg&f=image`,
+});
+
 export function orthoSourceFor(line: LngLat[]): OrthoSource | null {
   const pts = [line[0], line[Math.floor(line.length / 2)], line[line.length - 1]];
   return ORTHO_SOURCES.find((s) => pts.filter((p) => s.covers(p)).length >= 2) ?? null;
