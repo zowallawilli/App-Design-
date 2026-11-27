@@ -123,7 +123,7 @@ const style: StyleSpecification = {
     { id: "tribs-hit", type: "line", source: "tribs", paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
     { id: "tribs", type: "line", source: "tribs", layout: { "line-cap": "round" }, paint: { "line-color": "#00b4d8", "line-width": 3.5, "line-dasharray": [1.2, 1.2] } },
     // weitere Abschnitte der Tour (blass) und Verbindungswege
-    { id: "tour-river", type: "line", source: "tour", filter: ["==", ["get", "kind"], "fluss"], layout: { "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.55 } },
+    { id: "tour-river", type: "line", source: "tour", filter: ["==", ["get", "kind"], "fluss"], layout: { "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": 5, "line-opacity": 0.9 } },
     { id: "tour-hike-casing", type: "line", source: "tour", filter: ["==", ["get", "kind"], "weg"], layout: { "line-cap": "round" }, paint: { "line-color": "#fff", "line-width": ["match", ["get", "sel"], 2, 7, 1, 5, 3], "line-opacity": ["match", ["get", "sel"], 0, 0.4, 0.9] } },
     { id: "tour-hike", type: "line", source: "tour", filter: ["==", ["get", "kind"], "weg"], layout: { "line-cap": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["match", ["get", "sel"], 2, 4, 1, 3, 2], "line-dasharray": [2, 1], "line-opacity": ["match", ["get", "sel"], 0, 0.55, 1] } },
     { id: "section-casing", type: "line", source: "section", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#102027", "line-width": 9, "line-opacity": 0.7 } },
@@ -360,7 +360,7 @@ function setBusy(b: boolean) {
 const MODE_HELP: Record<Mode, string> = {
   idle: "Wähle einen Modus oder lade die Referenzstrecke.",
   "route-in": "Klicke auf den Einstieg am Fluss.",
-  "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen.",
+  "route-out": "Klicke auf den Ausstieg – der Flusslauf dazwischen wird automatisch nachgezogen und als weiterer Abschnitt der Tour angelegt (bisherige Flüsse bleiben erhalten).",
   edit: "Strecke bearbeiten: Punkte ziehen = Strecke anpassen (Ein-/Ausstieg, Zwischenpunkte). Klick auf die Strecke fügt einen Zwischenpunkt ein, Klick auf einen Punkt löscht ihn. Esc oder erneut „Strecke bearbeiten“ beendet.",
   "hike-a": "Verbindungsweg: Klicke auf Fluss A (bzw. den Startpunkt).",
   "hike-b": "Verbindungsweg: Klicke auf Fluss B (bzw. den Zielpunkt) – die App sucht den Weg mit der kürzesten Gehzeit.",
@@ -401,6 +401,8 @@ function clearMarkers() {
   markers = [];
 }
 
+/** während Ein-/Ausstieg gezogen wird, die Ergebnisanzeige nicht neu aufbauen (sonst ginge der Zug verloren) */
+let endpointDragging = false;
 function endpointMarker(p: LngLat, label: string, color: string, draggable = false) {
   const el = document.createElement("div");
   el.className = "endpoint";
@@ -408,7 +410,10 @@ function endpointMarker(p: LngLat, label: string, color: string, draggable = fal
   el.textContent = label;
   if (draggable) el.title = `${label} verschieben: ziehen – die Strecke wird neu berechnet`;
   const m = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -4], draggable }).setLngLat(p).addTo(map);
-  if (draggable) m.on("dragend", () => void moveAnchor(nearestAnchor(p), [m.getLngLat().lng, m.getLngLat().lat]));
+  if (draggable) {
+    m.on("dragstart", () => (endpointDragging = true));
+    m.on("dragend", () => { endpointDragging = false; void moveAnchor(nearestAnchor(p), [m.getLngLat().lng, m.getLngLat().lat]); });
+  }
   markers.push(m);
   return m;
 }
@@ -574,6 +579,7 @@ function itemTitle(t: TourItem, i: number): { title: string; meta: string } {
     const a = t.cur.analysis;
     return { title: `${i + 1} · ${t.cur.name}`, meta: `${fmtKm(a.length)} · ${Math.round(a.profile[0].z)} → ${Math.round(a.profile[a.profile.length - 1].z)} m · Ø ${a.meanGradient.toFixed(1).replace(".", ",")} m/km` };
   }
+  if (t.kind === "fluss") return { title: `${i + 1} · ${t.last?.name ?? "Fluss"}`, meta: "noch nicht geladen – anklicken zum Analysieren" };
   const r = t.hike?.[t.sel ?? 0];
   return { title: `${i + 1} · ⇄ Verbindungsweg${t.how ? ` (${t.how})` : ""}`, meta: r ? `${fmtKm(r.lengthM)} · ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m · ~${fmtH(r.hours)} · höchster Punkt ${fmtElev(r.maxElev)}` : "" };
 }
@@ -589,6 +595,17 @@ function renderTourLayer() {
   src("tour").setData({ type: "FeatureCollection", features });
   hikeMarkers.forEach((m) => m.remove());
   hikeMarkers = [];
+  // Nummern-Schild je Abschnitt (Klick = anzeigen)
+  trip.forEach((t, i) => {
+    const line = t.kind === "fluss" ? t.cur?.analysis.profile.map((q) => q.p) : t.hike?.[t.sel ?? 0]?.line;
+    if (!line?.length || i === active) return;
+    const el = document.createElement("button");
+    el.className = "trip-tag";
+    el.textContent = `${i + 1}${t.kind === "fluss" && t.cur ? ` ${t.cur.name}` : " ⇄"}`;
+    el.title = "Abschnitt anzeigen";
+    el.addEventListener("click", (ev) => { ev.stopPropagation(); activate(i); });
+    hikeMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(line[Math.floor(line.length / 2)]).addTo(map));
+  });
   trip.forEach((t, i) => {
     const r = t.kind === "weg" ? t.hike?.[t.sel ?? 0] : undefined;
     if (!r) return;
@@ -603,7 +620,8 @@ let hikeMarkers: maplibregl.Marker[] = [];
 function renderTour() {
   renderTourLayer();
   const panel = $("tour-panel");
-  panel.hidden = trip.length < 2 && !trip.some((t) => t.kind === "weg");
+  panel.hidden = trip.length === 0;
+  saveTrip();
   const list = $("tour-list");
   list.innerHTML = "";
   let sumKm = 0, sumH = 0;
@@ -642,10 +660,69 @@ function renderTour() {
   });
   $("tour-sum").textContent = trip.length ? `Gesamt ${fmtKm(sumKm)}${sumH ? ` · Fußwege ~${fmtH(sumH)} (DIN 33466, ohne Pausen und Gepäckzuschlag)` : ""}` : "";
 }
+// ---------- Tour im Browser speichern und beim Neustart wiederherstellen ----------
+const TRIP_KEY = "packraft.trip";
+const r6 = (p: LngLat): LngLat => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6];
+let restoring = false;
+function saveTrip() {
+  if (restoring) return;
+  const items = trip.flatMap((t): unknown[] => {
+    if (t.kind === "fluss") {
+      const sec = t.last ?? (t.cur ? { line: t.cur.analysis.profile.map((q) => q.p), name: t.cur.name, source: t.cur.source, literature: t.cur.literature } : null);
+      if (!sec) return [];
+      return [{ kind: "fluss", name: t.cur?.name ?? sec.name, source: sec.source, literature: sec.literature, line: sec.line.map(r6),
+        edit: t.edit ? { anchors: t.edit.anchors.map(r6), parts: t.edit.parts.map((q) => q.map(r6)), traced: t.edit.traced } : null }];
+    }
+    return [{ kind: "weg", how: t.how, sel: t.sel ?? 0, hike: (t.hike ?? []).map((h) => ({ ...h, line: h.line.map(r6), dist: [], elev: h.elev.map((z) => Math.round(z)) })) }];
+  });
+  try { localStorage.setItem(TRIP_KEY, JSON.stringify({ v: 1, active, items })); } catch { /* voll oder privater Modus */ }
+}
+/** gespeicherte Tour neu aufbauen: Flüsse neu analysieren (Höhen/Pegel aktuell), Verbindungswege direkt */
+async function restoreTrip() {
+  let saved: { active: number; items: ({ kind: "fluss"; name: string; source: string; literature?: string; line: LngLat[]; edit: RouteEdit | null } | { kind: "weg"; how?: string; sel: number; hike: HikeResult[] })[] } | null = null;
+  try { saved = JSON.parse(localStorage.getItem(TRIP_KEY) ?? "null"); } catch { saved = null; }
+  if (!saved?.items?.length) return;
+  restoring = true;
+  try {
+    for (const [k, it] of saved.items.entries()) {
+      setStatus(`Tour wird wiederhergestellt (${k + 1}/${saved.items.length}) …`);
+      if (it.kind === "weg") {
+        const withDist = (h: HikeResult): HikeResult => {
+          const dist = [0];
+          for (let i = 1; i < h.line.length; i++) dist.push(dist[i - 1] + haversine(h.line[i - 1], h.line[i]));
+          return { ...h, dist };
+        };
+        trip.push({ kind: "weg", how: it.how, sel: it.sel, hike: it.hike.map(withDist) });
+        continue;
+      }
+      resetAll();
+      routeEdit = it.edit ? { anchors: it.edit.anchors, parts: it.edit.parts, traced: it.edit.traced } : null;
+      src("river").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: it.line } });
+      const ok = await runAnalysis(it.line, it.name, it.source, "", it.literature);
+      if (!ok) trip.push({ kind: "fluss", last: { line: it.line, name: it.name, source: it.source, literature: it.literature }, edit: routeEdit }); // später erneut versuchen
+    }
+  } finally {
+    restoring = false;
+  }
+  const a = Math.min(Math.max(0, saved.active), trip.length - 1);
+  if (trip[a]?.cur || trip[a]?.kind === "weg") activate(a);
+  else renderTour();
+  setStatus(`Tour wiederhergestellt: ${trip.length} Abschnitt${trip.length === 1 ? "" : "e"}. „Zurücksetzen“ löscht sie.`);
+}
+
 /** Abschnitt der Tour anzeigen (ohne neu zu rechnen) */
 function activate(i: number) {
   const t = trip[i];
   if (!t || busy) return;
+  if (t.kind === "fluss" && !t.cur && t.last) {
+    // beim Wiederherstellen fehlgeschlagen → jetzt neu analysieren (wird hinten angehängt)
+    const sec = t.last;
+    trip.splice(i, 1);
+    resetAll();
+    routeEdit = t.edit ?? null;
+    void runAnalysis(sec.line, sec.name, sec.source, "", sec.literature);
+    return;
+  }
   if (mode !== "idle") setMode("idle");
   runId++;
   active = i;
@@ -661,6 +738,9 @@ function activate(i: number) {
     void updateImageDate();
     fitLine(line);
     renderTour();
+    if (!current.flow) void loadFlowInfo(current.analysis, runId);
+    if (!current.osm) void loadOsm(current.analysis, runId);
+    void loadTribs(current.analysis, runId);
     return;
   }
   current = null;
@@ -692,7 +772,8 @@ async function loadTribs(a: Analysis, id: number) {
   const pad = 0.06;
   const bb: [number, number, number, number] = [Math.min(...lons) - pad * 1.5, Math.min(...lats) - pad, Math.max(...lons) + pad * 1.5, Math.max(...lats) + pad];
   const { rivers } = await riversInBbox(bb, fetch, 11).catch(() => ({ rivers: [] }));
-  if (id !== runId || current?.analysis !== a) return;
+  const owner = current?.analysis === a ? current : trip.find((t) => t.cur?.analysis === a)?.cur;
+  if (!owner) return;
   const step = Math.max(1, Math.floor(line.length / 400));
   const coarse = line.filter((_, i) => i % step === 0);
   const near = (p: LngLat, m: number) => coarse.some((q) => haversine(p, q) < m);
@@ -700,6 +781,13 @@ async function loadTribs(a: Analysis, id: number) {
   const share = new Map<string, number>();
   for (const r of rivers) share.set(r.name, (share.get(r.name) ?? 0) + r.coords.filter((p) => near(p, 120)).length);
   const main = [...share.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
+  // Eigene Strecke: Flussname aus OpenStreetMap übernehmen (Titel, Tour-Liste, Dateiname beim Export)
+  if (main && (share.get(main) ?? 0) >= 3 && /^(Eigene|Gezeichnete) Strecke$/.test(owner.name)) {
+    owner.name = main;
+    if (current === owner) $("res-title").textContent = main;
+    renderTour();
+  }
+  if (id !== runId || current !== owner) return;
   const byName = new Map<string, LngLat[][]>();
   for (const r of rivers) if (r.name !== main) byName.set(r.name, [...(byName.get(r.name) ?? []), r.coords]);
   const features: GeoJSON.Feature[] = [];
@@ -883,7 +971,7 @@ async function runAnalysis(line: LngLat[], name: string, source: string, note = 
 }
 
 function showResults() {
-  if (!current) return;
+  if (!current || endpointDragging) return;
   const { name, source } = current;
   const a = rated() ?? current.analysis;
   const rq = ratingQ();
@@ -1801,7 +1889,7 @@ function jumpTo(d: number) {
 
 const TENDENCY_COLOR: Record<string, string> = { "eher niedrig": "#ef8a62", unauffällig: "#4d9221", "eher erhöht": "#4393c3", "eher hoch": "#2166ac" };
 
-async function loadFlowInfo(a: Analysis, id: number) {
+async function loadFlowInfo(a: Analysis, _id: number) {
   const pts = a.profile.map((p) => ({ d: p.d, p: p.p }));
   const line = a.profile.map((p) => p.p);
   let info: FlowInfo;
@@ -1837,12 +1925,14 @@ async function loadFlowInfo(a: Analysis, id: number) {
   } catch (e) {
     info = { imagery: [], gauge: null, gaugeErrors: [], conditions: new Map(), today: new Date().toISOString().slice(0, 10), error: (e as Error).message };
   }
-  if (id !== runId && current?.analysis !== a) return;
-  if (current?.analysis !== a) return;
-  current.flow = info;
+  // auch für Abschnitte, die inzwischen nicht mehr angezeigt werden (Tour): Pegel und Flussname übernehmen
+  const owner = current?.analysis === a ? current : trip.find((t) => t.cur?.analysis === a)?.cur;
+  if (!owner) return;
+  owner.flow = info;
   // Eigene Strecke: Flussname aus OpenStreetMap übernehmen (Titel, Dateiname beim Export)
-  const river = info.catchment && !info.catchment.fallback ? info.catchment.river : undefined;
-  if (river && /^(Eigene|Gezeichnete) Strecke$/.test(current.name)) current.name = river;
+  // (Flussname kommt aus loadTribs: Fluss, der am meisten entlang der Strecke liegt – das Einzugsgebiet
+  // nennt an Mündungen oft den aufnehmenden Fluss)
+  if (current !== owner) return;
   updateQOptions();
   showResults(); // neu einfärben (Wucht-Bewertung braucht den Abfluss)
   void updateImageDate(); // Kartenkopf: Tendenz zum Bilddatum
@@ -2177,7 +2267,19 @@ document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) =>
     setMode(m === "route" ? "route-in" : "draw");
   }),
 );
-$("reset").addEventListener("click", () => { resetAll(true); setMode("idle"); });
+$("reset").addEventListener("click", () => {
+  if (trip.length > 1 && !confirm(`Ganze Tour (${trip.length} Abschnitte) löschen? Eigene Stellen bleiben erhalten.`)) return;
+  resetAll(true);
+  setMode("idle");
+});
+$("own-clear").addEventListener("click", () => {
+  const n = wwLabels.filter((l) => l.show).length;
+  if (!n) return setStatus("Keine eigenen Stellen gespeichert.");
+  if (!confirm(`Alle ${n} eigenen Stellen löschen? (Tipp: vorher „Stellen sichern“.)`)) return;
+  wwLabels = wwLabels.filter((l) => !l.show); // reine Lern-Markierungen der Erkennung bleiben
+  afterLabelChange();
+  setStatus(`${n} eigene Stellen gelöscht.`);
+});
 $("cancel").addEventListener("click", () => {
   resetAll();
   setMode("idle");
@@ -2373,6 +2475,10 @@ const showPresetDesc = () => {
 };
 presetSel.addEventListener("change", showPresetDesc);
 showPresetDesc();
+
+// beim Start: gespeicherte Tour wiederherstellen
+if (map.loaded()) void restoreTrip();
+else map.once("load", () => void restoreTrip());
 
 $("load-preset").addEventListener("click", async () => {
   const pr = PRESETS.find((p) => p.id === presetSel.value);

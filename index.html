@@ -115,7 +115,7 @@
 
         <section id="tour-panel" hidden>
           <h2>Tour</h2>
-          <p class="hint">Alle Abschnitte bleiben auf der Karte; Klick zeigt die Details. Nebenflüsse (blau gestrichelt) anklicken = weiteren Abschnitt analysieren. „Zurücksetzen“ löscht die ganze Tour.</p>
+          <p class="hint">Jeder neue Fluss (Ein-/Ausstieg, Zeichnen, Nebenfluss anklicken) und jeder Verbindungsweg wird ein weiterer Abschnitt; alle bleiben auf der Karte und im Browser gespeichert (auch nach Neuladen). Klick zeigt die Details, ✕ entfernt einen Abschnitt, „Zurücksetzen“ löscht die ganze Tour.</p>
           <ol id="tour-list" class="tour-list"></ol>
           <p id="tour-sum" class="hint"></p>
           <div class="row"><button id="tour-gpx" class="ghost" title="Alle Abschnitte und Verbindungswege als ein GPX">Tour als GPX</button></div>
@@ -162,6 +162,7 @@
           <ol id="own-list" class="hotspots"></ol>
           <p id="own-info" class="hint"></p>
           <div class="row ww-tools">
+            <button id="own-clear" class="ghost" title="Alle eigenen Stellen in diesem Browser löschen (mit Rückfrage)">Alle löschen</button>
             <button id="own-export" class="ghost" title="Alle eigenen Stellen als Datei sichern (mit GitHub-Schlüssel direkt ins Repo)">Stellen sichern</button>
             <button id="own-import" class="ghost" title="Gesicherte Datei laden (wird zusammengeführt)">Stellen laden</button>
           </div>
