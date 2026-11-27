@@ -42,7 +42,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.click('#load-preset'); await waitIdle();
   check('Referenz: Ergebnis mit OSM + Sentinel-2', await resultsVisible() && /OpenStreetMap/.test(await stat('Flusslinie')) && /Sentinel-2/.test(await stat('Flusslinie')), `${await stat('Flusslinie')} · ${await stat('Länge')} · ${await stat('Ø Gefälle')} · Literatur: ${await stat('Literatur')} · Status: ${await status()}`);
   check('Referenz: Name', (await page.textContent('#res-title')).includes('Na Logu'), await page.textContent('#res-title'));
-  check('Schwallstellen-Erkennung standardmäßig aus (experimentell), Eigene Stellen + OSM-Abschnitt da', !(await page.isChecked('#opt-ww')) && !(await page.isVisible('#ww-section')) && await page.isVisible('#own-list') && await page.isVisible('#osm-list') && (await page.locator('.ww-marker').count()) === 0, (await page.textContent('#osm-list')).replace(/\s+/g, ' ').slice(0, 100));
+  check('Schwallstellen-Erkennung standardmäßig aus (experimentell), Eigene Stellen + OSM-Abschnitt da', !(await page.isChecked('#opt-ww')) && !(await page.isVisible('#ww-section')) && await page.isVisible('#osm-list') && (await page.locator('.ww-marker').count()) === 0, (await page.textContent('#osm-list')).replace(/\s+/g, ' ').slice(0, 100));
 
   // 2 Parameter ändern → neu rechnen
   const before = await page.locator('#stats').textContent();
@@ -167,6 +167,13 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   await page.waitForFunction(() => !/Wird geladen/.test(document.querySelector('#flow-info').textContent), null, { timeout: 60000 }).catch(() => {});
   const fi = (await page.textContent('#flow-info')).replace(/\s+/g, ' ');
   check('Luftbild-Datum + Hinweise, keine Modellzahl', /21\.08\.2023/.test(fi) && /eher niedrig|unauffällig|eher erhöht|eher hoch/.test(fi) && !/Modell/.test(fi), fi.slice(0, 160));
+  {
+    const h0 = (await page.locator('#map').boundingBox()).height;
+    await page.click('#profile-toggle'); await page.waitForTimeout(400);
+    const h1 = (await page.locator('#map').boundingBox()).height, ph = (await page.locator('#profile-wrap').boundingBox()).height;
+    await page.click('#profile-toggle'); await page.waitForTimeout(400);
+    check('Höhenprofil einklappbar (mehr Platz für die Karte)', h1 > h0 + 100 && ph < 40 && (await page.locator('#profile svg').count()) > 0, `Karte ${Math.round(h0)} → ${Math.round(h1)} px, Leiste ${Math.round(ph)} px`);
+  }
   check('Regime (Gletscher/Schnee/Regen) statt Wetterdaten', /Abflussregime: (Gletscherfluss|Schneeschmelze|Regen)/.test(fi) && !/Open-Meteo|Wetterdaten|mm Regen/.test(fi), fi.slice(0, 200));
   await page.click('#tour-next'); await page.waitForTimeout(1500);
   check('Stellen-Tour zoomt ins Luftbild', (await page.evaluate(() => window.__map.getZoom())) > 17, await page.textContent('#tour-label'));
@@ -278,6 +285,13 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.click('.ww-popup button[data-k="lager"]'); await page.waitForTimeout(400);
     const n1 = await page.locator('.own-marker').count();
     const icoOk = /<svg/.test(await page.locator('.own-marker').last().innerHTML()) && !(await page.locator('.own-marker').last().textContent()).trim();
+    // ✕ in der Liste löscht, ↶ holt zurück
+    const panelShown = await page.isVisible('#own-panel');
+    await page.locator('#own-list .own-del').last().click(); await page.waitForTimeout(300);
+    const nDel = await page.locator('.own-marker').count();
+    await page.click('#undo'); await page.waitForTimeout(400);
+    const nUndo = await page.locator('.own-marker').count();
+    check('Eigene Stellen: Liste in der linken Leiste, ✕ löscht, ↶ macht rückgängig', panelShown && nDel === n1 - 1 && nUndo === n1, `${n1} → ✕ ${nDel} → ↶ ${nUndo}`);
     const lab = () => page.evaluate(() => JSON.parse(localStorage.getItem('packraft.wwLabels')).find((l) => l.kind === 'lager'));
     const l1 = await lab();
     // Symbol bleibt beim Herauszoomen genau an der markierten Stelle
@@ -356,14 +370,6 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const txt = fs.readFileSync(await dl.path(), 'utf8');
     check('GPX: steile Abschnitte als Track + Wegpunkt', /<name>Steil km/.test(txt) && (txt.match(/<trk>/g) || []).length >= 2, `${(txt.match(/<trk>/g) || []).length} Tracks`);
   }
-  {
-    const vis = () => page.evaluate(() => window.__map.getLayoutProperty('catch-line', 'visibility'));
-    const v0 = await vis();
-    await page.click('#flow-info details.more > summary'); await page.uncheck('#show-catch'); await page.waitForTimeout(300);
-    const v1 = await vis();
-    await page.check('#show-catch');
-    check('Einzugsgebiet standardmäßig an (blau gestrichelt), abschaltbar', v0 === 'visible' && v1 === 'none', `${v0} → ${v1}`);
-  }
   // 15 Profil-Hover
   await page.hover('#profile svg', { position: { x: 600, y: 100 } });
   const cur = await page.evaluate(() => window.__map.getSource('cursor')._data?.geometry?.type);
@@ -417,7 +423,11 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.locator('#tour-list > li').first().locator('.tour-item').click(); await page.waitForTimeout(800);
     const back = await page.isVisible('#results') && /Koritnica/.test(await page.textContent('#res-title'));
     await page.click('#reset');
-    check('Abschnitt wieder anzeigen; Zurücksetzen löscht die Tour', back && !(await page.isVisible('#tour-panel')), '');
+    const ownLeft = await page.locator('.own-marker').count();
+    check('Abschnitt wieder anzeigen; Zurücksetzen leert alles (Tour + eigene Stellen)', back && !(await page.isVisible('#tour-panel')) && ownLeft === 0 && !(await page.isVisible('#own-panel')), `eigene Stellen übrig: ${ownLeft}`);
+    await page.click('#undo'); await page.waitForTimeout(1500);
+    check('↶ nach Zurücksetzen stellt Tour und eigene Stellen wieder her', (await page.locator('#tour-list > li').count()) === 3, `${await page.locator('#tour-list > li').count()} Abschnitte`);
+    await page.click('#reset');
   }
 
   // 17 Kartenwechsel + 3D

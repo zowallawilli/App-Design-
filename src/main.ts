@@ -8,7 +8,7 @@ import { download, shareFile, toCsv, toGeoJson, toGpx, toTourGpx, type PlaceOut 
 import { loadOsmPlaces, OSM_KIND, osmPlaceText, type OsmPlace } from "./osmPlaces";
 import { icon, KIND_ICON, OSM_ICON_NAME } from "./icons";
 import { haversine, lineLength, locateOnLine, type LngLat } from "./geo";
-import { geocode, waterwaysInBbox } from "./osm";
+import { geocode, overpass, waterwaysInBbox } from "./osm";
 import { glacierAreaAround, hikeLayersInBbox, riversInBbox, waterInBbox } from "./vectorWater";
 import { findHike, type HikeResult } from "./hike";
 import { PRESETS } from "./presets";
@@ -65,14 +65,6 @@ type BaseKey = keyof typeof BASEMAPS;
 
 const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
 
-/** Einzugsgebiet (Fluss + Zubringer oberhalb, Wetter-Bezugspunkte) auf der Karte zeigen? Standard: aus. */
-function showCatch(): boolean {
-  try { return localStorage.getItem("packraft.showCatch") !== "0"; } catch { return true; }
-}
-function setShowCatch(on: boolean) {
-  try { localStorage.setItem("packraft.showCatch", on ? "1" : "0"); } catch { /* nur für diese Sitzung */ }
-  for (const id of ["catch-line"]) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-}
 
 const style: StyleSpecification = {
   version: 8,
@@ -98,7 +90,6 @@ const style: StyleSpecification = {
     "ww-labels": { type: "geojson", data: empty },
     narrows: { type: "geojson", data: empty },
     gauge: { type: "geojson", data: empty },
-    catch: { type: "geojson", data: empty },
     section: { type: "geojson", data: empty },
     draft: { type: "geojson", data: empty },
     cursor: { type: "geojson", data: empty },
@@ -110,14 +101,6 @@ const style: StyleSpecification = {
       source: k,
       layout: { visibility: (k === "esri" ? "visible" : "none") as "visible" | "none" },
     })),
-    {
-      id: "catch-line", type: "line", source: "catch", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: showCatch() ? "visible" : "none" },
-      paint: { "line-color": "#4a90d9", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.85 },
-    },
-    {
-      id: "catch-pts", type: "circle", source: "catch", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: "none" }, // Wetter-Bezugspunkte: Wetterabfrage eingefroren
-      paint: { "circle-radius": 5, "circle-color": "rgba(255,255,255,0.15)", "circle-stroke-color": "#4a90d9", "circle-stroke-width": 2 },
-    },
     { id: "river", type: "line", source: "river", paint: { "line-color": "#7fd3ff", "line-width": 3, "line-opacity": 0.85 } },
     // Nebenflüsse (anklicken = analysieren)
     { id: "tribs-hit", type: "line", source: "tribs", paint: { "line-color": "#000", "line-width": 14, "line-opacity": 0 } },
@@ -473,6 +456,7 @@ async function moveAnchor(i: number, p: LngLat) {
   const r = routeEdit;
   if (!r || i < 0) return;
   if (busy) { if (current) showResults(); return; }
+  pushUndo();
   r.anchors[i] = p;
   await applyEdit(r, [i - 1, i]);
 }
@@ -480,6 +464,7 @@ async function moveAnchor(i: number, p: LngLat) {
 function insertAnchor(p: LngLat) {
   const r = routeEdit;
   if (!r) return;
+  pushUndo();
   let best = { k: -1, off: Infinity, d: 0, point: p };
   r.parts.forEach((q, k) => {
     const at = locateOnLine(q, p);
@@ -499,6 +484,7 @@ function insertAnchor(p: LngLat) {
 async function deleteAnchor(i: number) {
   const r = routeEdit;
   if (!r || i <= 0 || i >= r.anchors.length - 1) return;
+  pushUndo();
   r.anchors.splice(i, 1);
   r.parts.splice(i - 1, 2, [r.anchors[i - 1], r.anchors[i]]);
   r.traced.splice(i - 1, 2, editTrace());
@@ -539,7 +525,6 @@ function resetAll(all = false) {
   src("section").setData(empty);
   src("narrows").setData(empty);
   src("gauge").setData(empty);
-  src("catch").setData(empty);
   clearImgMarkers();
   src("draft").setData(empty);
   src("cursor").setData(empty);
@@ -746,7 +731,7 @@ function activate(i: number) {
   current = null;
   routeEdit = null;
   lastSection = null;
-  for (const id of ["river", "section", "narrows", "gauge", "catch", "tribs", "cursor"]) src(id).setData(empty);
+  for (const id of ["river", "section", "narrows", "gauge", "tribs", "cursor"]) src(id).setData(empty);
   clearImgMarkers();
   $("results").hidden = true;
   $("profile-wrap").hidden = true;
@@ -757,6 +742,7 @@ function activate(i: number) {
 }
 function removeItem(i: number) {
   if (busy) return;
+  pushUndo();
   const wasActive = i === active;
   trip.splice(i, 1);
   if (wasActive) { resetAll(); return; }
@@ -764,14 +750,54 @@ function removeItem(i: number) {
   renderTour();
 }
 
+// ---------- Rückgängig (↶, Strg/⌘ + Z) ----------
+/** Zustand vor einem Bearbeitungsschritt: eigene Stellen, ausgeblendete Erkennungen, Tour (Abschnitte bleiben
+ *  als Objekte erhalten → Rückgängig rechnet nichts neu) */
+interface UndoSnap { labels: string; hidden: string; trip: TourItem[]; active: number }
+const undoStack: UndoSnap[] = [];
+const cloneItem = (t: TourItem): TourItem => ({
+  ...t,
+  edit: t.edit ? { anchors: t.edit.anchors.map((p) => [p[0], p[1]] as LngLat), parts: t.edit.parts.map((q) => q.slice()), traced: t.edit.traced.slice() } : t.edit,
+});
+function pushUndo() {
+  undoStack.push({ labels: JSON.stringify(wwLabels), hidden: JSON.stringify(wwHidden), trip: trip.map(cloneItem), active });
+  if (undoStack.length > 40) undoStack.shift();
+  $<HTMLButtonElement>("undo").disabled = false;
+}
+function undo() {
+  if (busy || !undoStack.length) return;
+  const s = undoStack.pop()!;
+  $<HTMLButtonElement>("undo").disabled = undoStack.length === 0;
+  labelPopup?.remove();
+  wwLabels = JSON.parse(s.labels);
+  wwHidden = JSON.parse(s.hidden);
+  saveLabels(wwLabels);
+  saveHidden(wwHidden);
+  const keep = s.trip;
+  resetAll(true);
+  trip = keep;
+  if (mode === "edit" || mode.startsWith("hike") || mode.startsWith("route") || mode === "draw") setMode("idle");
+  renderOwnMarkers();
+  renderOwnList();
+  const a = Math.min(s.active, trip.length - 1);
+  if (a >= 0 && (trip[a].cur || trip[a].kind === "weg")) activate(a);
+  else renderTour();
+  setStatus("Letzter Schritt rückgängig gemacht.");
+}
+
 // ---------- Nebenflüsse: blau gestrichelt, anklicken = analysieren ----------
+const latTile = (lat: number, z: number) => { const r = (lat * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z); };
 /** benannte Flüsse, die die Strecke berühren (Nebenflüsse bzw. der Fluss, in den sie mündet) */
 async function loadTribs(a: Analysis, id: number) {
   const line = a.profile.map((q) => q.p);
   const lons = line.map((p) => p[0]), lats = line.map((p) => p[1]);
   const pad = 0.06;
   const bb: [number, number, number, number] = [Math.min(...lons) - pad * 1.5, Math.min(...lats) - pad, Math.max(...lons) + pad * 1.5, Math.max(...lats) + pad];
-  const { rivers } = await riversInBbox(bb, fetch, 11).catch(() => ({ rivers: [] }));
+  // möglichst feine Kacheln (Bäche enthalten die Kacheln erst ab Zoom 13), höchstens ~300 kleine Kacheln
+  const tiles = (z: number) => { const n = 2 ** z; return (Math.floor(((bb[2] + 180) / 360) * n) - Math.floor(((bb[0] + 180) / 360) * n) + 1) * (latTile(bb[1], z) - latTile(bb[3], z) + 1); };
+  const zoom = tiles(13) <= 300 ? 13 : tiles(12) <= 160 ? 12 : 11;
+  const raw = await riversInBbox(bb, fetch, zoom, true).then((r) => r.rivers).catch(() => []);
+  const rivers = raw;
   const owner = current?.analysis === a ? current : trip.find((t) => t.cur?.analysis === a)?.cur;
   if (!owner) return;
   const step = Math.max(1, Math.floor(line.length / 400));
@@ -779,7 +805,7 @@ async function loadTribs(a: Analysis, id: number) {
   const near = (p: LngLat, m: number) => coarse.some((q) => haversine(p, q) < m);
   // Name des analysierten Flusses: die Linie, die am meisten an der Strecke liegt
   const share = new Map<string, number>();
-  for (const r of rivers) share.set(r.name, (share.get(r.name) ?? 0) + r.coords.filter((p) => near(p, 120)).length);
+  for (const r of rivers) if (r.name) share.set(r.name, (share.get(r.name) ?? 0) + r.coords.filter((p) => near(p, 120)).length);
   const main = [...share.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
   // Eigene Strecke: Flussname aus OpenStreetMap übernehmen (Titel, Tour-Liste, Dateiname beim Export)
   if (main && (share.get(main) ?? 0) >= 3 && /^(Eigene|Gezeichnete) Strecke$/.test(owner.name)) {
@@ -788,21 +814,60 @@ async function loadTribs(a: Analysis, id: number) {
     renderTour();
   }
   if (id !== runId || current !== owner) return;
+  src("tribs").setData({ type: "FeatureCollection", features: tribFeatures(line, rivers, main, near) });
+  // kleine Bäche fehlen in den Vektorkacheln oft → zusätzlich OpenStreetMap direkt (Overpass) entlang der Strecke
+  const extra = await waterwaysAlong(line).catch(() => null);
+  if (!extra || id !== runId || current !== owner) return;
+  const merged = [...rivers.filter((r) => r.name), ...extra]; // unbenannte Linien aus Overpass sind vollständiger als Kachelstücke
+  src("tribs").setData({ type: "FeatureCollection", features: tribFeatures(line, merged, main, near) });
+}
+/** Zuflüsse (benannt oder ohne Namen), die die Strecke berühren (≤ 500 m), als Kartenlinien mit Mündungspunkt */
+function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }[], main: string | undefined, near: (p: LngLat, m: number) => boolean): GeoJSON.Feature[] {
   const byName = new Map<string, LngLat[][]>();
-  for (const r of rivers) if (r.name !== main) byName.set(r.name, [...(byName.get(r.name) ?? []), r.coords]);
+  const lenKm = (l: LngLat[]) => l.reduce((a, p, i) => (i ? a + haversine(l[i - 1], p) : 0), 0) / 1000;
+  const noName: LngLat[][] = [];
+  for (const r of rivers) {
+    if (r.name && r.name === main) continue;
+    // Nebenarme/Ufer-Linien entlang der Strecke sind keine Zuflüsse
+    if (r.coords.filter((p) => near(p, 80)).length > r.coords.length * 0.5) continue;
+    if (r.name) byName.set(r.name, [...(byName.get(r.name) ?? []), r.coords]);
+    else noName.push(r.coords);
+  }
+  // unbenannte Zuflüsse: Stücke an der Strecke, plus angrenzende Stücke (Kacheln zerschneiden die Linien) – ab ~1,5 km
+  const used = new Set<number>();
+  let unnamed = 0;
+  const touches = (a: LngLat[], b: LngLat[]) => [b[0], b[b.length - 1]].some((e) => a.some((p) => Math.abs(p[0] - e[0]) < 1.2e-3 && Math.abs(p[1] - e[1]) < 6e-4 && haversine(p, e) < 60));
+  noName.forEach((l, i) => {
+    if (used.has(i) || !l.some((p) => locateOnLine(line, p).offset < TRIB_CONTACT_M)) return;
+    const group = [i];
+    used.add(i);
+    for (let k = 0; k < group.length && group.length < 40; k++)
+      noName.forEach((m, j) => { if (!used.has(j) && (touches(noName[group[k]], m) || touches(m, noName[group[k]]))) { used.add(j); group.push(j); } });
+    const parts = group.map((j) => noName[j]);
+    if (parts.reduce((a, q) => a + lenKm(q), 0) >= 1.5) byName.set(`Zufluss ohne Namen ${++unnamed}`, parts); // kurze Rinnsale weglassen
+  });
   const features: GeoJSON.Feature[] = [];
   for (const [name, parts] of byName) {
-    // berührt die Strecke? (Mündung bzw. Zusammenfluss ≤ 250 m)
+    // berührt die Strecke? (Mündung bzw. Zusammenfluss – auch über einen kurzen See/Mündungsbereich)
     let contact: LngLat | null = null, best = Infinity;
     for (const l of parts) for (const p of l) { const at = locateOnLine(line, p); if (at.offset < best) { best = at.offset; contact = at.point; } }
-    if (!contact || best > 250) continue;
+    if (!contact || best > TRIB_CONTACT_M) continue;
     for (const l of parts) features.push({ type: "Feature", properties: { name, cx: contact[0], cy: contact[1] }, geometry: { type: "LineString", coordinates: l } });
   }
-  src("tribs").setData({ type: "FeatureCollection", features });
+  return features;
+}
+const TRIB_CONTACT_M = 500;
+/** alle Gewässerlinien (Fluss, Bach, Kanal), die bis 300 m an die Strecke heranreichen – Overpass, vollständige Wege */
+async function waterwaysAlong(line: LngLat[]): Promise<{ name: string; coords: LngLat[] }[]> {
+  const step = Math.max(1, Math.ceil(line.length / 70));
+  const pts = line.filter((_, i) => i % step === 0 || i === line.length - 1).map((p) => `${p[1].toFixed(5)},${p[0].toFixed(5)}`).join(",");
+  const els = (await overpass(`[out:json][timeout:25];way["waterway"~"^(river|stream|canal)$"](around:300,${pts});out tags geom;`)) as unknown as { tags?: Record<string, string>; geometry?: { lat: number; lon: number }[] }[];
+  return els.filter((e) => e.geometry?.length).map((e) => ({ name: e.tags?.name ?? "", coords: e.geometry!.map((g) => [g.lon, g.lat] as LngLat) }));
 }
 /** Klick auf einen Nebenfluss: Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt der Tour */
 async function analyzeTrib(name: string, at: LngLat, contact: LngLat) {
   if (busy) return;
+  pushUndo();
   resetAll();
   const id = runId;
   setBusy(true);
@@ -853,6 +918,7 @@ async function runHike(a: LngLat, b: LngLat) {
     const res = await findHike({ from, to, loader: compositeTileLoader("global"), layers: (bbox) => hikeLayersInBbox(bbox), onProgress: progress }, a, b);
     if (id !== runId) return;
     setBusy(false);
+    pushUndo();
     resetAll();
     trip.push({ kind: "weg", hike: res, sel: 0, how });
     activate(trip.length - 1);
@@ -1283,6 +1349,7 @@ function renderOwnMarkers() {
       lastDragEnd = Date.now();
       const i = wwLabels.indexOf(l);
       if (i < 0) return;
+      pushUndo();
       const to: LngLat = [mk.getLngLat().lng, mk.getLngLat().lat];
       wwLabels[i] = { ...l, p: to, feat: undefined, src: undefined, ...(isPlanKind(l.kind) ? {} : featAt(to)) };
       afterLabelChange();
@@ -1291,21 +1358,38 @@ function renderOwnMarkers() {
     ownMarkers.push(mk);
   }
 }
+/** Liste aller eigenen Stellen in der linken Leiste (auch ohne Analyse): an der Strecke mit km, sonst „abseits“; ✕ löscht */
 function renderOwnList() {
   const list = $("own-list");
   const on = ownOnRoute();
-  list.innerHTML = on.length ? "" : `<li class="hint">Keine eigenen Stellen an dieser Strecke – „Eigene Stellen“ oben wählen und in die Karte klicken.</li>`;
-  on.forEach((x) => {
+  const shown = wwLabels.filter((l) => l.show);
+  $("own-panel").hidden = shown.length === 0;
+  const rest = shown.filter((l) => !on.some((x) => x.l === l));
+  list.innerHTML = "";
+  const item = (l: WhitewaterLabel, where: string, d?: number) => {
     const li = document.createElement("li");
     const b = document.createElement("button");
-    b.innerHTML = `<span class="id ww-id" style="background:${OWN_COLOR(x.l)};font-size:9px;color:#fff">${OWN_ICON(x.l)}</span><span>${labelText(x.l)} · ${kmTxt(x.at.d)}</span>` +
-      `<span class="meta">${x.l.note ? escapeHtml(x.l.note) : "eigene Stelle"}${x.at.offset > 60 ? ` · ${Math.round(x.at.offset)} m neben dem Fluss` : ""}</span>`;
-    b.addEventListener("click", () => { map.flyTo({ center: x.l.p, zoom: DETAIL_ZOOM, duration: 900 }); chart?.highlight(x.at.d); });
-    li.appendChild(b);
+    b.className = "ghost";
+    b.innerHTML = `<span class="id ww-id" style="background:${OWN_COLOR(l)};font-size:9px;color:#fff">${OWN_ICON(l)}</span><span>${labelText(l)}${where ? ` · ${where}` : ""}</span>` +
+      `<span class="meta">${l.note ? escapeHtml(l.note) : "eigene Stelle"}</span>`;
+    b.addEventListener("click", () => { map.flyTo({ center: l.p, zoom: Math.max(map.getZoom(), 15), duration: 900 }); if (d !== undefined) chart?.highlight(d); });
+    const del = document.createElement("button");
+    del.className = "ghost own-del";
+    del.title = "Diese Stelle löschen (rückgängig mit ↶)";
+    del.textContent = "✕";
+    del.addEventListener("click", () => {
+      const i = wwLabels.indexOf(l);
+      if (i < 0) return;
+      pushUndo();
+      wwLabels.splice(i, 1);
+      afterLabelChange();
+    });
+    li.append(b, del);
     list.appendChild(li);
-  });
-  const all = wwLabels.filter((l) => l.show).length;
-  $("own-info").textContent = `${on.length} an dieser Strecke${all > on.length ? `, ${all - on.length} weitere woanders` : ""}. Gespeichert nur in diesem Browser – zur Sicherung „Stellen sichern“.`;
+  };
+  on.forEach((x) => item(x.l, kmTxt(x.at.d), x.at.d));
+  rest.forEach((l) => item(l, current ? "abseits der Strecke" : ""));
+  $("own-info").textContent = `${shown.length} eigene Stelle${shown.length === 1 ? "" : "n"}${current ? `, ${on.length} an dieser Strecke` : ""}. Gespeichert in diesem Browser – zur Sicherung „Stellen sichern“.`;
 }
 /** eigene (ohne die als Gefahrenstelle exportierten) und OSM-Stellen als Wegpunkte */
 function exportPlaces(): PlaceOut[] {
@@ -1549,6 +1633,7 @@ function moveLabelTo(l: WhitewaterLabel, to: LngLat) {
   movingLabel = null;
   map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
   if (i < 0) return;
+  pushUndo();
   wwLabels[i] = { ...l, p: to, feat: undefined, src: undefined, ...(isPlanKind(l.kind) ? {} : featAt(to)) };
   afterLabelChange();
   setStatus("Stelle verschoben.");
@@ -1598,6 +1683,7 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
     }),
   );
   const commit = (id: LabelKind) => {
+    pushUndo();
     const k = LABEL_KINDS.find((x) => x.id === id)!;
     const note = box.querySelector<HTMLInputElement>(".lbl-note")!.value.trim() || undefined;
     const cb = box.querySelector<HTMLInputElement>(".lbl-show-cb");
@@ -1617,6 +1703,7 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
     if (e.key === "Enter") commit(old?.kind ?? (old?.schwall ? "schwall" : "notiz"));
   });
   box.querySelector("button[data-del]")?.addEventListener("click", () => {
+    pushUndo();
     wwLabels.splice(near, 1);
     afterLabelChange();
     labelPopup?.remove();
@@ -1628,6 +1715,7 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
     setStatus("Stelle verschieben: neue Position in der Karte anklicken (Esc bricht ab).");
   });
   box.querySelector("button[data-hide]")?.addEventListener("click", () => {
+    pushUndo();
     wwHidden.push(at);
     saveHidden(wwHidden);
     afterLabelChange();
@@ -1650,6 +1738,7 @@ function fillLabelFeatures() {
 /** Stelle verschieben: eigene Markierung wandert mit; eine erkannte Stelle wird ausgeblendet und als eigene,
  *  angezeigte Markierung an der neuen Stelle übernommen (danach Auswahlfenster zum Anpassen). */
 function moveSpot(s: WhitewaterSpot, to: LngLat) {
+  pushUndo();
   const i = s.own ? wwLabels.indexOf(s.own) : -1;
   if (i >= 0) {
     wwLabels[i] = { ...wwLabels[i], p: to, feat: undefined, src: undefined };
@@ -1665,6 +1754,7 @@ function moveSpot(s: WhitewaterSpot, to: LngLat) {
 function afterLabelChange() {
   saveLabels(wwLabels);
   renderOwnMarkers();
+  renderOwnList();
   if (current) {
     if (current.ww?.bins) current.ww.spots = computeSpots();
     showResults();
@@ -1682,7 +1772,7 @@ $("tour-gpx").addEventListener("click", () => {
   const items = trip.flatMap((t, i) => {
     if (t.kind === "fluss" && t.cur) return [{ name: `${i + 1} ${t.cur.name}`, type: "Packrafting", pts: t.cur.analysis.profile.map((q) => ({ p: q.p, z: q.z })) }];
     const r = t.hike?.[t.sel ?? 0];
-    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), pass: { p: r.pass, z: r.maxElev, text: `${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)} (DIN 33466)` } }] : [];
+    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), pass: { p: r.pass, z: r.maxElev, text: `${fmtKm(r.lengthM)}, Aufstieg ${Math.round(r.ascent)} m, Abstieg ${Math.round(r.descent)} m, ca. ${fmtH(r.hours)} (DIN 33466)` } }] : [];
   });
   if (items.length) download(`tour-${new Date().toISOString().slice(0, 10)}.gpx`, toTourGpx(items), "application/gpx+xml");
 });
@@ -1739,6 +1829,7 @@ $("ww-sens").addEventListener("input", (e) => {
 });
 renderSensitivity();
 renderOwnMarkers();
+renderOwnList();
 $("ww-learn").addEventListener("click", () => {
   // Merkmale für Markierungen der aktuellen Strecke nachtragen (falls beim Markieren noch keine Analyse lief)
   for (const l of wwLabels) if (!l.feat && !isPlanKind(l.kind)) Object.assign(l, featAt(l.p));
@@ -1838,7 +1929,7 @@ map.on("load", () => renderLabels());
 let selectedD: number | null = null;
 
 function drawChart() {
-  if (!current || $("profile-wrap").hidden) return;
+  if (!current || $("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
   const a = rated() ?? current.analysis;
   const pointAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
   const showCursor = (d: number | null) =>
@@ -1906,6 +1997,8 @@ async function loadFlowInfo(a: Analysis, _id: number) {
       .then(({ rivers, waterNames }) => catchmentFromRivers(line, rivers, waterNames))
       .catch(() => catchmentFromRivers(line, []));
     // Wetterabfrage eingefroren (Nutzer 26.11.2026): Hinweise nur aus Jahreszeit, Aufnahmedatum und Regime
+    // Wetterabfrage eingefroren (Nutzer 26.11.2026): Hinweise nur aus Jahreszeit, Aufnahmedatum und Regime.
+    // (Einzugsgebiet-Anzeige auf Nutzerwunsch 27.11.2026 entfernt – Regime grob aus Gletschern und Höhe oberhalb.)
     const [{ match: gauge0, errors: gaugeErrors }, iceKm2, maxElev] = await Promise.all([
       matchGauge(line, series, dates).catch((e) => ({ match: null, errors: [String(e)] })),
       glacierAreaAround(catchment.points, 8).catch(() => undefined),
@@ -2113,23 +2206,14 @@ function renderFlowInfo() {
         (!gm.latest ? " · veröffentlicht keinen Abfluss" : "")
       : `Kein Pegel mit gemessenem Wert an diesem Fluss – Hinweise aus Jahreszeit, Aufnahmedatum und Regime${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " (Norwegen: NVE-Schlüssel unter „Analyse-Parameter“ eintragen)" : ""}`}.</p>` +
     `<details class="more"${f.catchOpen ? " open" : ""}><summary>Pegel &amp; Quellen</summary>` +
-    `<label class="check"><input type="checkbox" id="show-catch"${showCatch() ? " checked" : ""} /> Einzugsgebiet zeigen <span class="hint">(Fluss und Zubringer oberhalb, blau gestrichelt)</span></label>` +
     cal +
     `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen am selben Fluss (keine Schätzungen). ` +
-    `Hinweise: übliche Jahreszeit der Region am Aufnahmetag und heute, dazu das Regime aus Gletschern und Höhe des Einzugsgebiets (${catchText(f)}); eine Tendenz, keine Abflussmessung. ` +
+    `Hinweise: übliche Jahreszeit der Region am Aufnahmetag und heute, dazu das Regime grob aus Gletschern und Höhe oberhalb (${catchText(f)}); eine Tendenz, keine Abflussmessung. ` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p></details>`;
-  el.querySelector<HTMLInputElement>("#show-catch")?.addEventListener("change", (e) => setShowCatch((e.target as HTMLInputElement).checked));
   el.querySelector("details.more")?.addEventListener("toggle", (e) => (f.catchOpen = (e.target as HTMLDetailsElement).open));
   // Abschnittskarten anklicken → Abschnitt auf der Karte zeigen
   el.querySelectorAll<HTMLElement>(".day[data-sec]").forEach((d) => d.addEventListener("click", () => focusImageStretch(Number(d.dataset.sec))));
   drawImageStretches();
-  src("catch").setData({
-    type: "FeatureCollection",
-    features: [
-      ...(f.catchment?.lines ?? []).map((l) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: l } })),
-      ...(f.catchment?.points ?? []).map((p) => ({ type: "Feature" as const, properties: {}, geometry: { type: "Point" as const, coordinates: p } })),
-    ],
-  });
   src("gauge").setData({
     type: "FeatureCollection",
     features: gm ? [{ type: "Feature" as const, properties: { kind: "gauge", name: gm.gauge.name }, geometry: { type: "Point" as const, coordinates: [gm.gauge.lon, gm.gauge.lat] } }] : [],
@@ -2268,14 +2352,25 @@ document.querySelectorAll<HTMLButtonElement>(".modes button").forEach((b) =>
   }),
 );
 $("reset").addEventListener("click", () => {
-  if (trip.length > 1 && !confirm(`Ganze Tour (${trip.length} Abschnitte) löschen? Eigene Stellen bleiben erhalten.`)) return;
+  const own = wwLabels.filter((l) => l.show).length;
+  if ((trip.length || own) && !confirm(`Karte komplett leeren?\n${trip.length} Abschnitt${trip.length === 1 ? "" : "e"} der Tour und ${own} eigene Stelle${own === 1 ? "" : "n"} werden gelöscht.\n(Rückgängig mit ↶ möglich.)`)) return;
+  if (trip.length || own) pushUndo();
+  wwLabels = wwLabels.filter((l) => !l.show); // nur reine Lern-Markierungen der (eingefrorenen) Erkennung bleiben
+  wwHidden = [];
+  saveLabels(wwLabels);
+  saveHidden(wwHidden);
+  labelPopup?.remove();
   resetAll(true);
+  renderOwnMarkers();
+  renderOwnList();
   setMode("idle");
 });
+$("undo").addEventListener("click", undo);
 $("own-clear").addEventListener("click", () => {
   const n = wwLabels.filter((l) => l.show).length;
   if (!n) return setStatus("Keine eigenen Stellen gespeichert.");
-  if (!confirm(`Alle ${n} eigenen Stellen löschen? (Tipp: vorher „Stellen sichern“.)`)) return;
+  if (!confirm(`Alle ${n} eigenen Stellen löschen? (Rückgängig mit ↶ möglich.)`)) return;
+  pushUndo();
   wwLabels = wwLabels.filter((l) => !l.show); // reine Lern-Markierungen der Erkennung bleiben
   afterLabelChange();
   setStatus(`${n} eigene Stellen gelöscht.`);
@@ -2351,6 +2446,7 @@ async function finishDraw() {
   // doppelte Punkte (z. B. durch Doppelklick) entfernen
   const line = drawPts.filter((p, i) => i === 0 || p[0] !== drawPts[i - 1][0] || p[1] !== drawPts[i - 1][1]);
   if (line.length < 2) return setStatus("Mindestens zwei Punkte zeichnen.", true);
+  pushUndo();
   setMode("idle");
   drawPts = [];
   src("draft").setData(empty);
@@ -2369,6 +2465,11 @@ map.on("dblclick", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, select, textarea")) return;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    undo();
+    return;
+  }
   if (e.key === "Escape" && movingLabel) {
     movingLabel = null;
     map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
@@ -2409,6 +2510,7 @@ map.on("click", async (e) => {
       break;
     case "route-out": {
       if (!putIn) return setMode("route-in");
+      pushUndo();
       const from = putIn;
       const id = ++runId;
       setMode("idle");
@@ -2476,6 +2578,19 @@ const showPresetDesc = () => {
 presetSel.addEventListener("change", showPresetDesc);
 showPresetDesc();
 
+// Höhenprofil einklappen (mehr Platz für die Karte), Wahl bleibt im Browser
+const PROFILE_KEY = "packraft.profileCollapsed";
+function setProfileCollapsed(c: boolean) {
+  $("profile-wrap").classList.toggle("collapsed", c);
+  $("profile-toggle").textContent = c ? "▴ Höhenprofil" : "▾ Profil";
+  $("profile-toggle").setAttribute("aria-expanded", String(!c));
+  try { localStorage.setItem(PROFILE_KEY, c ? "1" : "0"); } catch { /* privater Modus */ }
+  map.resize();
+  if (!c) requestAnimationFrame(drawChart);
+}
+$("profile-toggle").addEventListener("click", () => setProfileCollapsed(!$("profile-wrap").classList.contains("collapsed")));
+try { if (localStorage.getItem(PROFILE_KEY) === "1") setProfileCollapsed(true); } catch { /* privater Modus */ }
+
 // beim Start: gespeicherte Tour wiederherstellen
 if (map.loaded()) void restoreTrip();
 else map.once("load", () => void restoreTrip());
@@ -2484,6 +2599,7 @@ $("load-preset").addEventListener("click", async () => {
   const pr = PRESETS.find((p) => p.id === presetSel.value);
   if (!pr) return;
   if (busy) return;
+  pushUndo();
   resetAll();
   setMode("idle");
   const id = runId;

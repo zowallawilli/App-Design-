@@ -113,14 +113,16 @@ export function snowElevation(lat: number): number {
 }
 const fmtM = (m: number) => `${Math.round(m / 100) * 100} m`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 /** Gletscher-, Schneeschmelze- oder Regenfluss aus Gletscheranteil und Höhe des Einzugsgebiets */
-export function regimeOf(glacier: Glacier | null | undefined, maxElev: number | undefined, lat: number): Regime {
+export function regimeOf(glacier: Glacier | null | undefined, maxElev: number | undefined, lat: number, snowShare?: number): Regime {
   if (isGlacial(glacier)) {
     const g = glacier!;
     const how = g.pct !== undefined ? `${String(Math.round(g.pct * 10) / 10).replace(".", ",")} % des Einzugsgebiets vergletschert` : `~${Math.round(g.areaKm2 ?? 0)} km² Gletscher im Einzugsgebiet`;
     return { kind: "gletscher", maxElev, text: `Gletscherfluss (${how}): im Sommer viel Schmelzwasser, an warmen Tagen abends am meisten.` };
   }
-  if (maxElev !== undefined && maxElev >= snowElevation(lat))
-    return { kind: "schnee", maxElev, text: `Schneeschmelze prägt den Fluss (Einzugsgebiet bis ~${fmtM(maxElev)}): meist am meisten Wasser im Frühjahr/Frühsommer.` };
+  // mit Einzugsgebiet aus dem Höhenmodell: Anteil der Fläche über der Schneegrenze, sonst nur der höchste Punkt
+  const snowy = snowShare !== undefined ? snowShare >= 0.15 : maxElev !== undefined && maxElev >= snowElevation(lat);
+  if (snowy && maxElev !== undefined)
+    return { kind: "schnee", maxElev, text: `Schneeschmelze prägt den Fluss (${snowShare !== undefined ? `${Math.round(snowShare * 100)} % des Einzugsgebiets über ~${fmtM(snowElevation(lat))}, ` : ""}bis ~${fmtM(maxElev)}): meist am meisten Wasser im Frühjahr/Frühsommer.` };
   return {
     kind: "regen", maxElev,
     text: maxElev !== undefined ? `Regen prägt den Fluss (Einzugsgebiet bis ~${fmtM(maxElev)}, kaum Schneeschmelze): Wasserstand folgt dem Niederschlag.` : "Regime unbekannt (Höhe des Einzugsgebiets nicht ermittelt).",

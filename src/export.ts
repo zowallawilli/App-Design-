@@ -17,7 +17,10 @@ export function spotText(s: WhitewaterSpot): string {
     (s.notes.length ? `; ${s.notes.join("; ")}` : "") + ". Vor Ort besichtigen.";
 }
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** XML-sicher und ohne Sonderzeichen, an denen GPS-Apps (Gaia GPS) beim Import hängen bleiben können (Pfeile u. Ä.) */
+const esc = (s: string) =>
+  s.replace(/\s*→\s*/g, " nach ").replace(/↑\s*/g, "Aufstieg ").replace(/↓\s*/g, "Abstieg ").replace(/[⇄▲▴▾↶]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const km = (m: number) => (m / 1000).toFixed(2);
 
 /** Optionen für den GPX-Export */
@@ -136,10 +139,25 @@ ${[...main, ...steepTrks].join("\n")}
 
 /** Gesamte Tour als GPX: je Flussabschnitt und Verbindungsweg ein Track, höchster Punkt der Wege als Wegpunkt */
 export function toTourGpx(items: { name: string; type: string; pts: { p: LngLat; z: number }[]; pass?: { p: LngLat; z: number; text: string } }[]): string {
+  const lenKm = (pts: { p: LngLat }[]) => {
+    let m = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const [a, b] = [pts[i - 1].p, pts[i].p];
+      const k = Math.cos(((a[1] + b[1]) / 2) * Math.PI / 180);
+      m += Math.hypot((b[0] - a[0]) * 111_320 * k, (b[1] - a[1]) * 111_320);
+    }
+    return (m / 1000).toFixed(1).replace(".", ",");
+  };
   const trk = (it: (typeof items)[number]) =>
-    `  <trk>\n    <name>${esc(it.name)}</name>\n    <type>${esc(it.type)}</type>\n${colorExt(it.type === "Wandern" ? "#e07a1f" : "#1f78b4")}    <trkseg>\n` +
+    `  <trk>\n    <name>${esc(it.name)}</name>\n    <desc>${esc(`${it.type === "Wandern" ? "Verbindungsweg zu Fuß" : "Flussabschnitt"}, ${lenKm(it.pts)} km. Erstellt mit Packraft-Planer – Indikator, vor Ort prüfen.`)}</desc>\n    <type>${esc(it.type)}</type>\n${colorExt(it.type === "Wandern" ? "#e07a1f" : "#1f78b4")}    <trkseg>\n` +
     it.pts.map((q) => `      <trkpt lat="${q.p[1].toFixed(6)}" lon="${q.p[0].toFixed(6)}"><ele>${q.z.toFixed(1)}</ele></trkpt>`).join("\n") + `\n    </trkseg>\n  </trk>`;
-  const wpts = items.flatMap((it) => (it.pass ? [`  <wpt lat="${it.pass.p[1].toFixed(6)}" lon="${it.pass.p[0].toFixed(6)}">\n    <ele>${it.pass.z.toFixed(1)}</ele>\n    <name>${esc(`Höchster Punkt · ${it.name}`)}</name>\n    <desc>${esc(`${it.pass.text}. Verbindungsweg aus Höhenmodell und OSM-Wegen – Indikator, vor Ort prüfen.`)}</desc>\n    <sym>Summit</sym>\n  </wpt>`] : []));
+  const wpt = (p: LngLat, z: number, name: string, desc: string, sym: string, type: string) =>
+    `  <wpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}">\n    <ele>${z.toFixed(1)}</ele>\n    <name>${esc(name)}</name>\n    <desc>${esc(desc)}</desc>\n    <sym>${sym}</sym>\n    <type>${esc(type)}</type>\n  </wpt>`;
+  const wpts = items.flatMap((it) => {
+    if (it.pass) return [wpt(it.pass.p, it.pass.z, `Höchster Punkt ${it.name}`, `${it.pass.text}. Verbindungsweg aus Höhenmodell und OSM-Wegen – Indikator, vor Ort prüfen.`, "Summit", "Pass")];
+    const a = it.pts[0], b = it.pts[it.pts.length - 1];
+    return a && b ? [wpt(a.p, a.z, `Einstieg ${it.name}`, `Einstieg · ${Math.round(a.z)} m ü. M.`, "Boat Ramp", "Einstieg"), wpt(b.p, b.z, `Ausstieg ${it.name}`, `Ausstieg · ${Math.round(b.z)} m ü. M.`, "Boat Ramp", "Ausstieg")] : [];
+  });
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Packraft-Planer" xmlns="http://www.topografix.com/GPX/1/1"
   xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"

@@ -47,7 +47,8 @@
           <div class="row">
             <button id="finish-draw" hidden>Zeichnen beenden</button>
             <button id="undo-draw" class="ghost" hidden>Letzten Punkt löschen</button>
-            <button id="reset" class="ghost">Zurücksetzen</button>
+            <button id="undo" class="ghost undo" title="Letzten Schritt rückgängig machen (Strg/⌘ + Z)" disabled>↶</button>
+            <button id="reset" class="ghost" title="Karte komplett leeren: alle Flussabschnitte, Verbindungswege und eigenen Stellen (mit Rückfrage, rückgängig mit ↶)">Zurücksetzen</button>
             <button id="wave-btn" class="ghost" title="Kämme einer Wellenfolge im Luftbild anklicken → Wellenabstand und Fließgeschwindigkeit">Wellen messen</button>
             <button id="hike-btn" class="ghost" title="Wanderverbindung zwischen zwei Flusstälern (oder zwei Punkten) mit der kürzesten Gehzeit">Verbindungsweg</button>
             <button id="edit-btn" class="ghost" title="Strecke anpassen: Ein-/Ausstieg und Zwischenpunkte ziehen, Punkte einfügen oder löschen">Strecke bearbeiten</button>
@@ -121,6 +122,17 @@
           <div class="row"><button id="tour-gpx" class="ghost" title="Alle Abschnitte und Verbindungswege als ein GPX">Tour als GPX</button></div>
         </section>
 
+        <section id="own-panel" hidden>
+          <h2>Eigene Stellen</h2>
+          <ol id="own-list" class="hotspots"></ol>
+          <p id="own-info" class="hint"></p>
+          <div class="row ww-tools">
+            <button id="own-clear" class="ghost" title="Alle eigenen Stellen in diesem Browser löschen (mit Rückfrage)">Alle löschen</button>
+            <button id="own-export" class="ghost" title="Alle eigenen Stellen als Datei sichern (mit GitHub-Schlüssel direkt ins Repo)">Stellen sichern</button>
+            <button id="own-import" class="ghost" title="Gesicherte Datei laden (wird zusammengeführt)">Stellen laden</button>
+          </div>
+        </section>
+
         <section id="results" hidden>
           <h2 id="res-title"></h2>
           <dl class="stats" id="stats"></dl>
@@ -158,14 +170,6 @@
             <li><span class="dia" style="background:#d62828;border-radius:50%"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/><path d="M2 16c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1"/></svg></span> nicht einsehbare steile Klamm oder eigene Gefahrenstelle (Gefahr, Holz). Steile Abschnitte zeigt die Gefälle-Farbe.</li>
           </ul>
           <ol id="hz-list" class="hotspots"></ol>
-          <h3>Eigene Stellen</h3>
-          <ol id="own-list" class="hotspots"></ol>
-          <p id="own-info" class="hint"></p>
-          <div class="row ww-tools">
-            <button id="own-clear" class="ghost" title="Alle eigenen Stellen in diesem Browser löschen (mit Rückfrage)">Alle löschen</button>
-            <button id="own-export" class="ghost" title="Alle eigenen Stellen als Datei sichern (mit GitHub-Schlüssel direkt ins Repo)">Stellen sichern</button>
-            <button id="own-import" class="ghost" title="Gesicherte Datei laden (wird zusammengeführt)">Stellen laden</button>
-          </div>
           <h3>Aus OpenStreetMap <span class="hint">(nicht geprüft)</span></h3>
           <ol id="osm-list" class="hotspots"></ol>
           <details class="more"><summary>Hinweis zu OSM</summary><p class="hint">Von Freiwilligen in OpenStreetMap eingetragen (whitewater=*, waterway=waterfall/weir/dam). Lage, Grad und Vollständigkeit sind nicht geprüft – wo nichts eingetragen ist, kann trotzdem eine Stromschnelle, ein Wehr oder ein Wasserfall sein. © OpenStreetMap-Mitwirkende (ODbL).</p></details>
@@ -259,6 +263,7 @@
           </span>
         </div>
         <div id="profile-wrap" hidden>
+          <button id="profile-toggle" class="profile-toggle" title="Höhenprofil ein-/ausklappen (mehr Platz für die Karte)" aria-expanded="true">▾ Profil</button>
           <div id="profile"></div>
         </div>
       </main>
