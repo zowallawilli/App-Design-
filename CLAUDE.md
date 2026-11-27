@@ -112,6 +112,11 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   verdeckt (`keepPopupVisible`), aktive Werkzeug-Knöpfe hervorgehoben. 3D-Rundflug: Klick-Handler nur auf
   `#basemap button[data-base]` (sonst blenden ⟲ ⟳ N Rundflug alle Hintergründe aus).
 
+- Nutzer 27.11.2026 (2): Tour wird gespeichert (`packraft.trip`, `saveTrip`/`restoreTrip`) und beim Neuladen
+  wiederhergestellt; Löschen nur bewusst (✕, „Zurücksetzen“ mit Rückfrage, „Alle löschen“ bei eigenen Stellen).
+  Tour-Feld ab dem ersten Fluss, frühere Flüsse kräftig + Nummern-Schild. Marker-CSS nie `position: relative`
+  (sonst verrutschen Symbole beim Zoomen).
+
 ## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
 - Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter
   „Analyse-Parameter“ als experimentell; Regler/Grad/Lernen eingeklappt (`#ww-tune`). Code nicht löschen.

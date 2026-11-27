@@ -17,6 +17,7 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
+  page.on('dialog', (d) => d.accept()); // Rückfragen (Tour löschen) bestätigen
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|tile|Access to fetch/i.test(m.text())) errors.push(m.text().slice(0, 150)); });
   await page.route(/overpass/, r => osmMode === 'ok' ? r.fulfill({ status: 200, contentType: 'application/json', body: mock, headers: { 'access-control-allow-origin': '*' } }) : r.abort());
   await page.route(/nominatim/, r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify([{ display_name: 'Bovec, Slowenien', lon: '13.552', lat: '46.338' }]) }));
@@ -279,6 +280,17 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const icoOk = /<svg/.test(await page.locator('.own-marker').last().innerHTML()) && !(await page.locator('.own-marker').last().textContent()).trim();
     const lab = () => page.evaluate(() => JSON.parse(localStorage.getItem('packraft.wwLabels')).find((l) => l.kind === 'lager'));
     const l1 = await lab();
+    // Symbol bleibt beim Herauszoomen genau an der markierten Stelle
+    const drift = async () => {
+      const bb = await page.locator('.own-marker').last().boundingBox();
+      const q = await page.evaluate((p) => window.__map.project(p), l1.p);
+      return Math.hypot(bb.x + bb.width / 2 - (cb.x + q.x), bb.y + bb.height / 2 - (cb.y + q.y));
+    };
+    const d0 = await drift();
+    await page.evaluate(() => new Promise((r) => { window.__map.jumpTo({ zoom: window.__map.getZoom() - 4 }); setTimeout(r, 300); }));
+    const d1 = await drift();
+    await page.evaluate(() => new Promise((r) => { window.__map.jumpTo({ zoom: window.__map.getZoom() + 4 }); setTimeout(r, 300); }));
+    check('Eigene Stelle bleibt beim Zoomen an ihrer Position', d0 < 3 && d1 < 3, `Abweichung ${d0.toFixed(1)} px → ${d1.toFixed(1)} px (4 Stufen herausgezoomt)`);
     const mk = await page.locator('.own-marker').last().boundingBox();
     await page.mouse.move(mk.x + mk.width / 2, mk.y + mk.height / 2); await page.mouse.down();
     await page.mouse.move(mk.x + mk.width / 2 + 60, mk.y + mk.height / 2 + 30, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(600);
@@ -395,6 +407,13 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#tour-gpx')]);
     const g = fs.readFileSync(await dl.path(), 'utf8');
     check('Tour-GPX: Flussabschnitte + Verbindungsweg', (g.match(/<trk>/g) || []).length === 3 && /<type>Wandern<\/type>/.test(g) && /Höchster Punkt/.test(g), `${(g.match(/<trk>/g) || []).length} Tracks`);
+    // Neuladen: Tour wird aus dem Browser wiederhergestellt
+    await page.reload();
+    await page.waitForFunction(() => window.__map && window.__map.loaded());
+    await page.waitForFunction(() => /Tour wiederhergestellt/.test(document.querySelector('#status').textContent), null, { timeout: 300000 }).catch(() => {});
+    await waitIdle();
+    const t3 = (await page.textContent('#tour-list')).replace(/\s+/g, ' ');
+    check('Neuladen: ganze Tour wiederhergestellt (Flüsse neu analysiert, Verbindungsweg)', (await page.locator('#tour-list > li').count()) === 3 && /Koritnica/.test(t3) && /Verbindungsweg/.test(t3) && (await page.locator('.trip-tag').count()) >= 2, `${await page.textContent('#status')} · ${t3.slice(0, 160)}`);
     await page.locator('#tour-list > li').first().locator('.tour-item').click(); await page.waitForTimeout(800);
     const back = await page.isVisible('#results') && /Koritnica/.test(await page.textContent('#res-title'));
     await page.click('#reset');

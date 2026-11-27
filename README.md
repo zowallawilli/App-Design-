@@ -217,6 +217,10 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
 - **Tour-Liste:** Jede neu festgelegte Strecke wird ein weiterer Abschnitt; frühere bleiben blass auf der Karte und
   lassen sich per Klick (Liste oder Linie) wieder anzeigen – ohne neu zu rechnen. „Zurücksetzen“ löscht die ganze Tour,
   ✕ einen Abschnitt. „Tour als GPX“: je Abschnitt und Verbindungsweg ein Track, höchster Punkt als Wegpunkt.
+- **Gespeichert:** Die Tour bleibt im Browser (localStorage `packraft.trip`) und wird beim Neuladen wiederhergestellt;
+  Flüsse werden dabei neu analysiert (Pegel aktuell), Verbindungswege direkt übernommen. Gelöscht wird nur bewusst:
+  ✕ je Abschnitt, „Zurücksetzen“ (Rückfrage ab 2 Abschnitten); eigene Stellen über „Alle löschen“ (Rückfrage).
+  Flussname eigener Strecken = OSM-Fluss, der am meisten entlang der Strecke liegt.
 - **Nebenflüsse:** Benannte Flüsse, die die Strecke berühren (≤ 250 m, OSM-Vektorkacheln Zoom 11), sind blau gestrichelt.
   Klick auf einen = Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt (Fließrichtung wird geprüft).
 - **Verbindungsweg** (`src/hike.ts`): „Fluss → Fluss“ (Klick auf Fluss A und B; Start an jeder Stelle von A, Ziel an
