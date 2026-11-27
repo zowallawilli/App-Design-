@@ -122,6 +122,10 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   (`#own-panel`, ✕ je Stelle), Rückgängig ↶ / Strg+Z (`pushUndo`/`undo`), „Zurücksetzen“ leert alles (Tour + eigene Stellen,
   mit Rückfrage). Nebenflüsse: Zoom-13-Kacheln + Overpass, auch unbenannte, Mündung ≤ 500 m (Lainioälven).
   Tour-GPX ohne Pfeil-Sonderzeichen (Gaia hing beim Import), mit Ein-/Ausstieg-Wegpunkten.
+- Nutzer 27.11.2026 (4): Gaia liest das Tour-GPX jetzt. Tour-GPX enthält alle eigenen Stellen + OSM-Stellen als
+  Wegpunkte, **keinen** „höchsten Punkt“ (auch nicht auf der Karte). Nebenflüsse nur relevante Größe (Fluss-Klasse,
+  benannte Bäche ≥ 4 km). Overpass-Abfragen laufen nacheinander (Warteschlange, bei 429 ein zweiter Versuch) – parallele
+  Abfragen ließen die OSM-Wasserfälle (Tollåga) ausfallen; „Erneut laden“-Knopf bei OSM-Fehler.
 
 ## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
 - Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter

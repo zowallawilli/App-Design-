@@ -8,7 +8,7 @@ import { download, shareFile, toCsv, toGeoJson, toGpx, toTourGpx, type PlaceOut 
 import { loadOsmPlaces, OSM_KIND, osmPlaceText, type OsmPlace } from "./osmPlaces";
 import { icon, KIND_ICON, OSM_ICON_NAME } from "./icons";
 import { haversine, lineLength, locateOnLine, type LngLat } from "./geo";
-import { geocode, overpass, waterwaysInBbox } from "./osm";
+import { geocode, waterwaysInBbox } from "./osm";
 import { glacierAreaAround, hikeLayersInBbox, riversInBbox, waterInBbox } from "./vectorWater";
 import { findHike, type HikeResult } from "./hike";
 import { PRESETS } from "./presets";
@@ -591,15 +591,6 @@ function renderTourLayer() {
     el.addEventListener("click", (ev) => { ev.stopPropagation(); activate(i); });
     hikeMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(line[Math.floor(line.length / 2)]).addTo(map));
   });
-  trip.forEach((t, i) => {
-    const r = t.kind === "weg" ? t.hike?.[t.sel ?? 0] : undefined;
-    if (!r) return;
-    const el = document.createElement("div");
-    el.className = "pass-marker";
-    el.innerHTML = `▲ ${fmtElev(r.maxElev)}`;
-    el.title = `Höchster Punkt des Verbindungswegs ${i + 1}`;
-    hikeMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.pass).addTo(map));
-  });
 }
 let hikeMarkers: maplibregl.Marker[] = [];
 function renderTour() {
@@ -815,14 +806,14 @@ async function loadTribs(a: Analysis, id: number) {
   }
   if (id !== runId || current !== owner) return;
   src("tribs").setData({ type: "FeatureCollection", features: tribFeatures(line, rivers, main, near) });
-  // kleine Bäche fehlen in den Vektorkacheln oft → zusätzlich OpenStreetMap direkt (Overpass) entlang der Strecke
-  const extra = await waterwaysAlong(line).catch(() => null);
-  if (!extra || id !== runId || current !== owner) return;
-  const merged = [...rivers.filter((r) => r.name), ...extra]; // unbenannte Linien aus Overpass sind vollständiger als Kachelstücke
-  src("tribs").setData({ type: "FeatureCollection", features: tribFeatures(line, merged, main, near) });
 }
 /** Zuflüsse (benannt oder ohne Namen), die die Strecke berühren (≤ 500 m), als Kartenlinien mit Mündungspunkt */
-function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }[], main: string | undefined, near: (p: LngLat, m: number) => boolean): GeoJSON.Feature[] {
+/** Nur Zuflüsse relevanter Größe (Nutzer 27.11.2026): OSM-Klasse „river“/„canal“; „stream“ (Bach) nur, wenn benannt und
+ *  im Ausschnitt ≥ 4 km lang; unbenannte Bäche nie. */
+const TRIB_STREAM_MIN_KM = 4;
+function tribFeatures(line: LngLat[], rivers: { name: string; kind?: string; coords: LngLat[] }[], main: string | undefined, near: (p: LngLat, m: number) => boolean): GeoJSON.Feature[] {
+  const isRiver = (k?: string) => k === "river" || k === "canal";
+  const riverNames = new Set(rivers.filter((r) => r.name && isRiver(r.kind)).map((r) => r.name));
   const byName = new Map<string, LngLat[][]>();
   const lenKm = (l: LngLat[]) => l.reduce((a, p, i) => (i ? a + haversine(l[i - 1], p) : 0), 0) / 1000;
   const noName: LngLat[][] = [];
@@ -831,8 +822,10 @@ function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }
     // Nebenarme/Ufer-Linien entlang der Strecke sind keine Zuflüsse
     if (r.coords.filter((p) => near(p, 80)).length > r.coords.length * 0.5) continue;
     if (r.name) byName.set(r.name, [...(byName.get(r.name) ?? []), r.coords]);
-    else noName.push(r.coords);
+    else if (isRiver(r.kind)) noName.push(r.coords); // unbenannte Bäche nicht
   }
+  // benannte Bäche: nur ab TRIB_STREAM_MIN_KM (Flussklasse zählt immer)
+  for (const [n, parts] of [...byName]) if (!riverNames.has(n) && parts.reduce((a, q) => a + lenKm(q), 0) < TRIB_STREAM_MIN_KM) byName.delete(n);
   // unbenannte Zuflüsse: Stücke an der Strecke, plus angrenzende Stücke (Kacheln zerschneiden die Linien) – ab ~1,5 km
   const used = new Set<number>();
   let unnamed = 0;
@@ -857,13 +850,6 @@ function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }
   return features;
 }
 const TRIB_CONTACT_M = 500;
-/** alle Gewässerlinien (Fluss, Bach, Kanal), die bis 300 m an die Strecke heranreichen – Overpass, vollständige Wege */
-async function waterwaysAlong(line: LngLat[]): Promise<{ name: string; coords: LngLat[] }[]> {
-  const step = Math.max(1, Math.ceil(line.length / 70));
-  const pts = line.filter((_, i) => i % step === 0 || i === line.length - 1).map((p) => `${p[1].toFixed(5)},${p[0].toFixed(5)}`).join(",");
-  const els = (await overpass(`[out:json][timeout:25];way["waterway"~"^(river|stream|canal)$"](around:300,${pts});out tags geom;`)) as unknown as { tags?: Record<string, string>; geometry?: { lat: number; lon: number }[] }[];
-  return els.filter((e) => e.geometry?.length).map((e) => ({ name: e.tags?.name ?? "", coords: e.geometry!.map((g) => [g.lon, g.lat] as LngLat) }));
-}
 /** Klick auf einen Nebenfluss: Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt der Tour */
 async function analyzeTrib(name: string, at: LngLat, contact: LngLat) {
   if (busy) return;
@@ -1268,7 +1254,10 @@ function renderOsm() {
   list.innerHTML = "";
   if (!o || o.status === "loading") list.innerHTML = `<li class="hint">Wird aus OpenStreetMap geladen …</li>`;
   else if (o.status === "off") list.innerHTML = `<li class="hint">Ausgeschaltet (Analyse-Parameter).</li>`;
-  else if (o.status === "error") list.innerHTML = `<li class="hint">${o.message ?? "OpenStreetMap nicht erreichbar"} – später erneut versuchen.</li>`;
+  else if (o.status === "error") {
+    list.innerHTML = `<li class="hint">${o.message ?? "OpenStreetMap nicht erreichbar"} <button class="ghost osm-retry">Erneut laden</button></li>`;
+    list.querySelector(".osm-retry")?.addEventListener("click", () => current && void loadOsm(current.analysis, runId));
+  }
   else if (!o.places.length) list.innerHTML = `<li class="hint">An dieser Strecke ist in OSM nichts eingetragen (Stromschnelle, Wehr, Wasserfall, Ein-/Ausstieg) – das heißt nicht, dass dort nichts ist.</li>`;
   o?.places.forEach((q, i) => {
     const st = OSM_KIND[q.kind];
@@ -1772,9 +1761,20 @@ $("tour-gpx").addEventListener("click", () => {
   const items = trip.flatMap((t, i) => {
     if (t.kind === "fluss" && t.cur) return [{ name: `${i + 1} ${t.cur.name}`, type: "Packrafting", pts: t.cur.analysis.profile.map((q) => ({ p: q.p, z: q.z })) }];
     const r = t.hike?.[t.sel ?? 0];
-    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), pass: { p: r.pass, z: r.maxElev, text: `${fmtKm(r.lengthM)}, Aufstieg ${Math.round(r.ascent)} m, Abstieg ${Math.round(r.descent)} m, ca. ${fmtH(r.hours)} (DIN 33466)` } }] : [];
+    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), desc: `${fmtKm(r.lengthM)}, Aufstieg ${Math.round(r.ascent)} m, Abstieg ${Math.round(r.descent)} m, ca. ${fmtH(r.hours)} (DIN 33466)` }] : [];
   });
-  if (items.length) download(`tour-${new Date().toISOString().slice(0, 10)}.gpx`, toTourGpx(items), "application/gpx+xml");
+  // Wegpunkte: alle eigenen Stellen (Planung) und die OSM-Stellen der Flussabschnitte
+  const allPts = trip.flatMap((t) => t.cur?.analysis.profile ?? []);
+  const zNear = (p: LngLat) => {
+    let best: { z: number; d: number } | null = null;
+    for (const q of allPts) { const d = haversine(q.p, p); if (d < 500 && (!best || d < best.d)) best = { z: q.z, d }; }
+    return best?.z;
+  };
+  const wpts = [
+    ...wwLabels.filter((l) => l.show).map((l) => ({ p: l.p, z: zNear(l.p), name: labelText(l), desc: `Eigene Stelle: ${labelText(l)}${l.note ? ` – ${l.note}` : ""}`, sym: OWN_SYM[l.kind ?? ""] ?? "Caution", type: "Eigene Stelle" })),
+    ...trip.flatMap((t) => (t.cur?.osm?.places ?? []).map((o) => ({ p: o.p, z: zNear(o.p), name: `${OSM_KIND[o.kind].text}${o.grade ? ` WW ${o.grade}` : ""} (OSM)`, desc: `${osmPlaceText(o)} – aus OpenStreetMap, nicht geprüft${o.note ? ` (${o.note})` : ""}. Vor Ort prüfen.`, sym: OSM_KIND[o.kind].sym, type: "OSM, nicht geprüft" }))),
+  ];
+  if (items.length) download(`tour-${new Date().toISOString().slice(0, 10)}.gpx`, toTourGpx(items, wpts), "application/gpx+xml");
 });
 map.on("click", "tribs-hit", (e) => {
   if (mode !== "idle" || busy) return;

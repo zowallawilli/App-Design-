@@ -409,10 +409,10 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await view([13.615, 46.345], 12);
     await clickLL([13.5863, 46.3612]); await clickLL([13.6456, 46.3326]); await waitIdle();
     const t2 = (await page.textContent('#tour-list')).replace(/\s+/g, ' ');
-    check('Verbindungsweg Punkt → Punkt: Route mit Länge, Höhenmetern, Gehzeit, höchstem Punkt', /Verbindungsweg/.test(t2) && /Beste Route: [\d.]+ km, ↑ \d+ m ↓ \d+ m, ~\d+:\d\d h, höchster Punkt/.test(t2) && (await page.locator('.pass-marker').count()) >= 1, t2.slice(-220));
+    check('Verbindungsweg Punkt → Punkt: Route mit Länge, Höhenmetern, Gehzeit, höchstem Punkt (nur Text, kein Kartenpunkt)', /Verbindungsweg/.test(t2) && /Beste Route: [\d.]+ km, ↑ \d+ m ↓ \d+ m, ~\d+:\d\d h, höchster Punkt/.test(t2) && (await page.locator('.pass-marker').count()) === 0, t2.slice(-220));
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#tour-gpx')]);
     const g = fs.readFileSync(await dl.path(), 'utf8');
-    check('Tour-GPX: Flussabschnitte + Verbindungsweg', (g.match(/<trk>/g) || []).length === 3 && /<type>Wandern<\/type>/.test(g) && /Höchster Punkt/.test(g), `${(g.match(/<trk>/g) || []).length} Tracks`);
+    check('Tour-GPX: Flussabschnitte + Verbindungsweg', (g.match(/<trk>/g) || []).length === 3 && /<type>Wandern<\/type>/.test(g) && !/Höchster Punkt/.test(g) && /<name>Einstieg 1 /.test(g), `${(g.match(/<trk>/g) || []).length} Tracks`);
     // Neuladen: Tour wird aus dem Browser wiederhergestellt
     await page.reload();
     await page.waitForFunction(() => window.__map && window.__map.loaded());

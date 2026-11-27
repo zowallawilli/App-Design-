@@ -43,7 +43,22 @@ const cache = new Map<string, Promise<OverpassElement[]>>();
 export function overpass(query: string, fetchFn: typeof fetch = fetch, hedgeDelay = HEDGE_DELAY): Promise<OverpassElement[]> {
   const hit = cache.get(query);
   if (hit) return hit;
-  const p = new Promise<OverpassElement[]>((resolve, reject) => {
+  // Abfragen nacheinander (Overpass weist zu viele gleichzeitige Abfragen derselben Adresse ab, HTTP 429);
+  // bei Überlastung einmal nach kurzer Pause wiederholen
+  const once = () => overpassOnce(query, fetchFn, hedgeDelay);
+  const run = () => once().catch((e: Error) => (/HTTP 429|HTTP 504|too many|timed out/i.test(e.message) ? new Promise<void>((r) => setTimeout(r, RETRY_DELAY)).then(once) : Promise.reject(e)));
+  const p = queue.then(run, run);
+  queue = p.then(() => undefined, () => undefined);
+  cache.set(query, p);
+  p.catch(() => cache.delete(query));
+  return p;
+}
+let queue: Promise<void> = Promise.resolve();
+/** Pause vor dem zweiten Versuch (ms) */
+export const RETRY_DELAY = 4000;
+
+function overpassOnce(query: string, fetchFn: typeof fetch, hedgeDelay: number): Promise<OverpassElement[]> {
+  return new Promise<OverpassElement[]>((resolve, reject) => {
     const controllers: AbortController[] = [];
     let next = 0, failed = 0, settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -78,9 +93,6 @@ export function overpass(query: string, fetchFn: typeof fetch = fetch, hedgeDela
     };
     launch();
   });
-  cache.set(query, p);
-  p.catch(() => cache.delete(query));
-  return p;
 }
 
 function toWays(elements: OverpassElement[]): OsmWay[] {
