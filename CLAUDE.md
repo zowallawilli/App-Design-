@@ -106,6 +106,11 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 - Tour (`trip`, `active` in main.ts): mehrere Abschnitte + Verbindungswege, Klick wechselt, „Zurücksetzen“ löscht alles,
   Tour-GPX. Nebenflüsse blau gestrichelt (`loadTribs`), Klick → Abschnitt bis zur Mündung. Verbindungsweg (`#hike-btn`):
   Fluss → Fluss oder Punkt → Punkt, Ziel kürzeste Gehzeit, bis zu 2 Alternativen.
+- Nutzer 27.11.2026: Verbindungswege dürfen nicht über zu steile Hänge (auch hochalpin, Test Neuseeland Südinsel)
+  und keine Flüsse queren, wenn es Alternativen gibt; vorhandene Wege bevorzugen (`HIKE` in hike.ts).
+  Eigene Stellen: Wehr/Gefahrenstelle ohne Grad (unter „Planung“), „Verschieben“-Knopf, Fenster nie vom Höhenprofil
+  verdeckt (`keepPopupVisible`), aktive Werkzeug-Knöpfe hervorgehoben. 3D-Rundflug: Klick-Handler nur auf
+  `#basemap button[data-base]` (sonst blenden ⟲ ⟳ N Rundflug alle Hintergründe aus).
 
 ## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
 - Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter

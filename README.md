@@ -221,8 +221,14 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
   Klick auf einen = Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt (Fließrichtung wird geprüft).
 - **Verbindungsweg** (`src/hike.ts`): „Fluss → Fluss“ (Klick auf Fluss A und B; Start an jeder Stelle von A, Ziel an
   jeder Stelle von B – die Suche wählt selbst Aus-/Einstieg und meist den niedrigsten Sattel) oder „Punkt → Punkt“.
-  Gehzeit je Rasterzelle nach Tobler (Steigung), weglos ×1,6, Wasser queren ×12, Gletscher ×3, > ~37° gesperrt (außer auf
-  Wegen); Wege/Gewässer/Gletscher aus OpenFreeMap-Kacheln, Höhen AWS Terrain (Zoom ≤ 13, max. 1,2 Mio. Zellen). Bis zu zwei
+  Gehzeit je Rasterzelle nach Tobler (Steigung), weglos ×2,5 (Wege werden auch bei etwas mehr Länge bevorzugt),
+  Bach ×3, Gletscher ×3, Fluss/See ×150 (3 Zellen breit gerastert – Queren praktisch nur über Brücken/Wege).
+  Weglos zusätzlich nach **Hangneigung** der Zelle (unabhängig von der Gehrichtung, verhindert Queren und Serpentinen in
+  Steilhängen): ab ~20° teurer, ab ~33° gesperrt; Steigung in Gehrichtung weglos ≤ ~27°. Auf und direkt neben Wegen und
+  im Umkreis von 150 m um gewählte Punkte keine Sperre. Gibt es so keine Verbindung, zweiter Versuch mit Steilgelände und
+  Hinweis „nur über Steilgelände möglich“. Wege/Gewässer/Gletscher aus OpenFreeMap-Kacheln Zoom 13 (Pfade fehlen in
+  Zoom 12), Höhen AWS Terrain (Zoom ≤ 13, max. 1,2 Mio. Zellen). Test Routeburn Track (NZ): 93 % auf dem Weg, höchster Punkt
+  ~1.290 m (Harris Saddle 1.255 m). Bis zu zwei
   Alternativen (Umgebung der besten Route verteuert, höchstens 1,6× Gehzeit, < 60 % Überlappung). Angezeigt: Länge,
   Auf-/Abstieg, Gehzeit nach DIN 33466 (ohne Pausen, ohne Gepäckzuschlag), höchster Punkt, Anteil weglos.
   Grenzen: Felsstufen unter der Rasterweite, Wald/Gebüsch/Sumpf, Flussquerungen, Schutzgebiete – **Indikator, vor Ort prüfen.**

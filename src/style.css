@@ -229,3 +229,8 @@ button.linkish { background: none; border: 0; padding: 0; color: inherit; font: 
 .pass-marker { background: #fff; color: #102027; font: 700 11px system-ui; padding: 2px 6px; border-radius: 8px; box-shadow: 0 1px 3px #0008; border: 2px solid #e07a1f; }
 #hike-opts[hidden], #edit-opts[hidden], #tour-panel[hidden] { display: none !important; }
 #tour-panel { margin-top: 14px; }
+/* aktive Werkzeuge deutlich hervorheben */
+#own-btn.on, #edit-btn.on, #hike-btn.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.ww-popup button.ghost.danger { background: #fff; color: #b3261e; border: 1px solid #b3261e; font-weight: 600; }
+.ww-popup button.ghost.move { background: #fff; color: #1d3557; border: 1px solid #1d3557; font-weight: 600; }
+.ww-popup { max-height: 70vh; overflow-y: auto; }

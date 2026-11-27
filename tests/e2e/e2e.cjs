@@ -188,14 +188,18 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     const info = async () => (await page.textContent('#ww-learn-info')).replace(/\s+/g, ' ');
     const i0 = await info();
     check('Alte Markierung (PR #17) bekommt bei der Analyse Luftbild-Merkmale', /^1 eigene Markierung \(0 Schwall, 1 kein Schwall; 1 mit Luftbild/.test(i0), i0.slice(0, 90));
+    const llAt = (x, y) => page.evaluate(([x, y]) => window.__map.unproject([x, y]).toArray(), [x - cb.x, y - cb.y]);
+    const LL = await llAt(px, py), LL2 = await llAt(px, py + 60);
+    // Klick auf Geokoordinate (das Auswahlfenster verschiebt die Karte, wenn es sonst unten abgeschnitten wäre)
+    const clickGeo = async (ll, dx = 0, dy = 0) => { const q = await page.evaluate((ll) => window.__map.project(ll), ll); await page.mouse.click(cb.x + q.x + dx, cb.y + q.y + dy); };
     await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
     await page.click('.ww-popup button[data-g="III"]'); await page.click('.ww-popup button[data-k="walze"]'); await page.waitForTimeout(400);
     const i1 = await info();
-    await page.mouse.click(px + 3, py + 2); await page.waitForSelector('.ww-popup');
+    await clickGeo(LL, 3, 2); await page.waitForSelector('.ww-popup');
     const head = await page.textContent('.ww-popup b');
     await page.click('.ww-popup button[data-k="kiesbank"]'); await page.waitForTimeout(400);
     const i2 = await info();
-    await page.mouse.click(px, py); await page.waitForSelector('.ww-popup');
+    await clickGeo(LL); await page.waitForSelector('.ww-popup');
     await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
     const i3 = await info();
     const visIn = await page.evaluate(() => window.__map.getLayoutProperty('ww-labels', 'visibility'));
@@ -216,8 +220,9 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     check('Eigene Markierungen nur im Markier-Modus sichtbar', visIn === 'visible' && visOut === 'none', `${visIn} → ${visOut}`);
     // Nachbearbeiten erkannter Stellen: Fenster per Kartenklick schließen, löschen, verschieben
     await page.click('#own-btn');
-    await page.mouse.click(px, py + 60); await page.waitForSelector('.ww-popup');
-    await page.mouse.click(px - 260, py - 160); await page.waitForTimeout(400);
+    await clickGeo(LL2); await page.waitForSelector('.ww-popup'); await page.waitForTimeout(400);
+    const pb = await page.locator('.maplibregl-popup').boundingBox();
+    await page.mouse.click(pb.x > cb.x + 200 ? pb.x - 120 : pb.x + pb.width + 120, pb.y + 20); await page.waitForTimeout(400);
     const closed = (await page.locator('.ww-popup').count()) === 0;
     const n0 = await page.locator('.ww-marker').count();
     const m1 = await page.locator('.ww-marker').first().boundingBox();
@@ -279,7 +284,15 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await page.mouse.move(mk.x + mk.width / 2 + 60, mk.y + mk.height / 2 + 30, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(600);
     const l2 = await lab();
     const head = (await page.locator('.ww-popup b').count()) ? await page.textContent('.ww-popup b') : '';
+    const activeBg = await page.$eval('#own-btn', (b) => getComputedStyle(b).backgroundColor);
+    const wehrInPlan = (await page.locator('.ww-popup .lbl-plan button[data-k="wehr"]').count()) === 1;
+    await page.click('.ww-popup button[data-move]');
+    await page.mouse.click(cx - 90, cy + 50); await page.waitForTimeout(400);
+    const l3 = await lab();
+    const moved = l3 && l2 && Math.abs(l3.p[0] - l2.p[0]) > 1e-4;
+    await page.locator('.own-marker').last().click(); await page.waitForSelector('.ww-popup button[data-del]');
     await page.click('.ww-popup button[data-del]'); await page.waitForTimeout(400);
+    check('Eigene Stellen: Knopf aktiv hervorgehoben, Wehr unter Planung, „Verschieben“ per Kartenklick', moved && wehrInPlan && !/rgba\(0, 0, 0, 0\)|transparent/.test(activeBg), `${activeBg} · Wehr unter Planung: ${wehrInPlan} · verschoben: ${moved}`);
     const n2 = await page.locator('.own-marker').count();
     await page.click('#own-btn');
     check('Eigene Stellen weltweit ohne Analyse: setzen (Lagerplatz + Notiz, Zelt-Symbol), verschieben, löschen; ohne Lern-Arten', noLearn && icoOk && n1 === n0 + 1 && l1 && l1.note === 'Sandbank links' && l1.show && !l1.feat && l2 && l2.p[0] !== l1.p[0] && /Markiert: Lagerplatz/.test(head) && n2 === n0, `${n0} → ${n1} → ${n2} · ${head}`);
