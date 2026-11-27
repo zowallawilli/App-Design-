@@ -221,7 +221,8 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
   Flüsse werden dabei neu analysiert (Pegel aktuell), Verbindungswege direkt übernommen. Gelöscht wird nur bewusst:
   ✕ je Abschnitt, „Zurücksetzen“ (Rückfrage ab 2 Abschnitten); eigene Stellen über „Alle löschen“ (Rückfrage).
   Flussname eigener Strecken = OSM-Fluss, der am meisten entlang der Strecke liegt.
-- **Nebenflüsse:** Benannte Flüsse, die die Strecke berühren (≤ 250 m, OSM-Vektorkacheln Zoom 11), sind blau gestrichelt.
+- **Nebenflüsse:** Flüsse und Bäche (auch ohne Namen, ab ~1,5 km), die die Strecke berühren (≤ 500 m), sind blau gestrichelt –
+  aus OSM-Vektorkacheln (Zoom 13) und ergänzend Overpass (alle Gewässerlinien bis 300 m an der Strecke).
   Klick auf einen = Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt (Fließrichtung wird geprüft).
 - **Verbindungsweg** (`src/hike.ts`): „Fluss → Fluss“ (Klick auf Fluss A und B; Start an jeder Stelle von A, Ziel an
   jeder Stelle von B – die Suche wählt selbst Aus-/Einstieg und meist den niedrigsten Sattel) oder „Punkt → Punkt“.
@@ -246,7 +247,8 @@ Hinweise je Aufnahmetag und heute kommen nur noch aus der üblichen Jahreszeit d
 wenn das Einzugsgebiet oberhalb über die Höhe reicht, ab der im Winter Schnee liegt (grob nach Breite: ≥ 60° 300 m,
 55° 600 m, 50° 1000 m, 45° 1300 m, 35° 1800 m, 25° 2800 m), sonst **Regen**. Höhe: höchster Punkt der verfolgten Flussläufe
 oberhalb + ~400 m (grobes Höhenmodell). Südhalbkugel mit um sechs Monate versetzten Jahreszeiten.
-Das Einzugsgebiet (Fluss + Zubringer oberhalb) ist standardmäßig blau gestrichelt auf der Karte.
+Eine Anzeige des Einzugsgebiets gibt es seit 27.11.2026 nicht mehr (Nutzerentscheidung: wenig zuverlässig, kaum Zusatznutzen);
+das Regime wird grob aus Gletschern im Umkreis und der Höhe der Flussläufe oberhalb geschätzt.
 Pegel werden nur noch gezeigt, wenn sie **gemessen** sind und zum **selben Fluss** gehören – keine Schätzungen aus Nachbarpegeln.
 
 ## Wie verlässlich sind die Abflussdaten?

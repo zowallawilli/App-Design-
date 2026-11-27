@@ -100,7 +100,8 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
 ## Umbau 26.11.2026 (zweite Runde, Nutzerentscheidung)
 - „Fluss aus OSM“ entfernt (lud zu lange). Strecke: Ein-/Ausstieg, Zeichnen, Referenz; Ein-/Ausstieg-Schilder ziehbar,
   Modus „Strecke bearbeiten“ (`routeEdit`: Ankerpunkte + Teilstücke, nachgezogen oder gerade).
-- Keine konkreten Wetterdaten; Hinweise aus Jahreszeit, Aufnahmedatum, Regime; Einzugsgebiet standardmäßig sichtbar.
+- Keine konkreten Wetterdaten; Hinweise aus Jahreszeit, Aufnahmedatum, Regime. **Einzugsgebiet-Anzeige entfernt**
+  (Nutzer 27.11.2026: unzuverlässig, kaum Nutzen) – nicht wieder einbauen.
 - Pegel nur gemessen und selber Fluss (keine Schätzungen anzeigen, `estimate.ts` bleibt im Code).
 - Eigene/OSM-Stellen mit Symbolen statt Buchstaben (`src/icons.ts`).
 - Tour (`trip`, `active` in main.ts): mehrere Abschnitte + Verbindungswege, Klick wechselt, „Zurücksetzen“ löscht alles,
@@ -116,6 +117,11 @@ nicht zu leicht eingestuft werden – deshalb „kombiniert“ (schwierigere aus
   wiederhergestellt; Löschen nur bewusst (✕, „Zurücksetzen“ mit Rückfrage, „Alle löschen“ bei eigenen Stellen).
   Tour-Feld ab dem ersten Fluss, frühere Flüsse kräftig + Nummern-Schild. Marker-CSS nie `position: relative`
   (sonst verrutschen Symbole beim Zoomen).
+
+- Nutzer 27.11.2026 (3): Höhenprofil einklappbar (`#profile-toggle`), eigene Stellen als Liste in der linken Leiste
+  (`#own-panel`, ✕ je Stelle), Rückgängig ↶ / Strg+Z (`pushUndo`/`undo`), „Zurücksetzen“ leert alles (Tour + eigene Stellen,
+  mit Rückfrage). Nebenflüsse: Zoom-13-Kacheln + Overpass, auch unbenannte, Mündung ≤ 500 m (Lainioälven).
+  Tour-GPX ohne Pfeil-Sonderzeichen (Gaia hing beim Import), mit Ein-/Ausstieg-Wegpunkten.
 
 ## Eigene Stellen / OSM (Nutzerentscheidung 26.11.2026)
 - Automatische Schwallstellen-Erkennung **eingefroren**: Standard aus (`opt-ww`, localStorage `packraft.wwAuto`), nur unter

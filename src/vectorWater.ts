@@ -142,7 +142,7 @@ export interface RiverLine {
  * Benannte Flüsse (Ebene „waterway“) und Namen von Wasserflächen (Ebene „water_name“, z. B. Stauseen)
  * im Ausschnitt [W, S, O, N] aus groben Kacheln (Zoom 9, ~40 km je Kachel) – für das Einzugsgebiet.
  */
-export async function riversInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch, z = 9): Promise<{ rivers: RiverLine[]; waterNames: { name: string; p: LngLat }[] }> {
+export async function riversInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch, z = 9, withUnnamed = false): Promise<{ rivers: RiverLine[]; waterNames: { name: string; p: LngLat }[] }> {
   const tmpl = await template(fetchFn);
   const rivers: RiverLine[] = [];
   const waterNames: { name: string; p: LngLat }[] = [];
@@ -160,10 +160,10 @@ export async function riversInBbox(bbox: [number, number, number, number], fetch
               const f = ww.feature(i);
               const props = f.properties as Record<string, string | number | boolean>;
               const name = (props["name:latin"] ?? props.name) as string | undefined;
-              if (!name || props.brunnel === "tunnel") continue;
+              if ((!name && !withUnnamed) || props.brunnel === "tunnel") continue;
               const g = (f.toGeoJSON(x, y, z) as GeoJSON.Feature).geometry;
               const lines = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
-              for (const l of lines) rivers.push({ name, kind: String(props.class ?? ""), coords: l as LngLat[] });
+              for (const l of lines) rivers.push({ name: name ?? "", kind: String(props.class ?? ""), coords: l as LngLat[] });
             }
           const wn = vt.layers.water_name;
           if (wn)
@@ -262,3 +262,4 @@ export async function hikeLayersInBbox(bbox: [number, number, number, number], f
   await Promise.all(jobs);
   return out;
 }
+

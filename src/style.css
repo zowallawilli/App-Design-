@@ -239,3 +239,13 @@ button.linkish { background: none; border: 0; padding: 0; color: inherit; font: 
 .maplibregl-marker.trip-tag { z-index: 1; opacity: 0.92; }
 .maplibregl-marker.own-marker, .maplibregl-marker.osm-marker, .maplibregl-marker.hz-marker, .maplibregl-marker.ww-marker { z-index: 3; }
 .maplibregl-marker.endpoint, .maplibregl-marker.edit-handle { z-index: 4; }
+/* Höhenprofil einklappbar */
+#profile-wrap { position: relative; }
+.profile-toggle { position: absolute; top: 3px; right: 8px; z-index: 2; padding: 1px 9px; font-size: 0.78rem; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; }
+#profile-wrap.collapsed { height: 26px; }
+#profile-wrap.collapsed #profile { display: none; }
+#profile-wrap.collapsed .profile-toggle { top: 2px; }
+button.undo { font-size: 1.1rem; padding: 2px 10px; }
+button.undo:disabled { opacity: 0.4; }
+.own-del { padding: 2px 8px; }
+#own-list > li { display: grid; grid-template-columns: 1fr auto; gap: 4px; }
