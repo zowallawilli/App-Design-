@@ -664,7 +664,7 @@ export const isHazardKind = (k?: LabelKind) => k === "gefahr" || k === "holz";
 export const GRADES = ["I", "II", "III", "IV", "V", "VI"] as const;
 export type Grade = (typeof GRADES)[number];
 export const labelText = (l: Pick<WhitewaterLabel, "schwall" | "kind" | "grade">) =>
-  `${LABEL_KINDS.find((k) => k.id === l.kind)?.text ?? (l.schwall ? "Schwall" : "kein Schwall")}${l.schwall && l.grade ? ` · WW ${l.grade}` : ""}${!l.schwall && l.kind && !isPlanKind(l.kind) ? " (kein Schwall)" : ""}`;
+  `${LABEL_KINDS.find((k) => k.id === l.kind)?.text ?? (l.schwall ? "Schwall" : "kein Schwall")}${l.schwall && l.grade && (!l.kind || l.kind === "schwall" || l.kind === "walze") ? ` · WW ${l.grade}` : ""}${!l.schwall && l.kind && !isPlanKind(l.kind) ? " (kein Schwall)" : ""}`;
 
 /** Bildmerkmale an einer Markierung (aus der Analyse zum Zeitpunkt der Markierung) – damit lernt das Modell
  *  über alle Flüsse hinweg, auch wenn die Strecke später nicht mehr geladen ist. */

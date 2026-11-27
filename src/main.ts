@@ -175,12 +175,12 @@ const src = (id: string) => map.getSource(id) as GeoJSONSource;
 // für automatisierte Tests im Entwicklungsmodus
 if (import.meta.env.DEV) (window as unknown as { __map: maplibregl.Map }).__map = map;
 
-document.querySelectorAll<HTMLButtonElement>("#basemap button").forEach((b) =>
+document.querySelectorAll<HTMLButtonElement>("#basemap button[data-base]").forEach((b) =>
   b.addEventListener("click", () => {
     const key = b.dataset.base as BaseKey;
     for (const k of Object.keys(BASEMAPS)) map.setLayoutProperty(`base-${k}`, "visibility", k === key ? "visible" : "none");
     void updateImageDate();
-    document.querySelectorAll("#basemap button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll("#basemap button[data-base]").forEach((x) => x.classList.toggle("on", x === b));
   }),
 );
 $<HTMLInputElement>("terrain").addEventListener("change", (e) => {
@@ -192,28 +192,29 @@ $<HTMLInputElement>("terrain").addEventListener("change", (e) => {
 });
 
 // Karte drehen (v. a. in 3D, um die Topografie von allen Seiten zu sehen)
-let orbit: number | null = null;
+// Rundflug als fortlaufende Kamerafahrt (easeTo). Früher setBearing je Bild – damit verschwand in 3D das
+// Gelände (nur Route sichtbar, Rest weiß/schwarz), weil die Kacheln nie fertig geladen wurden.
+let orbiting = false;
+const orbitStep = () => { if (orbiting) map.easeTo({ bearing: map.getBearing() + 40, duration: 5000, easing: (t) => t }); };
 function stopOrbit() {
-  if (orbit !== null) cancelAnimationFrame(orbit);
-  orbit = null;
+  if (!orbiting) return;
+  orbiting = false;
+  map.off("moveend", orbitStep);
+  map.stop();
   $("rot-orbit").classList.remove("on");
 }
 function startOrbit() {
   stopOrbit();
+  orbiting = true;
   $("rot-orbit").classList.add("on");
-  let last = performance.now();
-  const step = (t: number) => {
-    map.setBearing((map.getBearing() + ((t - last) / 1000) * 8) % 360); // 8° pro Sekunde
-    last = t;
-    orbit = requestAnimationFrame(step);
-  };
-  orbit = requestAnimationFrame(step);
+  map.on("moveend", orbitStep);
+  orbitStep(); // 8° pro Sekunde
 }
 const rotateBy = (deg: number) => { stopOrbit(); map.easeTo({ bearing: map.getBearing() + deg, duration: 700 }); };
 $("rot-left").addEventListener("click", () => rotateBy(-45));
 $("rot-right").addEventListener("click", () => rotateBy(45));
 $("rot-north").addEventListener("click", () => { stopOrbit(); map.easeTo({ bearing: 0, duration: 700 }); });
-$("rot-orbit").addEventListener("click", () => (orbit === null ? startOrbit() : stopOrbit()));
+$("rot-orbit").addEventListener("click", () => (orbiting ? stopOrbit() : startOrbit()));
 // eigene Bedienung der Karte beendet den Rundflug
 for (const ev of ["mousedown", "touchstart", "wheel"] as const) map.on(ev, stopOrbit);
 
@@ -626,7 +627,7 @@ function renderTour() {
       t.hike.forEach((r, k) => {
         const ab = document.createElement("button");
         ab.className = `ghost${k === (t.sel ?? 0) ? " sel" : ""}`;
-        ab.innerHTML = `<span class="sw" style="background:${TOUR_COLORS[k % TOUR_COLORS.length]}"></span> ${k ? `Alternative ${k}` : "Beste Route"}: ${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)}, höchster Punkt ${fmtElev(r.maxElev)}, ${Math.round(r.offTrail * 100)} % weglos`;
+        ab.innerHTML = `<span class="sw" style="background:${TOUR_COLORS[k % TOUR_COLORS.length]}"></span> ${k ? `Alternative ${k}` : "Beste Route"}: ${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)}, höchster Punkt ${fmtElev(r.maxElev)}, ${Math.round(r.offTrail * 100)} % weglos${r.steep ? " · <b>nur über Steilgelände (> 33°) möglich</b>" : ""}${r.noPaths ? " · keine OSM-Wege im Ausschnitt" : ""}`;
         ab.addEventListener("click", () => { t.sel = k; renderTour(); });
         const al = document.createElement("li");
         al.appendChild(ab);
@@ -1158,7 +1159,7 @@ const OWN_COLOR = (l: WhitewaterLabel) =>
     : ({ umtragen: "#6d597a", zugang: "#2a9d8f", lager: "#606c38", notiz: "#5c677d" } as Record<string, string>)[l.kind ?? ""] ?? "#8d99ae";
 /** Symbol statt Buchstabe (sprachunabhängig); Grad als kleines Schild */
 const OWN_ICON = (l: WhitewaterLabel, size = 14) =>
-  icon(KIND_ICON[l.kind ?? (l.schwall ? "schwall" : "sonstiges")] ?? "notiz", size) + (l.schwall && l.grade && !isHazardKind(l.kind) ? `<span class="badge">${l.grade}</span>` : "");
+  icon(KIND_ICON[l.kind ?? (l.schwall ? "schwall" : "sonstiges")] ?? "notiz", size) + (l.grade && isGraded(l.kind ?? (l.schwall ? "schwall" : undefined)) ? `<span class="badge">${l.grade}</span>` : "");
 const OWN_SYM: Record<string, string> = { gefahr: "Danger Area", holz: "Danger Area", umtragen: "Trail Head", zugang: "Boat Ramp", lager: "Campground", notiz: "Flag, Blue" };
 /** angezeigte eigene Stellen an der aktuellen Strecke (mit Stationierung), flussabwärts sortiert */
 function ownOnRoute(maxOff = OWN_ROUTE_OFF): { l: WhitewaterLabel; at: { d: number; offset: number } }[] {
@@ -1439,6 +1440,31 @@ function renderLabels() {
 }
 
 let labelPopup: maplibregl.Popup | null = null;
+/** Stelle, die mit „Verschieben“ auf den nächsten Kartenklick wartet */
+let movingLabel: WhitewaterLabel | null = null;
+/** Grad gibt es nur bei Stromschnelle und Walze (Wehr, Gefahrenstelle: ohne Grad) */
+const isGraded = (k?: LabelKind) => k === "schwall" || k === "walze";
+/** Fenster ganz in den Kartenausschnitt holen (unten liegt das Höhenprofil, oben die Kopfleiste) */
+function keepPopupVisible(p: maplibregl.Popup) {
+  requestAnimationFrame(() => {
+    const el = p.getElement();
+    if (!el) return;
+    const r = el.getBoundingClientRect(), m = map.getContainer().getBoundingClientRect();
+    const top = m.top + 60, bottom = m.bottom - 10;
+    const dy = r.bottom > bottom ? r.bottom - bottom : r.top < top ? r.top - top : 0;
+    if (dy) map.panBy([0, dy], { duration: 300 });
+  });
+}
+/** verschobene Stelle übernehmen */
+function moveLabelTo(l: WhitewaterLabel, to: LngLat) {
+  const i = wwLabels.indexOf(l);
+  movingLabel = null;
+  map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
+  if (i < 0) return;
+  wwLabels[i] = { ...l, p: to, feat: undefined, src: undefined, ...(isPlanKind(l.kind) ? {} : featAt(to)) };
+  afterLabelChange();
+  setStatus("Stelle verschoben.");
+}
 /** zuletzt gewählter Schwierigkeitsgrad bleibt für die nächste Markierung vorausgewählt */
 let lastGrade: Grade | undefined;
 /** Bildmerkmale an einer Stelle der aktuellen Analyse (für das lernende Modell) */
@@ -1467,14 +1493,14 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
   box.innerHTML =
     `<b>${old ? `Markiert: ${labelText(old)} – ändern` : "Eigene Stelle: Was ist hier?"}</b>` +
     `<div class="lbl-sec">Wildwasser · Grad <span class="lbl-grades">${GRADES.map((g) => `<button data-g="${g}" class="g${grade === g ? " sel" : ""}">${g}</button>`).join("")}</span></div>` +
-    `<div class="row wrap">${LABEL_KINDS.filter((k) => k.schwall).map(btn).join("")}</div>` +
-    `<div class="lbl-sec">Planung</div><div class="row wrap lbl-plan">${LABEL_KINDS.filter((k) => k.plan).map(btn).join("")}</div>` +
+    `<div class="row wrap">${LABEL_KINDS.filter((k) => k.schwall && isGraded(k.id)).map(btn).join("")}</div>` +
+    `<div class="lbl-sec">Planung <span class="hint">(ohne Grad)</span></div><div class="row wrap lbl-plan">${LABEL_KINDS.filter((k) => k.plan || (k.schwall && !isGraded(k.id))).map(btn).join("")}</div>` +
     (auto
       ? `<div class="lbl-sec">kein Schwall <span class="hint">(zum Lernen der Erkennung)</span></div><div class="row wrap">${learnKinds.map(btn).join("")}</div>` +
         `<label class="lbl-show"><input type="checkbox" class="lbl-show-cb"${!old || old.show ? " checked" : ""}> in der Karte anzeigen <span class="hint">(sonst nur zum Lernen)</span></label>`
       : "") +
     `<input class="lbl-note" maxlength="200" placeholder="Notiz (optional, Enter speichert)" value="${escapeHtml(old?.note ?? "")}">` +
-    (old ? `<div class="row"><button data-del class="ghost danger">Stelle löschen</button></div>` : "") +
+    (old ? `<div class="row"><button data-move class="ghost move" title="Danach die neue Position in der Karte anklicken">Verschieben</button><button data-del class="ghost danger">Stelle löschen</button></div>` : "") +
     (opts.detected && !old ? `<div class="row"><button data-hide class="ghost danger" title="Erkannte Stelle aus der Karte entfernen (ohne Bewertung fürs Lernen)">Erkannte Stelle löschen</button></div><p class="hint" style="margin:4px 0 0">Verschieben: Symbol mit der Maus ziehen.</p>` : "");
   box.querySelectorAll<HTMLButtonElement>("button[data-g]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -1489,7 +1515,7 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
     const cb = box.querySelector<HTMLInputElement>(".lbl-show-cb");
     const keepFeat = old?.feat && !k.plan ? { src: old.src, feat: old.feat } : undefined;
     const label: WhitewaterLabel = {
-      p: at, schwall: k.schwall, kind: k.id, grade: k.schwall ? grade : undefined, note,
+      p: at, schwall: k.schwall, kind: k.id, grade: isGraded(k.id) ? grade : undefined, note,
       show: k.plan || !cb || cb.checked || undefined,
       date: new Date().toISOString().slice(0, 10), ...(k.plan ? {} : keepFeat ?? featAt(at)),
     };
@@ -1507,6 +1533,12 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
     afterLabelChange();
     labelPopup?.remove();
   });
+  box.querySelector("button[data-move]")?.addEventListener("click", () => {
+    movingLabel = old ?? null;
+    labelPopup?.remove();
+    map.getCanvas().style.cursor = "crosshair";
+    setStatus("Stelle verschieben: neue Position in der Karte anklicken (Esc bricht ab).");
+  });
   box.querySelector("button[data-hide]")?.addEventListener("click", () => {
     wwHidden.push(at);
     saveHidden(wwHidden);
@@ -1514,6 +1546,7 @@ function addLabelAt(p: LngLat, opts: { detected?: boolean; edit?: WhitewaterLabe
     labelPopup?.remove();
   });
   labelPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "300px" }).setLngLat(at).setDOMContent(box).addTo(map);
+  keepPopupVisible(labelPopup);
 }
 /** Markierungen ohne Bildmerkmale (ältere Version, oder vor der Analyse gesetzt) an der aktuellen Strecke ergänzen –
  *  bei jeder Auswertung automatisch, damit sie fürs Lernen zählen. */
@@ -2234,6 +2267,12 @@ map.on("dblclick", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if ((e.target as HTMLElement).closest("input, select, textarea")) return;
+  if (e.key === "Escape" && movingLabel) {
+    movingLabel = null;
+    map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
+    setStatus("Verschieben abgebrochen.");
+    return;
+  }
   if (e.key === "Escape" && mode === "wave") {
     drawPts = [];
     src("draft").setData(empty);
@@ -2258,6 +2297,7 @@ document.addEventListener("keydown", (e) => {
 map.on("click", async (e) => {
   if (busy) return;
   const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
+  if (movingLabel) return moveLabelTo(movingLabel, p);
   switch (mode) {
     case "route-in":
       putIn = p;

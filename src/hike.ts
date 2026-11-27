@@ -13,8 +13,10 @@ import { haversine, type LngLat } from "./geo";
 export interface HikeLayers {
   /** Wege, Pfade, Fahrwege, Straßen */
   paths: LngLat[][];
-  /** Flüsse/Bäche als Linien */
+  /** Flüsse (OSM-Klasse river/canal) als Linien – Queren nur über Brücke/Furt-Weg */
   rivers: LngLat[][];
+  /** Bäche – queren ist meist möglich */
+  streams?: LngLat[][];
   /** Seen und flächige Flüsse (äußere Ringe) */
   water: LngLat[][];
   /** Gletscher (äußere Ringe) */
@@ -22,13 +24,20 @@ export interface HikeLayers {
 }
 
 export const HIKE = {
-  /** Steigung, ab der Gelände als nicht begehbar gilt (0,75 ≈ 37°) */
-  maxSlope: 0.75,
-  /** Zeitfaktor weglos gegenüber Weg */
-  offTrail: 1.6,
-  /** Zeitfaktor für Wasser (Fluss/See queren) und Gletscher */
-  water: 12,
+  /** weglos: Steigung in Gehrichtung höchstens (0,5 ≈ 27°) */
+  maxSlope: 0.5,
+  /** weglos: Gelände-Steilheit der Zelle (Hangneigung, unabhängig von der Gehrichtung – verhindert Queren und
+   *  Serpentinen in Steilhängen): ab `steepFrom` (≈ 20°) teurer, ab `steepMax` (≈ 33°) gesperrt */
+  steepFrom: 0.36,
+  steepMax: 0.65,
+  /** zweiter Versuch, falls es ohne Steilgelände keine Verbindung gibt */
+  relaxed: { maxSlope: 0.8, steepMax: 1.0 },
+  /** Zeitfaktor weglos gegenüber Weg (Wege deutlich bevorzugen, auch wenn sie etwas länger sind) */
+  offTrail: 2.5,
+  /** Zeitfaktor für Fluss/See (praktisch nur über Brücken/Furt-Wege) und Gletscher, Bach */
+  water: 150,
   glacier: 3,
+  stream: 3,
   /** Alternativen: Strafe für Zellen nahe bisheriger Wege, max. Mehrzeit gegenüber der besten Route */
   altPenalty: 5,
   altRadiusM: 500,
@@ -52,6 +61,10 @@ export interface HikeResult {
   offTrail: number;
   /** Modell-Gehzeit (h) inkl. Wegloszuschlag – Grundlage für den Vergleich der Alternativen */
   costHours: number;
+  /** nur mit Steilgelände (> ~33°) möglich */
+  steep?: boolean;
+  /** keine OSM-Wege im Ausschnitt geladen */
+  noPaths?: boolean;
 }
 
 /** Gehzeit nach DIN 33466: 4 km/h waagrecht, 300 Hm/h bergauf, 500 Hm/h bergab; größerer + halber kleinerer Wert */
@@ -114,20 +127,61 @@ export function rasterPolygons(g: Grid, rings: LngLat[][], out: Uint8Array, valu
   }
 }
 
-/** Zellen entlang von Linien (Start-/Zielflüsse) bzw. am Punkt */
+/** Raster um `r` Zellen verbreitern (Zellen mit Wert `value`) – dünne Linien lassen sich sonst diagonal „durchschlüpfen“ */
+export function dilate(g: Grid, m: Uint8Array, value: number, r = 1, onlyInto?: (v: number) => boolean) {
+  const src = m.slice();
+  for (let y = 0; y < g.h; y++)
+    for (let x = 0; x < g.w; x++) {
+      if (src[y * g.w + x] !== value) continue;
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= g.w || yy >= g.h) continue;
+          const i = yy * g.w + xx;
+          if (!onlyInto || onlyInto(m[i])) m[i] = value;
+        }
+    }
+}
+
+/** Zellen entlang von Linien (Start-/Zielflüsse, verbreitert: Ein-/Ausstieg an beiden Ufern) bzw. am Punkt */
 export function cellsOf(g: Grid, lines: LngLat[][]): Int32Array {
   const m = new Uint8Array(g.w * g.h);
   rasterLines(g, lines.map((l) => (l.length === 1 ? [l[0], l[0]] : l)), m);
+  if (lines.some((l) => l.length > 1)) dilate(g, m, 1, 1);
   const out: number[] = [];
   for (let i = 0; i < m.length; i++) if (m[i]) out.push(i);
   return Int32Array.from(out);
 }
 
+/** Hangneigung je Zelle (Betrag des Gradienten, Horn-Verfahren) */
+export function terrainSlope(g: Grid): Float32Array {
+  const mid = pixelToLngLat(g.x0 + g.w / 2, g.y0 + g.h / 2, g.z);
+  const cell = (156543.03 * Math.cos((mid[1] * Math.PI) / 180)) / 2 ** g.z;
+  const out = new Float32Array(g.w * g.h);
+  const z = (x: number, y: number) => g.elev[Math.min(g.h - 1, Math.max(0, y)) * g.w + Math.min(g.w - 1, Math.max(0, x))];
+  for (let y = 0; y < g.h; y++)
+    for (let x = 0; x < g.w; x++) {
+      const dzdx = (z(x + 1, y - 1) + 2 * z(x + 1, y) + z(x + 1, y + 1) - z(x - 1, y - 1) - 2 * z(x - 1, y) - z(x - 1, y + 1)) / (8 * cell);
+      const dzdy = (z(x - 1, y + 1) + 2 * z(x, y + 1) + z(x + 1, y + 1) - z(x - 1, y - 1) - 2 * z(x, y - 1) - z(x + 1, y - 1)) / (8 * cell);
+      out[y * g.w + x] = Math.hypot(dzdx, dzdy);
+    }
+  return out;
+}
+
+/** Zeitfaktor weglos nach Hangneigung (Infinity = gesperrt) */
+export function steepFactor(t: number, steepMax = HIKE.steepMax): number {
+  if (t > steepMax) return Infinity;
+  if (t <= HIKE.steepFrom) return 1;
+  return 1 + 8 * ((t - HIKE.steepFrom) / (steepMax - HIKE.steepFrom)) ** 2;
+}
+
 /**
  * Wegsuche im Raster: von allen Startzellen zur nächstgelegenen Zielzelle (Gehzeit in Sekunden).
- * `kind`: 0 weglos, 1 Weg, 2 Wasser, 3 Gletscher; `penalty`: Faktor je Zelle (Alternativen).
+ * `kind`: 0 weglos, 1 Weg, 2 Wasser, 3 Gletscher, 4 Bach; `penalty`: Faktor je Zelle (Alternativen).
  */
-export function hikeOnGrid(g: Grid, kind: Uint8Array, sources: Int32Array, targets: Int32Array, penalty?: Float32Array): { path: number[]; seconds: number } | null {
+export function hikeOnGrid(g: Grid, kind: Uint8Array, sources: Int32Array, targets: Int32Array, penalty?: Float32Array, relaxed = false, slope?: Float32Array): { path: number[]; seconds: number } | null {
+  const tslope = slope ?? terrainSlope(g);
+  const maxSlope = relaxed ? HIKE.relaxed.maxSlope : HIKE.maxSlope, steepMax = relaxed ? HIKE.relaxed.steepMax : HIKE.steepMax;
   const n = g.w * g.h;
   const isTarget = new Uint8Array(n);
   for (const t of targets) isTarget[t] = 1;
@@ -143,7 +197,17 @@ export function hikeOnGrid(g: Grid, kind: Uint8Array, sources: Int32Array, targe
   const cell = (156543.03 * Math.cos((mid[1] * Math.PI) / 180)) / 2 ** g.z;
   const dx = [-1, 0, 1, -1, 1, -1, 0, 1], dy = [-1, -1, -1, 0, 0, 1, 1, 1];
   const len = [Math.SQRT2, 1, Math.SQRT2, 1, 1, Math.SQRT2, 1, Math.SQRT2];
-  const factor = (i: number) => (isSource[i] || isTarget[i] ? 1 : kind[i] === 1 ? 1 : kind[i] === 2 ? HIKE.water : kind[i] === 3 ? HIKE.glacier : HIKE.offTrail);
+  // Zellen direkt neben Wegen: Weg und Höhenmodell sind oft um eine Zelle versetzt (Serpentinen kleiner als das Raster)
+  const nearPath = new Uint8Array(n);
+  for (let i = 0; i < n; i++) if (kind[i] === 1) nearPath[i] = 1;
+  dilate(g, nearPath, 1, 1);
+  // gewählte Start-/Zielpunkte bleiben erreichbar: im Umkreis ~150 m Steilgelände nur verteuert, nicht gesperrt
+  const zone = endZone(g, sources, targets);
+  const factor = (i: number) =>
+    isSource[i] || isTarget[i] || kind[i] === 1 ? 1
+      : kind[i] === 2 ? HIKE.water
+      : (kind[i] === 3 ? HIKE.glacier : kind[i] === 4 ? HIKE.stream : HIKE.offTrail) *
+        (nearPath[i] || zone[i] ? Math.min(8, steepFactor(tslope[i], steepMax)) : steepFactor(tslope[i], steepMax));
   let hit = -1;
   while (heap.size > 0) {
     const c = heap.pop();
@@ -158,8 +222,11 @@ export function hikeOnGrid(g: Grid, kind: Uint8Array, sources: Int32Array, targe
       if (done[ni]) continue;
       const d = len[k] * cell;
       const s = (g.elev[ni] - g.elev[c]) / d;
-      if (Math.abs(s) > HIKE.maxSlope && kind[ni] !== 1) continue; // Felsen/Steilhang – auf Wegen trotzdem erlaubt
-      const sec = (d / ((tobler(s) * 1000) / 3600)) * (factor(c) + factor(ni)) * 0.5 * (penalty ? (penalty[c] + penalty[ni]) * 0.5 : 1);
+      const onPath = nearPath[ni] === 1 && nearPath[c] === 1;
+      if (Math.abs(s) > maxSlope && !onPath && !zone[ni] && !zone[c]) continue; // Felsen/Steilhang – auf Wegen trotzdem erlaubt
+      const f = (factor(c) + factor(ni)) * 0.5;
+      if (!Number.isFinite(f)) continue;
+      const sec = (d / ((tobler(s) * 1000) / 3600)) * f * (penalty ? (penalty[c] + penalty[ni]) * 0.5 : 1);
       const nd = dist[c] + sec;
       if (nd < dist[ni]) { dist[ni] = nd; prev[ni] = c; heap.push(nd, ni); }
     }
@@ -190,9 +257,15 @@ export function describePath(g: Grid, kind: Uint8Array, path: number[], seconds:
 
 /** Bis zu `alternatives` weitere, deutlich andere Routen (Strafe nahe den bisherigen Wegen). */
 export function hikeRoutes(g: Grid, kind: Uint8Array, sources: Int32Array, targets: Int32Array, alternatives = 2): HikeResult[] {
-  const best = hikeOnGrid(g, kind, sources, targets);
+  const slope = terrainSlope(g);
+  let relaxed = false;
+  let best = hikeOnGrid(g, kind, sources, targets, undefined, false, slope);
+  if (!best) { relaxed = true; best = hikeOnGrid(g, kind, sources, targets, undefined, true, slope); }
   if (!best) return [];
-  const out = [describePath(g, kind, best.path, best.seconds)];
+  const first = describePath(g, kind, best.path, best.seconds);
+  const zone = endZone(g, sources, targets);
+  first.steep = relaxed && steepShare(g, kind, slope, best.path, zone) > 0;
+  const out = [first];
   const penalty = new Float32Array(g.w * g.h).fill(1);
   const mid = pixelToLngLat(g.x0 + g.w / 2, g.y0 + g.h / 2, g.z);
   const cell = (156543.03 * Math.cos((mid[1] * Math.PI) / 180)) / 2 ** g.z;
@@ -206,11 +279,12 @@ export function hikeRoutes(g: Grid, kind: Uint8Array, sources: Int32Array, targe
         for (let x = Math.max(0, cx - r); x <= Math.min(g.w - 1, cx + r); x++)
           if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) penalty[y * g.w + x] = HIKE.altPenalty;
     }
-    const alt = hikeOnGrid(g, kind, sources, targets, penalty);
+    const alt = hikeOnGrid(g, kind, sources, targets, penalty, relaxed, slope);
     if (!alt) break;
     const res = describePath(g, kind, alt.path, alt.seconds);
+    res.steep = relaxed && steepShare(g, kind, slope, alt.path, zone) > 0;
     // echte Gehzeit (ohne Strafe) vergleichen; zu lange oder fast gleiche Wege verwerfen
-    const plain = hikeCost(g, kind, alt.path);
+    const plain = hikeCost(g, kind, alt.path, slope, relaxed ? HIKE.relaxed.steepMax : HIKE.steepMax);
     res.costHours = plain / 3600;
     const ownCells = new Set(alt.path);
     const overlap = out.some((o) => o.line.length && sharedShare(o, res) > 0.6);
@@ -220,11 +294,36 @@ export function hikeRoutes(g: Grid, kind: Uint8Array, sources: Int32Array, targe
   return out;
 }
 
-/** Gehzeit (s) eines gegebenen Rasterweges ohne Strafe */
-function hikeCost(g: Grid, kind: Uint8Array, path: number[]): number {
+/** Umkreis ~150 m um Start-/Zielzellen */
+function endZone(g: Grid, sources: Int32Array, targets: Int32Array): Uint8Array {
   const mid = pixelToLngLat(g.x0 + g.w / 2, g.y0 + g.h / 2, g.z);
   const cell = (156543.03 * Math.cos((mid[1] * Math.PI) / 180)) / 2 ** g.z;
-  const f = (i: number) => (kind[i] === 1 ? 1 : kind[i] === 2 ? HIKE.water : kind[i] === 3 ? HIKE.glacier : HIKE.offTrail);
+  const zone = new Uint8Array(g.w * g.h);
+  // nur bei wenigen Zellen (Punkte); Flüsse sind schon verbreitert
+  for (const set of [sources, targets]) if (set.length <= 4) for (const i of set) zone[i] = 1;
+  dilate(g, zone, 1, Math.max(1, Math.round(150 / cell)));
+  for (const set of [sources, targets]) for (const i of set) zone[i] = 1;
+  return zone;
+}
+
+/** Anzahl wegloser Zellen des Weges, die steiler als das normale Limit sind (nicht neben einem Weg, nicht am Start/Ziel) */
+function steepShare(g: Grid, kind: Uint8Array, slope: Float32Array, path: number[], zone: Uint8Array): number {
+  let n = 0;
+  for (const i of path) {
+    if (kind[i] === 1 || zone[i] || slope[i] <= HIKE.steepMax) continue;
+    const x = i % g.w, y = Math.floor(i / g.w);
+    let near = false;
+    for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1 && !near; dx++) { const j = (y + dy) * g.w + x + dx; if (j >= 0 && j < kind.length && kind[j] === 1) near = true; }
+    if (!near) n++;
+  }
+  return n;
+}
+
+/** Gehzeit (s) eines gegebenen Rasterweges ohne Strafe */
+function hikeCost(g: Grid, kind: Uint8Array, path: number[], slope: Float32Array, steepMax: number): number {
+  const mid = pixelToLngLat(g.x0 + g.w / 2, g.y0 + g.h / 2, g.z);
+  const cell = (156543.03 * Math.cos((mid[1] * Math.PI) / 180)) / 2 ** g.z;
+  const f = (i: number) => (kind[i] === 1 ? 1 : kind[i] === 2 ? HIKE.water : (kind[i] === 3 ? HIKE.glacier : kind[i] === 4 ? HIKE.stream : HIKE.offTrail) * Math.min(20, steepFactor(slope[i], steepMax)));
   let s = 0;
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1], b = path[i];
@@ -274,14 +373,18 @@ export async function findHike(inp: HikeInput, a: LngLat, b: LngLat): Promise<Hi
   inp.onProgress?.("Verbindungsweg: Höhenmodell laden …");
   const g = await loadGrid(bb, inp.loader, inp.maxCells ?? 1_200_000, 13);
   const kind = new Uint8Array(g.w * g.h);
+  let pathCount = 0;
   if (inp.layers) {
     inp.onProgress?.("Verbindungsweg: Wege, Gewässer und Gletscher aus OSM …");
     const L = await inp.layers(bb).catch(() => null);
     if (L) {
       rasterPolygons(g, L.glacier, kind, 3);
+      rasterLines(g, L.streams ?? [], kind, 4);
       rasterPolygons(g, L.water, kind, 2);
       rasterLines(g, L.rivers, kind, 2);
+      dilate(g, kind, 2, 1, (v) => v !== 1); // Flüsse 3 Zellen breit: nicht diagonal durchschlüpfen
       rasterLines(g, L.paths, kind, 1); // Brücken/Furten: Weg schlägt Wasser
+      pathCount = L.paths.length;
     }
   }
   const sources = cellsOf(g, clip(inp.from, bb));
@@ -291,5 +394,6 @@ export async function findHike(inp: HikeInput, a: LngLat, b: LngLat): Promise<Hi
   await new Promise((r) => setTimeout(r, 0));
   const res = hikeRoutes(g, kind, sources, targets, inp.alternatives ?? 2);
   if (!res.length) throw new Error("Keine begehbare Verbindung gefunden (zu steil oder außerhalb des Ausschnitts).");
+  res.forEach((r) => (r.noPaths = pathCount === 0));
   return res;
 }

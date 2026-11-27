@@ -58,3 +58,32 @@ describe("Verbindungswege", () => {
     void rasterLines;
   });
 });
+
+describe("Verbindungswege: Flüsse und Steilhänge", async () => {
+  const { dilate, hikeRoutes: routes, steepFactor } = await import("../src/hike");
+  it("quert einen Fluss lieber über die Brücke (Weg) als direkt", () => {
+    const g = terrain();
+    g.elev.fill(500);
+    const kind = new Uint8Array(g.w * g.h);
+    for (let y = 0; y < g.h; y++) kind[y * g.w + 60] = 2; // Fluss senkrecht
+    dilate(g, kind, 2, 1);
+    for (let x = 50; x <= 70; x++) kind[90 * g.w + x] = 1; // Brücke in Zeile 90
+    const r = routes(g, kind, Int32Array.of(20 * g.w + 40), Int32Array.of(20 * g.w + 80), 0)[0];
+    const crossY = r.line.map((p) => Math.floor(lngLatToPixel(p, g.z)[1] - g.y0)).find((_, i) => Math.abs(Math.floor(lngLatToPixel(r.line[i], g.z)[0] - g.x0) - 60) < 1);
+    expect(crossY).toBe(90);
+  });
+  it("Steilhang ab ~33° gesperrt, dazwischen teurer", () => {
+    expect(steepFactor(0.2)).toBe(1);
+    expect(steepFactor(0.5)).toBeGreaterThan(2);
+    expect(steepFactor(0.7)).toBe(Infinity);
+  });
+  it("umgeht einen steilen Hang statt ihn zu queren", () => {
+    const g = terrain();
+    // Hang 45° quer zur direkten Linie, flach außen herum (x > 100)
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) g.elev[y * g.w + x] = 500 + (x < 100 ? Math.max(0, 20 - Math.abs(y - 60)) * 26 : 0);
+    const kind = new Uint8Array(g.w * g.h);
+    const r = routes(g, kind, Int32Array.of(10 * g.w + 50), Int32Array.of(110 * g.w + 50), 0)[0];
+    expect(r.maxElev).toBeLessThan(600); // nicht über den Rücken (bis ~1000 m)
+    expect(r.steep).toBeFalsy();
+  });
+});

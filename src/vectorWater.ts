@@ -228,12 +228,13 @@ export async function glacierAreaAround(points: LngLat[], radiusKm = 8, fetchFn:
  * Für Verbindungswege zu Fuß: Wege (Ebene „transportation“: Pfade, Fahrwege, Straßen – ohne Autobahn/Bahn),
  * Flüsse/Bäche, Wasserflächen und Gletscher im Ausschnitt [W, S, O, N] (Zoom 13, bei großen Ausschnitten 12).
  */
-export async function hikeLayersInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<{ paths: LngLat[][]; rivers: LngLat[][]; water: LngLat[][]; glacier: LngLat[][] }> {
+export async function hikeLayersInBbox(bbox: [number, number, number, number], fetchFn: typeof fetch = fetch): Promise<{ paths: LngLat[][]; rivers: LngLat[][]; streams: LngLat[][]; water: LngLat[][]; glacier: LngLat[][] }> {
   const tmpl = await template(fetchFn);
   let z = 13;
   const count = (zz: number) => (lon2tile(bbox[2], zz) - lon2tile(bbox[0], zz) + 1) * (lat2tile(bbox[1], zz) - lat2tile(bbox[3], zz) + 1);
-  while (z > 11 && count(z) > 64) z--;
-  const out = { paths: [] as LngLat[][], rivers: [] as LngLat[][], water: [] as LngLat[][], glacier: [] as LngLat[][] };
+  // Wege (Pfade, Steige) enthalten die Kacheln erst ab Zoom 13 → möglichst dort bleiben
+  while (z > 12 && count(z) > 160) z--;
+  const out = { paths: [] as LngLat[][], rivers: [] as LngLat[][], streams: [] as LngLat[][], water: [] as LngLat[][], glacier: [] as LngLat[][] };
   const NO_WALK = new Set(["motorway", "trunk", "rail", "transit", "ferry", "aerialway", "busway"]);
   const jobs: Promise<void>[] = [];
   for (let x = lon2tile(bbox[0], z); x <= lon2tile(bbox[2], z); x++)
@@ -250,7 +251,10 @@ export async function hikeLayersInBbox(bbox: [number, number, number, number], f
           const lines = (g: GeoJSON.Geometry) => (g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : []) as LngLat[][];
           const rings = (g: GeoJSON.Geometry) => (g.type === "Polygon" ? [g.coordinates[0]] : g.type === "MultiPolygon" ? g.coordinates.map((p) => p[0]) : []) as LngLat[][];
           each("transportation", (p, g) => { if (!NO_WALK.has(String(p.class)) && p.brunnel !== "tunnel") out.paths.push(...lines(g)); });
-          each("waterway", (p, g) => { if (p.brunnel !== "tunnel" && p.brunnel !== "bridge") out.rivers.push(...lines(g)); });
+          each("waterway", (p, g) => {
+            if (p.brunnel === "tunnel" || p.brunnel === "bridge") return;
+            (p.class === "river" || p.class === "canal" ? out.rivers : out.streams).push(...lines(g));
+          });
           each("water", (_p, g) => out.water.push(...rings(g)));
           each("landcover", (p, g) => { if (p.class === "ice") out.glacier.push(...rings(g)); });
         })().catch(() => undefined),
