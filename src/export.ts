@@ -138,7 +138,10 @@ ${[...main, ...steepTrks].join("\n")}
 }
 
 /** Gesamte Tour als GPX: je Flussabschnitt und Verbindungsweg ein Track, höchster Punkt der Wege als Wegpunkt */
-export function toTourGpx(items: { name: string; type: string; pts: { p: LngLat; z: number }[]; pass?: { p: LngLat; z: number; text: string } }[]): string {
+export function toTourGpx(
+  items: { name: string; type: string; pts: { p: LngLat; z: number }[]; desc?: string }[],
+  places: { p: LngLat; z?: number; name: string; desc: string; sym: string; type: string }[] = [],
+): string {
   const lenKm = (pts: { p: LngLat }[]) => {
     let m = 0;
     for (let i = 1; i < pts.length; i++) {
@@ -149,12 +152,12 @@ export function toTourGpx(items: { name: string; type: string; pts: { p: LngLat;
     return (m / 1000).toFixed(1).replace(".", ",");
   };
   const trk = (it: (typeof items)[number]) =>
-    `  <trk>\n    <name>${esc(it.name)}</name>\n    <desc>${esc(`${it.type === "Wandern" ? "Verbindungsweg zu Fuß" : "Flussabschnitt"}, ${lenKm(it.pts)} km. Erstellt mit Packraft-Planer – Indikator, vor Ort prüfen.`)}</desc>\n    <type>${esc(it.type)}</type>\n${colorExt(it.type === "Wandern" ? "#e07a1f" : "#1f78b4")}    <trkseg>\n` +
+    `  <trk>\n    <name>${esc(it.name)}</name>\n    <desc>${esc(`${it.type === "Wandern" ? "Verbindungsweg zu Fuß" : "Flussabschnitt"}, ${it.desc ?? `${lenKm(it.pts)} km`}. Erstellt mit Packraft-Planer – Indikator, vor Ort prüfen.`)}</desc>\n    <type>${esc(it.type)}</type>\n${colorExt(it.type === "Wandern" ? "#e07a1f" : "#1f78b4")}    <trkseg>\n` +
     it.pts.map((q) => `      <trkpt lat="${q.p[1].toFixed(6)}" lon="${q.p[0].toFixed(6)}"><ele>${q.z.toFixed(1)}</ele></trkpt>`).join("\n") + `\n    </trkseg>\n  </trk>`;
-  const wpt = (p: LngLat, z: number, name: string, desc: string, sym: string, type: string) =>
-    `  <wpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}">\n    <ele>${z.toFixed(1)}</ele>\n    <name>${esc(name)}</name>\n    <desc>${esc(desc)}</desc>\n    <sym>${sym}</sym>\n    <type>${esc(type)}</type>\n  </wpt>`;
+  const wpt = (p: LngLat, z: number | undefined, name: string, desc: string, sym: string, type: string) =>
+    `  <wpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}">\n${z !== undefined ? `    <ele>${z.toFixed(1)}</ele>\n` : ""}    <name>${esc(name)}</name>\n    <desc>${esc(desc)}</desc>\n    <sym>${sym}</sym>\n    <type>${esc(type)}</type>\n  </wpt>`;
   const wpts = items.flatMap((it) => {
-    if (it.pass) return [wpt(it.pass.p, it.pass.z, `Höchster Punkt ${it.name}`, `${it.pass.text}. Verbindungsweg aus Höhenmodell und OSM-Wegen – Indikator, vor Ort prüfen.`, "Summit", "Pass")];
+    if (it.type === "Wandern") return []; // Verbindungswege ohne eigenen Wegpunkt (Nutzerwunsch: kein „höchster Punkt“)
     const a = it.pts[0], b = it.pts[it.pts.length - 1];
     return a && b ? [wpt(a.p, a.z, `Einstieg ${it.name}`, `Einstieg · ${Math.round(a.z)} m ü. M.`, "Boat Ramp", "Einstieg"), wpt(b.p, b.z, `Ausstieg ${it.name}`, `Ausstieg · ${Math.round(b.z)} m ü. M.`, "Boat Ramp", "Ausstieg")] : [];
   });
@@ -164,7 +167,7 @@ export function toTourGpx(items: { name: string; type: string; pts: { p: LngLat;
   xmlns:gpx_style="http://www.topografix.com/GPX/gpx_style/0/2"
   xmlns:osmand="https://osmand.net">
   <metadata><name>Tour</name><desc>${esc(items.map((i) => i.name).join(" · "))}</desc></metadata>
-${wpts.join("\n")}
+${[...wpts, ...places.map((q) => wpt(q.p, q.z, q.name, q.desc, q.sym, q.type))].join("\n")}
 ${items.map(trk).join("\n")}
 </gpx>
 `;

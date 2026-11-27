@@ -35,10 +35,13 @@ export function metadataService(fetchFn: typeof fetch = fetch): Promise<string> 
   return serviceUrl;
 }
 
-/** Metadaten-Layer: 0 = 1,9 cm … 13 = 150 m. Für Detailansicht reichen 15 cm … 2,4 m. */
-const LAYERS = [3, 4, 5, 6, 7];
+/** Metadaten-Layer: 0 = 1,9 cm … 13 = 150 m. Detailbild: 7,5 cm … 2,4 m; für die gerade sichtbare Stufe
+ *  auch die groben Übersichtsbilder (bis 150 m), die Esri beim Herauszoomen zeigt – oft andere Jahreszeit. */
+const LAYERS_DETAIL = [2, 3, 4, 5, 6, 7];
+const LAYERS_ALL = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
-const parseDate = (v: string | number) => {
+const parseDate = (v: string | number | null | undefined) => {
+  if (v === null || v === undefined || v === "" || String(v) === "null") return ""; // Übersichtsbilder ohne Datum
   const s = String(v);
   return s.length === 8 ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s;
 };
@@ -46,11 +49,13 @@ const parseDate = (v: string | number) => {
 /**
  * Bildinfo an einem Punkt für die Detailstufe `zoom` (Kachel-Zoom der Karte).
  * Bei mehreren Treffern gewinnt der mit der höchsten Zeichenreihenfolge (das sichtbare Bild).
+ * `zoom = "max"`: das Bild der feinsten verfügbaren Stufe – das, was man bei stärkster Vergrößerung sieht
+ * (Referenz für Pegel/Wasserstand; Esri zeigt in gröberen Stufen teils ältere/andere Aufnahmen).
  */
-export async function imageryAt(p: LngLat, zoom = 18, fetchFn: typeof fetch = fetch): Promise<ImageryInfo | null> {
+export async function imageryAt(p: LngLat, zoom: number | "max" = "max", fetchFn: typeof fetch = fetch): Promise<ImageryInfo | null> {
   const base = await metadataService(fetchFn);
   const results = await Promise.all(
-    LAYERS.map(async (l) => {
+    (zoom === "max" ? LAYERS_DETAIL : LAYERS_ALL).map(async (l) => {
       const url =
         `${base}/${l}/query?geometry=${p[0]},${p[1]}&geometryType=esriGeometryPoint&inSR=4326` +
         `&spatialRel=esriSpatialRelIntersects&outFields=SRC_DATE,SRC_RES,NICE_NAME,NICE_DESC,MinMapLevel,MaxMapLevel,DrawOrder&returnGeometry=false&f=json`;
@@ -62,9 +67,17 @@ export async function imageryAt(p: LngLat, zoom = 18, fetchFn: typeof fetch = fe
       }
     }),
   );
-  const hits = results.flat().filter((a) => Number(a.MinMapLevel) <= zoom && Number(a.MaxMapLevel) >= zoom);
-  const all = hits.length ? hits : results.flat();
-  if (!all.length) return null;
+  const flat = results.flat();
+  if (!flat.length) return null;
+  let all: Record<string, string | number>[];
+  if (zoom === "max") {
+    // feinste Stufe, die überhaupt ein Bild hat; dort das oberste
+    const top = Math.max(...flat.map((a) => Number(a.MaxMapLevel) || 0));
+    all = flat.filter((a) => (Number(a.MaxMapLevel) || 0) === top);
+  } else {
+    const hits = flat.filter((a) => Number(a.MinMapLevel) <= zoom && Number(a.MaxMapLevel) >= zoom);
+    all = hits.length ? hits : flat;
+  }
   all.sort((a, b) => Number(b.DrawOrder) - Number(a.DrawOrder) || Number(a.SRC_RES) - Number(b.SRC_RES));
   const a = all[0];
   const maxLevel = Number(a.MaxMapLevel);
@@ -85,7 +98,7 @@ export async function imageryAlong(points: { d: number; p: LngLat }[], every = 1
     const d = (total * k) / (n - 1);
     return points.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b));
   });
-  const infos = await Promise.all(picks.map((q) => imageryAt(q.p, 18, fetchFn).catch(() => null)));
+  const infos = await Promise.all(picks.map((q) => imageryAt(q.p, "max", fetchFn).catch(() => null)));
   const out: ImageryStretch[] = [];
   picks.forEach((q, k) => {
     const info = infos[k];

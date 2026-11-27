@@ -380,7 +380,9 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
   const jc = await page.evaluate(() => ({ c: window.__map.getCenter(), z: window.__map.getZoom(), p: window.__map.getSource('cursor')._data?.geometry?.coordinates }));
   check('Profil-Klick springt zur Stelle', jc.p && Math.abs(jc.c.lng - jc.p[0]) < 0.01 && Math.abs(jc.c.lat - jc.p[1]) < 0.01 && jc.z >= 15, `Zoom ${jc.z.toFixed(1)}`);
   // Bildabschnitte als Leiste im Profil statt Band auf der Karte
+  await page.waitForFunction(() => document.querySelectorAll('#profile .img-stretch').length > 0, null, { timeout: 30000 }).catch(() => {});
   const nStrip = await page.locator('#profile .img-stretch').count();
+  if (!nStrip) console.log('INFO Leiste leer:', await page.textContent('#res-title'), '|', (await page.textContent('#flow-info')).replace(/\s+/g, ' ').slice(0, 160));
   check('Bildabschnitte als Leiste unter dem Profil, kein Band auf der Karte', nStrip > 0 && !(await page.evaluate(() => window.__map.getLayer('imgsec'))), `${nStrip} Abschnitte`);
   if (nStrip) {
     await page.click('#profile .img-stretch >> nth=0'); await page.waitForTimeout(1200);
@@ -409,10 +411,13 @@ const check = (name, ok, info = '') => { results.push([ok ? 'OK ' : 'FEHLER', na
     await view([13.615, 46.345], 12);
     await clickLL([13.5863, 46.3612]); await clickLL([13.6456, 46.3326]); await waitIdle();
     const t2 = (await page.textContent('#tour-list')).replace(/\s+/g, ' ');
-    check('Verbindungsweg Punkt → Punkt: Route mit Länge, Höhenmetern, Gehzeit, höchstem Punkt', /Verbindungsweg/.test(t2) && /Beste Route: [\d.]+ km, ↑ \d+ m ↓ \d+ m, ~\d+:\d\d h, höchster Punkt/.test(t2) && (await page.locator('.pass-marker').count()) >= 1, t2.slice(-220));
+    check('Verbindungsweg Punkt → Punkt: Route mit Länge, Höhenmetern, Gehzeit, höchstem Punkt (nur Text, kein Kartenpunkt)', /Verbindungsweg/.test(t2) && /Beste Route: [\d.]+ km, ↑ \d+ m ↓ \d+ m, ~\d+:\d\d h, höchster Punkt/.test(t2) && (await page.locator('.pass-marker').count()) === 0, t2.slice(-220));
+    await page.waitForTimeout(500);
+    const hikeAreas = await page.locator('#profile .hike-area').count();
+    check('Verbindungsweg: Höhenprofil unten mit Steigung (farbig)', await page.isVisible('#profile-wrap') && hikeAreas > 3 && /km ab Start/.test(await page.textContent('#profile')), `${hikeAreas} Abschnitte im Profil`);
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#tour-gpx')]);
     const g = fs.readFileSync(await dl.path(), 'utf8');
-    check('Tour-GPX: Flussabschnitte + Verbindungsweg', (g.match(/<trk>/g) || []).length === 3 && /<type>Wandern<\/type>/.test(g) && /Höchster Punkt/.test(g), `${(g.match(/<trk>/g) || []).length} Tracks`);
+    check('Tour-GPX: Flussabschnitte + Verbindungsweg', (g.match(/<trk>/g) || []).length === 3 && /<type>Wandern<\/type>/.test(g) && !/Höchster Punkt/.test(g) && /<name>Einstieg 1 /.test(g), `${(g.match(/<trk>/g) || []).length} Tracks`);
     // Neuladen: Tour wird aus dem Browser wiederhergestellt
     await page.reload();
     await page.waitForFunction(() => window.__map && window.__map.loaded());

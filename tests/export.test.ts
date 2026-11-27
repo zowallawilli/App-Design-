@@ -33,6 +33,22 @@ describe("export", async () => {
     const j = JSON.parse(toGeoJson(a, "x", undefined, [], [], pl));
     expect(j.features.filter((f: { properties: { source?: string } }) => f.properties.source).map((f: { properties: { kind: string } }) => f.properties.kind)).toEqual(["umtragen", "weir"]);
   });
+  it("Tour-GPX: eigene Stellen als Wegpunkte, kein höchster Punkt, keine Pfeil-Sonderzeichen", async () => {
+    const { toTourGpx } = await import("../src/export");
+    const g = toTourGpx(
+      [
+        { name: "1 Fluss", type: "Packrafting", pts: a.profile.map((q) => ({ p: q.p, z: q.z })) },
+        { name: "2 Weg A → B", type: "Wandern", pts: a.profile.slice(0, 5).map((q) => ({ p: q.p, z: q.z })), desc: "1,2 km, ↑ 100 m" },
+      ],
+      [{ p: o, z: 500, name: "Lagerplatz", desc: "Eigene Stelle: Lagerplatz – Kiesbank", sym: "Campground", type: "Eigene Stelle" }, { p: o, name: "Notiz", desc: "ohne Höhe", sym: "Flag, Blue", type: "Eigene Stelle" }],
+    );
+    expect(g).toContain("<name>Lagerplatz</name>");
+    expect(g).toContain("<sym>Campground</sym>");
+    expect(g).not.toMatch(/Höchster Punkt|Summit/);
+    expect(g).not.toMatch(/[→↑↓]/);
+    expect(g).toContain("2 Weg A nach B");
+    expect((g.match(/<wpt /g) ?? []).length).toBe(4); // Ein-/Ausstieg Fluss + 2 eigene Stellen
+  });
   it("CSV hat Kopfzeile und eine Zeile je Abschnitt", () => {
     expect(toCsv(a).trim().split("\n")).toHaveLength(a.segments.length + 1);
   });

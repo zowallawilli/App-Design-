@@ -212,6 +212,13 @@ Wasser; allgemein v = √(g·λ/2π · tanh(2πh/λ)). Weil die Tiefe h im Luftb
 flachem Wasser eher langsamer“. Die Kämme quer zu ihrer Ausrichtung (in Fließrichtung) anklicken. Dazu zeigt die
 App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem heutigen Wasserstand vergleichbar.
 
+## Luftbild als Bezug für Pegel und Wasserstand
+
+Aufnahmedatum, Pegelwert am Aufnahmetag und Wasserstand-Tendenz beziehen sich auf das **Detailbild der feinsten
+Esri-Stufe** – das Bild, das man bei stärkster Vergrößerung sieht. Beim Herauszoomen zeigt Esri teils andere, oft
+ältere Aufnahmen oder grobe Übersichtsbilder ohne Datum (an der Tollåga z. B. verschneit, im Detailbild vom 06.08.2024
+schneefrei). Die Kopfzeile nennt immer das gerade sichtbare Bild und warnt, wenn es nicht das Referenzbild ist.
+
 ## Tour: mehrere Flüsse und Verbindungswege (seit 26.11.2026)
 
 - **Tour-Liste:** Jede neu festgelegte Strecke wird ein weiterer Abschnitt; frühere bleiben blass auf der Karte und
@@ -221,8 +228,9 @@ App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem 
   Flüsse werden dabei neu analysiert (Pegel aktuell), Verbindungswege direkt übernommen. Gelöscht wird nur bewusst:
   ✕ je Abschnitt, „Zurücksetzen“ (Rückfrage ab 2 Abschnitten); eigene Stellen über „Alle löschen“ (Rückfrage).
   Flussname eigener Strecken = OSM-Fluss, der am meisten entlang der Strecke liegt.
-- **Nebenflüsse:** Flüsse und Bäche (auch ohne Namen, ab ~1,5 km), die die Strecke berühren (≤ 500 m), sind blau gestrichelt –
-  aus OSM-Vektorkacheln (Zoom 13) und ergänzend Overpass (alle Gewässerlinien bis 300 m an der Strecke).
+- **Nebenflüsse:** nur relevante Größe – OSM-Klasse Fluss (auch ohne Namen, ab ~1,5 km) und benannte Bäche ab 4 km –,
+  die die Strecke berühren (Mündung ≤ 500 m), blau gestrichelt; aus OSM-Vektorkacheln (Zoom 13). Keine zusätzliche
+  Overpass-Abfrage mehr (brachte viele kleine Bäche und blockierte die Abfrage der Wasserfälle/Stromschnellen).
   Klick auf einen = Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt (Fließrichtung wird geprüft).
 - **Verbindungsweg** (`src/hike.ts`): „Fluss → Fluss“ (Klick auf Fluss A und B; Start an jeder Stelle von A, Ziel an
   jeder Stelle von B – die Suche wählt selbst Aus-/Einstieg und meist den niedrigsten Sattel) oder „Punkt → Punkt“.

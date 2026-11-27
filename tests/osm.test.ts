@@ -59,12 +59,12 @@ describe("overpass – gestaffelte Anfragen", () => {
     expect(Date.now() - t).toBeLessThan(1000);
   });
 
-  it("wechselt bei Fehler sofort und meldet, wenn alle scheitern", async () => {
+  it("wechselt bei Fehler sofort, wiederholt bei Überlastung einmal und meldet, wenn alle scheitern", async () => {
     let n = 0;
     const failing = (() => { n++; return Promise.resolve(new Response("busy", { status: 429 })); }) as unknown as typeof fetch;
     await expect(overpass("q-fehler", failing, 10_000)).rejects.toThrow(/nicht erreichbar/);
-    expect(n).toBe(OVERPASS_URLS.length);
-  });
+    expect(n).toBe(OVERPASS_URLS.length * 2); // bei Überlastung (429) ein zweiter Durchgang nach kurzer Pause
+  }, 10_000);
 
   it("speichert Ergebnisse zwischen", async () => {
     let n = 0;

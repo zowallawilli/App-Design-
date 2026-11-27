@@ -8,11 +8,11 @@ import { download, shareFile, toCsv, toGeoJson, toGpx, toTourGpx, type PlaceOut 
 import { loadOsmPlaces, OSM_KIND, osmPlaceText, type OsmPlace } from "./osmPlaces";
 import { icon, KIND_ICON, OSM_ICON_NAME } from "./icons";
 import { haversine, lineLength, locateOnLine, type LngLat } from "./geo";
-import { geocode, overpass, waterwaysInBbox } from "./osm";
+import { geocode, waterwaysInBbox } from "./osm";
 import { glacierAreaAround, hikeLayersInBbox, riversInBbox, waterInBbox } from "./vectorWater";
 import { findHike, type HikeResult } from "./hike";
 import { PRESETS } from "./presets";
-import { renderProfile } from "./profileChart";
+import { renderHikeProfile, renderProfile } from "./profileChart";
 import { loadEsriTile } from "./esriTiles";
 import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
@@ -207,7 +207,7 @@ async function updateImageDate() {
   const el = $("img-date");
   updateExternalLinks();
   const esriOn = map.getLayoutProperty("base-esri", "visibility") !== "none";
-  if (!esriOn || map.getZoom() < 12) return (el.textContent = "");
+  if (!esriOn || map.getZoom() < (current ? 8 : 12)) { el.classList.remove("warn"); return (el.textContent = ""); }
   const id = ++imgReq;
   const c = map.getCenter();
   try {
@@ -216,10 +216,27 @@ async function updateImageDate() {
     const cond = info ? current?.flow?.conditions.get(info.date) : undefined;
     // Esri gibt manche Bilder nur bis zu einer gröberen Stufe heraus – dann wird vergrößert (unscharf)
     const capped = info?.maxLevel !== undefined && info.maxLevel < 19 && map.getZoom() + 1 > info.maxLevel + 0.5;
-    el.textContent = info ? `Bild: ${fmtDate(info.date)} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}${capped ? " · Esri hier nur vergrößert – schärfer evtl. bei Google/Apple ↗" : ""}` : "";
+    // Pegel/Wasserstand beziehen sich auf das Detailbild (stärkste Vergrößerung); weiter draußen zeigt Esri teils
+    // ein anderes Bild (z. B. mit Schnee) – dann deutlich darauf hinweisen
+    const ref = refImageNear([c.lng, c.lat]);
+    const other = info && ref && ref.date !== info.date;
+    el.textContent = info
+      ? `${info.date ? `Bild: ${fmtDate(info.date)}` : "Übersichtsbild ohne Aufnahmedatum"} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}` +
+        (other ? ` · ⚠ anderes Bild als die Detailansicht (Pegel-/Wasserstand-Angaben gelten für ${fmtDate(ref!.date)}) – hineinzoomen` : "") +
+        (capped ? " · Esri hier nur vergrößert – schärfer evtl. bei Google/Apple ↗" : "")
+      : "";
+    el.classList.toggle("warn", !!other);
   } catch {
     if (id === imgReq) el.textContent = "";
   }
+}
+/** Detailbild (Referenz der Pegel-/Wasserstand-Angaben) des Bildabschnitts nahe `p`, falls eine Strecke geladen ist */
+function refImageNear(p: LngLat): ImageryStretch | null {
+  const f = current?.flow;
+  if (!f?.imagery.length || !current) return null;
+  const at = locateOnLine(current.analysis.profile.map((q) => q.p), p);
+  if (at.offset > 3000) return null;
+  return f.imagery.find((im) => at.d >= im.d0 - 1 && at.d <= im.d1 + 1) ?? null;
 }
 /** Links zur selben Stelle in Google Maps, Google Earth und Apple Karten (oft feiner aufgelöst als Esri;
  *  dürfen nur angezeigt, nicht eingebunden werden – deshalb als Link in einem neuen Fenster). */
@@ -591,15 +608,6 @@ function renderTourLayer() {
     el.addEventListener("click", (ev) => { ev.stopPropagation(); activate(i); });
     hikeMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(line[Math.floor(line.length / 2)]).addTo(map));
   });
-  trip.forEach((t, i) => {
-    const r = t.kind === "weg" ? t.hike?.[t.sel ?? 0] : undefined;
-    if (!r) return;
-    const el = document.createElement("div");
-    el.className = "pass-marker";
-    el.innerHTML = `▲ ${fmtElev(r.maxElev)}`;
-    el.title = `Höchster Punkt des Verbindungswegs ${i + 1}`;
-    hikeMarkers.push(new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat(r.pass).addTo(map));
-  });
 }
 let hikeMarkers: maplibregl.Marker[] = [];
 function renderTour() {
@@ -631,7 +639,7 @@ function renderTour() {
         const ab = document.createElement("button");
         ab.className = `ghost${k === (t.sel ?? 0) ? " sel" : ""}`;
         ab.innerHTML = `<span class="sw" style="background:${TOUR_COLORS[k % TOUR_COLORS.length]}"></span> ${k ? `Alternative ${k}` : "Beste Route"}: ${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)}, höchster Punkt ${fmtElev(r.maxElev)}, ${Math.round(r.offTrail * 100)} % weglos${r.steep ? " · <b>nur über Steilgelände (> 33°) möglich</b>" : ""}${r.noPaths ? " · keine OSM-Wege im Ausschnitt" : ""}`;
-        ab.addEventListener("click", () => { t.sel = k; renderTour(); });
+        ab.addEventListener("click", () => { t.sel = k; renderTour(); requestAnimationFrame(drawChart); });
         const al = document.createElement("li");
         al.appendChild(ab);
         alts.appendChild(al);
@@ -734,10 +742,11 @@ function activate(i: number) {
   for (const id of ["river", "section", "narrows", "gauge", "tribs", "cursor"]) src(id).setData(empty);
   clearImgMarkers();
   $("results").hidden = true;
-  $("profile-wrap").hidden = true;
-  map.resize();
   const r = t.hike?.[t.sel ?? 0];
-  if (r) fitLine(r.line);
+  // Höhenprofil des Verbindungswegs unten (wie bei Flussabschnitten)
+  $("profile-wrap").hidden = !r;
+  map.resize();
+  if (r) { fitLine(r.line); requestAnimationFrame(drawChart); }
   renderTour();
 }
 function removeItem(i: number) {
@@ -815,14 +824,14 @@ async function loadTribs(a: Analysis, id: number) {
   }
   if (id !== runId || current !== owner) return;
   src("tribs").setData({ type: "FeatureCollection", features: tribFeatures(line, rivers, main, near) });
-  // kleine Bäche fehlen in den Vektorkacheln oft → zusätzlich OpenStreetMap direkt (Overpass) entlang der Strecke
-  const extra = await waterwaysAlong(line).catch(() => null);
-  if (!extra || id !== runId || current !== owner) return;
-  const merged = [...rivers.filter((r) => r.name), ...extra]; // unbenannte Linien aus Overpass sind vollständiger als Kachelstücke
-  src("tribs").setData({ type: "FeatureCollection", features: tribFeatures(line, merged, main, near) });
 }
 /** Zuflüsse (benannt oder ohne Namen), die die Strecke berühren (≤ 500 m), als Kartenlinien mit Mündungspunkt */
-function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }[], main: string | undefined, near: (p: LngLat, m: number) => boolean): GeoJSON.Feature[] {
+/** Nur Zuflüsse relevanter Größe (Nutzer 27.11.2026): OSM-Klasse „river“/„canal“; „stream“ (Bach) nur, wenn benannt und
+ *  im Ausschnitt ≥ 4 km lang; unbenannte Bäche nie. */
+const TRIB_STREAM_MIN_KM = 4;
+function tribFeatures(line: LngLat[], rivers: { name: string; kind?: string; coords: LngLat[] }[], main: string | undefined, near: (p: LngLat, m: number) => boolean): GeoJSON.Feature[] {
+  const isRiver = (k?: string) => k === "river" || k === "canal";
+  const riverNames = new Set(rivers.filter((r) => r.name && isRiver(r.kind)).map((r) => r.name));
   const byName = new Map<string, LngLat[][]>();
   const lenKm = (l: LngLat[]) => l.reduce((a, p, i) => (i ? a + haversine(l[i - 1], p) : 0), 0) / 1000;
   const noName: LngLat[][] = [];
@@ -831,8 +840,10 @@ function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }
     // Nebenarme/Ufer-Linien entlang der Strecke sind keine Zuflüsse
     if (r.coords.filter((p) => near(p, 80)).length > r.coords.length * 0.5) continue;
     if (r.name) byName.set(r.name, [...(byName.get(r.name) ?? []), r.coords]);
-    else noName.push(r.coords);
+    else if (isRiver(r.kind)) noName.push(r.coords); // unbenannte Bäche nicht
   }
+  // benannte Bäche: nur ab TRIB_STREAM_MIN_KM (Flussklasse zählt immer)
+  for (const [n, parts] of [...byName]) if (!riverNames.has(n) && parts.reduce((a, q) => a + lenKm(q), 0) < TRIB_STREAM_MIN_KM) byName.delete(n);
   // unbenannte Zuflüsse: Stücke an der Strecke, plus angrenzende Stücke (Kacheln zerschneiden die Linien) – ab ~1,5 km
   const used = new Set<number>();
   let unnamed = 0;
@@ -857,13 +868,6 @@ function tribFeatures(line: LngLat[], rivers: { name: string; coords: LngLat[] }
   return features;
 }
 const TRIB_CONTACT_M = 500;
-/** alle Gewässerlinien (Fluss, Bach, Kanal), die bis 300 m an die Strecke heranreichen – Overpass, vollständige Wege */
-async function waterwaysAlong(line: LngLat[]): Promise<{ name: string; coords: LngLat[] }[]> {
-  const step = Math.max(1, Math.ceil(line.length / 70));
-  const pts = line.filter((_, i) => i % step === 0 || i === line.length - 1).map((p) => `${p[1].toFixed(5)},${p[0].toFixed(5)}`).join(",");
-  const els = (await overpass(`[out:json][timeout:25];way["waterway"~"^(river|stream|canal)$"](around:300,${pts});out tags geom;`)) as unknown as { tags?: Record<string, string>; geometry?: { lat: number; lon: number }[] }[];
-  return els.filter((e) => e.geometry?.length).map((e) => ({ name: e.tags?.name ?? "", coords: e.geometry!.map((g) => [g.lon, g.lat] as LngLat) }));
-}
 /** Klick auf einen Nebenfluss: Einstieg an der Klickstelle, Ausstieg an der Mündung → neuer Abschnitt der Tour */
 async function analyzeTrib(name: string, at: LngLat, contact: LngLat) {
   if (busy) return;
@@ -1268,7 +1272,10 @@ function renderOsm() {
   list.innerHTML = "";
   if (!o || o.status === "loading") list.innerHTML = `<li class="hint">Wird aus OpenStreetMap geladen …</li>`;
   else if (o.status === "off") list.innerHTML = `<li class="hint">Ausgeschaltet (Analyse-Parameter).</li>`;
-  else if (o.status === "error") list.innerHTML = `<li class="hint">${o.message ?? "OpenStreetMap nicht erreichbar"} – später erneut versuchen.</li>`;
+  else if (o.status === "error") {
+    list.innerHTML = `<li class="hint">${o.message ?? "OpenStreetMap nicht erreichbar"} <button class="ghost osm-retry">Erneut laden</button></li>`;
+    list.querySelector(".osm-retry")?.addEventListener("click", () => current && void loadOsm(current.analysis, runId));
+  }
   else if (!o.places.length) list.innerHTML = `<li class="hint">An dieser Strecke ist in OSM nichts eingetragen (Stromschnelle, Wehr, Wasserfall, Ein-/Ausstieg) – das heißt nicht, dass dort nichts ist.</li>`;
   o?.places.forEach((q, i) => {
     const st = OSM_KIND[q.kind];
@@ -1772,9 +1779,20 @@ $("tour-gpx").addEventListener("click", () => {
   const items = trip.flatMap((t, i) => {
     if (t.kind === "fluss" && t.cur) return [{ name: `${i + 1} ${t.cur.name}`, type: "Packrafting", pts: t.cur.analysis.profile.map((q) => ({ p: q.p, z: q.z })) }];
     const r = t.hike?.[t.sel ?? 0];
-    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), pass: { p: r.pass, z: r.maxElev, text: `${fmtKm(r.lengthM)}, Aufstieg ${Math.round(r.ascent)} m, Abstieg ${Math.round(r.descent)} m, ca. ${fmtH(r.hours)} (DIN 33466)` } }] : [];
+    return r ? [{ name: `${i + 1} Verbindungsweg${t.how ? ` ${t.how}` : ""}`, type: "Wandern", pts: r.line.map((p, k) => ({ p, z: r.elev[k] })), desc: `${fmtKm(r.lengthM)}, Aufstieg ${Math.round(r.ascent)} m, Abstieg ${Math.round(r.descent)} m, ca. ${fmtH(r.hours)} (DIN 33466)` }] : [];
   });
-  if (items.length) download(`tour-${new Date().toISOString().slice(0, 10)}.gpx`, toTourGpx(items), "application/gpx+xml");
+  // Wegpunkte: alle eigenen Stellen (Planung) und die OSM-Stellen der Flussabschnitte
+  const allPts = trip.flatMap((t) => t.cur?.analysis.profile ?? []);
+  const zNear = (p: LngLat) => {
+    let best: { z: number; d: number } | null = null;
+    for (const q of allPts) { const d = haversine(q.p, p); if (d < 500 && (!best || d < best.d)) best = { z: q.z, d }; }
+    return best?.z;
+  };
+  const wpts = [
+    ...wwLabels.filter((l) => l.show).map((l) => ({ p: l.p, z: zNear(l.p), name: labelText(l), desc: `Eigene Stelle: ${labelText(l)}${l.note ? ` – ${l.note}` : ""}`, sym: OWN_SYM[l.kind ?? ""] ?? "Caution", type: "Eigene Stelle" })),
+    ...trip.flatMap((t) => (t.cur?.osm?.places ?? []).map((o) => ({ p: o.p, z: zNear(o.p), name: `${OSM_KIND[o.kind].text}${o.grade ? ` WW ${o.grade}` : ""} (OSM)`, desc: `${osmPlaceText(o)} – aus OpenStreetMap, nicht geprüft${o.note ? ` (${o.note})` : ""}. Vor Ort prüfen.`, sym: OSM_KIND[o.kind].sym, type: "OSM, nicht geprüft" }))),
+  ];
+  if (items.length) download(`tour-${new Date().toISOString().slice(0, 10)}.gpx`, toTourGpx(items, wpts), "application/gpx+xml");
 });
 map.on("click", "tribs-hit", (e) => {
   if (mode !== "idle" || busy) return;
@@ -1928,8 +1946,21 @@ map.on("load", () => renderLabels());
 /** im Profil angeklickte Stelle (bleibt auf der Karte markiert, bis die Maus wieder übers Profil fährt) */
 let selectedD: number | null = null;
 
+/** Höhenprofil des aktiven Verbindungswegs (Steigung farbig, Hover zeigt die Stelle auf der Karte) */
+function drawHikeChart() {
+  const t = trip[active];
+  const r = t?.kind === "weg" ? t.hike?.[t.sel ?? 0] : undefined;
+  if (!r || $("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
+  const at = (d: number) => { let b = 0; for (let i = 0; i < r.dist.length; i++) if (Math.abs(r.dist[i] - d) < Math.abs(r.dist[b] - d)) b = i; return r.line[b]; };
+  chart = renderHikeProfile(
+    $("profile"), r.dist, r.elev,
+    (d) => src("cursor").setData(d === null ? empty : { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: at(d) } }),
+    (d) => map.flyTo({ center: at(d), zoom: Math.max(map.getZoom(), 15), duration: 800 }),
+  );
+}
 function drawChart() {
-  if (!current || $("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
+  if (!current) return drawHikeChart();
+  if ($("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
   const a = rated() ?? current.analysis;
   const pointAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
   const showCursor = (d: number | null) =>
@@ -2207,7 +2238,8 @@ function renderFlowInfo() {
       : `Kein Pegel mit gemessenem Wert an diesem Fluss – Hinweise aus Jahreszeit, Aufnahmedatum und Regime${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " (Norwegen: NVE-Schlüssel unter „Analyse-Parameter“ eintragen)" : ""}`}.</p>` +
     `<details class="more"${f.catchOpen ? " open" : ""}><summary>Pegel &amp; Quellen</summary>` +
     cal +
-    `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen am selben Fluss (keine Schätzungen). ` +
+    `<p class="hint">Luftbild: Datum und Hinweise beziehen sich auf das <b>Detailbild bei stärkster Vergrößerung</b>; beim Herauszoomen zeigt Esri teils andere Aufnahmen (z. B. mit Schnee) – die Kopfzeile warnt dann. ` +
+    `Pegel: nur gemessene Werte offizieller Messstellen am selben Fluss (keine Schätzungen). ` +
     `Hinweise: übliche Jahreszeit der Region am Aufnahmetag und heute, dazu das Regime grob aus Gletschern und Höhe oberhalb (${catchText(f)}); eine Tendenz, keine Abflussmessung. ` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p></details>`;
   el.querySelector("details.more")?.addEventListener("toggle", (e) => (f.catchOpen = (e.target as HTMLDetailsElement).open));
