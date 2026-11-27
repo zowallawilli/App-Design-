@@ -212,6 +212,13 @@ Wasser; allgemein v = √(g·λ/2π · tanh(2πh/λ)). Weil die Tiefe h im Luftb
 flachem Wasser eher langsamer“. Die Kämme quer zu ihrer Ausrichtung (in Fließrichtung) anklicken. Dazu zeigt die
 App den Abfluss am Aufnahmetag des Bildes – so wird die Wellengröße mit dem heutigen Wasserstand vergleichbar.
 
+## Luftbild als Bezug für Pegel und Wasserstand
+
+Aufnahmedatum, Pegelwert am Aufnahmetag und Wasserstand-Tendenz beziehen sich auf das **Detailbild der feinsten
+Esri-Stufe** – das Bild, das man bei stärkster Vergrößerung sieht. Beim Herauszoomen zeigt Esri teils andere, oft
+ältere Aufnahmen oder grobe Übersichtsbilder ohne Datum (an der Tollåga z. B. verschneit, im Detailbild vom 06.08.2024
+schneefrei). Die Kopfzeile nennt immer das gerade sichtbare Bild und warnt, wenn es nicht das Referenzbild ist.
+
 ## Tour: mehrere Flüsse und Verbindungswege (seit 26.11.2026)
 
 - **Tour-Liste:** Jede neu festgelegte Strecke wird ein weiterer Abschnitt; frühere bleiben blass auf der Karte und

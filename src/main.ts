@@ -12,7 +12,7 @@ import { geocode, waterwaysInBbox } from "./osm";
 import { glacierAreaAround, hikeLayersInBbox, riversInBbox, waterInBbox } from "./vectorWater";
 import { findHike, type HikeResult } from "./hike";
 import { PRESETS } from "./presets";
-import { renderProfile } from "./profileChart";
+import { renderHikeProfile, renderProfile } from "./profileChart";
 import { loadEsriTile } from "./esriTiles";
 import { traceRiver } from "./route";
 import { sentinelPoints, sentinelWater } from "./sentinel";
@@ -207,7 +207,7 @@ async function updateImageDate() {
   const el = $("img-date");
   updateExternalLinks();
   const esriOn = map.getLayoutProperty("base-esri", "visibility") !== "none";
-  if (!esriOn || map.getZoom() < 12) return (el.textContent = "");
+  if (!esriOn || map.getZoom() < (current ? 8 : 12)) { el.classList.remove("warn"); return (el.textContent = ""); }
   const id = ++imgReq;
   const c = map.getCenter();
   try {
@@ -216,10 +216,27 @@ async function updateImageDate() {
     const cond = info ? current?.flow?.conditions.get(info.date) : undefined;
     // Esri gibt manche Bilder nur bis zu einer gröberen Stufe heraus – dann wird vergrößert (unscharf)
     const capped = info?.maxLevel !== undefined && info.maxLevel < 19 && map.getZoom() + 1 > info.maxLevel + 0.5;
-    el.textContent = info ? `Bild: ${fmtDate(info.date)} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}${capped ? " · Esri hier nur vergrößert – schärfer evtl. bei Google/Apple ↗" : ""}` : "";
+    // Pegel/Wasserstand beziehen sich auf das Detailbild (stärkste Vergrößerung); weiter draußen zeigt Esri teils
+    // ein anderes Bild (z. B. mit Schnee) – dann deutlich darauf hinweisen
+    const ref = refImageNear([c.lng, c.lat]);
+    const other = info && ref && ref.date !== info.date;
+    el.textContent = info
+      ? `${info.date ? `Bild: ${fmtDate(info.date)}` : "Übersichtsbild ohne Aufnahmedatum"} · ${info.resolution.toString().replace(".", ",")} m · ${info.provider}${cond ? ` · Wasserstand ${cond.tendency}` : ""}` +
+        (other ? ` · ⚠ anderes Bild als die Detailansicht (Pegel-/Wasserstand-Angaben gelten für ${fmtDate(ref!.date)}) – hineinzoomen` : "") +
+        (capped ? " · Esri hier nur vergrößert – schärfer evtl. bei Google/Apple ↗" : "")
+      : "";
+    el.classList.toggle("warn", !!other);
   } catch {
     if (id === imgReq) el.textContent = "";
   }
+}
+/** Detailbild (Referenz der Pegel-/Wasserstand-Angaben) des Bildabschnitts nahe `p`, falls eine Strecke geladen ist */
+function refImageNear(p: LngLat): ImageryStretch | null {
+  const f = current?.flow;
+  if (!f?.imagery.length || !current) return null;
+  const at = locateOnLine(current.analysis.profile.map((q) => q.p), p);
+  if (at.offset > 3000) return null;
+  return f.imagery.find((im) => at.d >= im.d0 - 1 && at.d <= im.d1 + 1) ?? null;
 }
 /** Links zur selben Stelle in Google Maps, Google Earth und Apple Karten (oft feiner aufgelöst als Esri;
  *  dürfen nur angezeigt, nicht eingebunden werden – deshalb als Link in einem neuen Fenster). */
@@ -622,7 +639,7 @@ function renderTour() {
         const ab = document.createElement("button");
         ab.className = `ghost${k === (t.sel ?? 0) ? " sel" : ""}`;
         ab.innerHTML = `<span class="sw" style="background:${TOUR_COLORS[k % TOUR_COLORS.length]}"></span> ${k ? `Alternative ${k}` : "Beste Route"}: ${fmtKm(r.lengthM)}, ↑ ${Math.round(r.ascent)} m ↓ ${Math.round(r.descent)} m, ~${fmtH(r.hours)}, höchster Punkt ${fmtElev(r.maxElev)}, ${Math.round(r.offTrail * 100)} % weglos${r.steep ? " · <b>nur über Steilgelände (> 33°) möglich</b>" : ""}${r.noPaths ? " · keine OSM-Wege im Ausschnitt" : ""}`;
-        ab.addEventListener("click", () => { t.sel = k; renderTour(); });
+        ab.addEventListener("click", () => { t.sel = k; renderTour(); requestAnimationFrame(drawChart); });
         const al = document.createElement("li");
         al.appendChild(ab);
         alts.appendChild(al);
@@ -725,10 +742,11 @@ function activate(i: number) {
   for (const id of ["river", "section", "narrows", "gauge", "tribs", "cursor"]) src(id).setData(empty);
   clearImgMarkers();
   $("results").hidden = true;
-  $("profile-wrap").hidden = true;
-  map.resize();
   const r = t.hike?.[t.sel ?? 0];
-  if (r) fitLine(r.line);
+  // Höhenprofil des Verbindungswegs unten (wie bei Flussabschnitten)
+  $("profile-wrap").hidden = !r;
+  map.resize();
+  if (r) { fitLine(r.line); requestAnimationFrame(drawChart); }
   renderTour();
 }
 function removeItem(i: number) {
@@ -1928,8 +1946,21 @@ map.on("load", () => renderLabels());
 /** im Profil angeklickte Stelle (bleibt auf der Karte markiert, bis die Maus wieder übers Profil fährt) */
 let selectedD: number | null = null;
 
+/** Höhenprofil des aktiven Verbindungswegs (Steigung farbig, Hover zeigt die Stelle auf der Karte) */
+function drawHikeChart() {
+  const t = trip[active];
+  const r = t?.kind === "weg" ? t.hike?.[t.sel ?? 0] : undefined;
+  if (!r || $("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
+  const at = (d: number) => { let b = 0; for (let i = 0; i < r.dist.length; i++) if (Math.abs(r.dist[i] - d) < Math.abs(r.dist[b] - d)) b = i; return r.line[b]; };
+  chart = renderHikeProfile(
+    $("profile"), r.dist, r.elev,
+    (d) => src("cursor").setData(d === null ? empty : { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: at(d) } }),
+    (d) => map.flyTo({ center: at(d), zoom: Math.max(map.getZoom(), 15), duration: 800 }),
+  );
+}
 function drawChart() {
-  if (!current || $("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
+  if (!current) return drawHikeChart();
+  if ($("profile-wrap").hidden || $("profile-wrap").classList.contains("collapsed")) return;
   const a = rated() ?? current.analysis;
   const pointAt = (d: number) => a.profile.reduce((b, q) => (Math.abs(q.d - d) < Math.abs(b.d - d) ? q : b)).p;
   const showCursor = (d: number | null) =>
@@ -2207,7 +2238,8 @@ function renderFlowInfo() {
       : `Kein Pegel mit gemessenem Wert an diesem Fluss – Hinweise aus Jahreszeit, Aufnahmedatum und Regime${!nveKey() && current.analysis.profile[0].p[1] > 57.8 && current.analysis.profile[0].p[0] < 31.5 && current.analysis.profile[0].p[0] > 4 ? " (Norwegen: NVE-Schlüssel unter „Analyse-Parameter“ eintragen)" : ""}`}.</p>` +
     `<details class="more"${f.catchOpen ? " open" : ""}><summary>Pegel &amp; Quellen</summary>` +
     cal +
-    `<p class="hint">Pegel: nur gemessene Werte offizieller Messstellen am selben Fluss (keine Schätzungen). ` +
+    `<p class="hint">Luftbild: Datum und Hinweise beziehen sich auf das <b>Detailbild bei stärkster Vergrößerung</b>; beim Herauszoomen zeigt Esri teils andere Aufnahmen (z. B. mit Schnee) – die Kopfzeile warnt dann. ` +
+    `Pegel: nur gemessene Werte offizieller Messstellen am selben Fluss (keine Schätzungen). ` +
     `Hinweise: übliche Jahreszeit der Region am Aufnahmetag und heute, dazu das Regime grob aus Gletschern und Höhe oberhalb (${catchText(f)}); eine Tendenz, keine Abflussmessung. ` +
     `${links ? ` Pegel vor Ort nachsehen: ${links}.` : ""}</p></details>`;
   el.querySelector("details.more")?.addEventListener("toggle", (e) => (f.catchOpen = (e.target as HTMLDetailsElement).open));
